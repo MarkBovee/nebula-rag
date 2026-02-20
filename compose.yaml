@@ -1,0 +1,39 @@
+name: nebula-rag
+
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: nebula-rag-db
+    environment:
+      POSTGRES_DB: nebularag
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d nebularag"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    volumes:
+      - nebula-rag-pgdata:/var/lib/postgresql/data
+
+  mcp-self-test:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: nebula-rag-mcp:latest
+    environment:
+      NEBULARAG_Database__Host: db
+      NEBULARAG_Database__Port: 5432
+      NEBULARAG_Database__Database: nebularag
+      NEBULARAG_Database__Username: postgres
+      NEBULARAG_Database__Password: postgres
+      NEBULARAG_Database__SslMode: Disable
+    depends_on:
+      db:
+        condition: service_healthy
+    command: ["--self-test-only"]
+
+volumes:
+  nebula-rag-pgdata:

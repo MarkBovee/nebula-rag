@@ -1,0 +1,42 @@
+{
+  "mcpServers": {
+    "Nebula RAG": {
+      "type": "stdio",
+      "command": "pwsh",
+      "env": {
+        "NEBULARAG_Database__Host": "192.168.1.135",
+        "NEBULARAG_Database__Port": "5432",
+        "NEBULARAG_Database__Database": "brewmind",
+        "NEBULARAG_Database__Username": "postgres",
+        "NEBULARAG_Database__Password": "ENRZpeMpfHPXfw8PN8mi",
+        "NEBULARAG_Database__SslMode": "Prefer"
+      },
+      "args": [
+        "-NoProfile",
+        "-File",
+        "${workspaceFolder}\\scripts\\start-nebula-rag-mcp-container.ps1",
+        "--skip-self-test"
+      ]
+    }
+  },
+  "servers": {
+    "Nebula RAG": {
+      "type": "stdio",
+      "command": "pwsh",
+      "env": {
+        "NEBULARAG_Database__Host": "192.168.1.135",
+        "NEBULARAG_Database__Port": "5432",
+        "NEBULARAG_Database__Database": "brewmind",
+        "NEBULARAG_Database__Username": "postgres",
+        "NEBULARAG_Database__Password": "ENRZpeMpfHPXfw8PN8mi",
+        "NEBULARAG_Database__SslMode": "Prefer"
+      },
+      "args": [
+        "-NoProfile",
+        "-File",
+        "${workspaceFolder}\\scripts\\start-nebula-rag-mcp-container.ps1",
+        "--skip-self-test"
+      ]
+    }
+  }
+}

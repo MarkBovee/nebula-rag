@@ -1,0 +1,53 @@
+name: RAG Reindex
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 */6 * * *"
+
+jobs:
+  reindex:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Restore
+        run: dotnet restore NebulaRAG.sln
+
+      - name: Write RAG config
+        shell: bash
+        run: |
+          cat > src/NebulaRAG.Cli/ragsettings.ci.json <<'EOF'
+          {
+            "Database": {
+              "Host": "${{ secrets.RAG_DB_HOST }}",
+              "Port": 5432,
+              "Database": "${{ secrets.RAG_DB_NAME }}",
+              "Username": "${{ secrets.RAG_DB_USER }}",
+              "Password": "${{ secrets.RAG_DB_PASSWORD }}",
+              "SslMode": "Prefer"
+            },
+            "Ingestion": {
+              "VectorDimensions": 256,
+              "ChunkSize": 1200,
+              "ChunkOverlap": 200,
+              "MaxFileSizeBytes": 1000000,
+              "IncludeExtensions": [".md", ".txt", ".cs", ".json", ".ts", ".tsx", ".js", ".py"]
+            },
+            "Retrieval": {
+              "DefaultTopK": 5
+            }
+          }
+          EOF
+
+      - name: Init schema
+        run: dotnet run --project src/NebulaRAG.Cli -- init --config src/NebulaRAG.Cli/ragsettings.ci.json
+
+      - name: Reindex repository
+        run: dotnet run --project src/NebulaRAG.Cli -- index --source . --config src/NebulaRAG.Cli/ragsettings.ci.json

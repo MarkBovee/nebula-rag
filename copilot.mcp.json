@@ -1,0 +1,78 @@
+{
+  "mcpServers": {
+    "nebula-rag": {
+      "type": "stdio",
+      "command": "podman",
+      "env": {
+        "NEBULARAG_Database__Host": "192.168.1.135",
+        "NEBULARAG_Database__Port": "5432",
+        "NEBULARAG_Database__Database": "brewmind",
+        "NEBULARAG_Database__Username": "postgres",
+        "NEBULARAG_Database__Password": "ENRZpeMpfHPXfw8PN8mi",
+        "NEBULARAG_Database__SslMode": "Prefer"
+      },
+      "args": [
+        "run",
+        "--rm",
+        "--pull=never",
+        "-i",
+        "-a",
+        "stdin",
+        "-a",
+        "stdout",
+        "-e",
+        "NEBULARAG_Database__Host",
+        "-e",
+        "NEBULARAG_Database__Port",
+        "-e",
+        "NEBULARAG_Database__Database",
+        "-e",
+        "NEBULARAG_Database__Username",
+        "-e",
+        "NEBULARAG_Database__Password",
+        "-e",
+        "NEBULARAG_Database__SslMode",
+        "nebula-rag-mcp:latest",
+        "--skip-self-test"
+      ]
+    }
+  },
+  "servers": {
+    "nebula-rag": {
+      "type": "stdio",
+      "command": "podman",
+      "env": {
+        "NEBULARAG_Database__Host": "192.168.1.135",
+        "NEBULARAG_Database__Port": "5432",
+        "NEBULARAG_Database__Database": "brewmind",
+        "NEBULARAG_Database__Username": "postgres",
+        "NEBULARAG_Database__Password": "ENRZpeMpfHPXfw8PN8mi",
+        "NEBULARAG_Database__SslMode": "Prefer"
+      },
+      "args": [
+        "run",
+        "--rm",
+        "--pull=never",
+        "-i",
+        "-a",
+        "stdin",
+        "-a",
+        "stdout",
+        "-e",
+        "NEBULARAG_Database__Host",
+        "-e",
+        "NEBULARAG_Database__Port",
+        "-e",
+        "NEBULARAG_Database__Database",
+        "-e",
+        "NEBULARAG_Database__Username",
+        "-e",
+        "NEBULARAG_Database__Password",
+        "-e",
+        "NEBULARAG_Database__SslMode",
+        "nebula-rag-mcp:latest",
+        "--skip-self-test"
+      ]
+    }
+  }
+}

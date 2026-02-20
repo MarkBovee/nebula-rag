@@ -1,0 +1,20 @@
+{
+  "Database": {
+    "Host": "192.168.1.135",
+    "Port": 5432,
+    "Database": "brewmind",
+    "Username": "postgres",
+    "Password": "SET_IN_ragsettings.local.json",
+    "SslMode": "Prefer"
+  },
+  "Ingestion": {
+    "VectorDimensions": 256,
+    "ChunkSize": 1200,
+    "ChunkOverlap": 200,
+    "MaxFileSizeBytes": 1000000,
+    "IncludeExtensions": [".md", ".txt", ".cs", ".json", ".ts", ".tsx", ".js", ".py"]
+  },
+  "Retrieval": {
+    "DefaultTopK": 5
+  }
+}

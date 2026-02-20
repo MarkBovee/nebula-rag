@@ -1,0 +1,3 @@
+bin/
+obj/
+src/NebulaRAG.Cli/ragsettings.local.json

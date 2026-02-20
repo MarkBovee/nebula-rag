@@ -1,0 +1,55 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Nebula RAG: Init DB",
+      "type": "shell",
+      "command": "dotnet",
+      "args": [
+        "run",
+        "--project",
+        "src\\NebulaRAG.Cli",
+        "--",
+        "init"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "Nebula RAG: Index Workspace",
+      "type": "shell",
+      "command": "dotnet",
+      "args": [
+        "run",
+        "--project",
+        "src\\NebulaRAG.Cli",
+        "--",
+        "index",
+        "--source",
+        "${workspaceFolder}"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "Nebula RAG: Query",
+      "type": "shell",
+      "command": "dotnet",
+      "args": [
+        "run",
+        "--project",
+        "src\\NebulaRAG.Cli",
+        "--",
+        "query",
+        "--text",
+        "${input:nebulaRagQuery}"
+      ],
+      "problemMatcher": []
+    }
+  ],
+  "inputs": [
+    {
+      "id": "nebulaRagQuery",
+      "type": "promptString",
+      "description": "Enter your RAG query"
+    }
+  ]
+}
