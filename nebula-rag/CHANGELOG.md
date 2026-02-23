@@ -4,6 +4,14 @@ All notable changes to the Nebula RAG Home Assistant add-on are documented in th
 
 The format is inspired by Keep a Changelog and follows semantic versioning.
 
+## [0.2.1] - 2026-02-23
+
+- Hardened add-on Docker build restore flow for Home Assistant builders:
+	- added low-memory restore flags (`--disable-parallel`)
+	- added retry loop for transient restore failures
+	- publish now uses `--no-restore` after successful restore
+- Added explicit project file existence check before restore to fail fast with clearer diagnostics.
+
 ## [0.2.0] - 2026-02-23
 
 - Switched add-on runtime from one-shot CLI jobs to a long-running service host.

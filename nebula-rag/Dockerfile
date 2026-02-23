@@ -1,6 +1,10 @@
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
+ENV DOTNET_CLI_TELEMETRY_OPTOUT=1 \
+    DOTNET_NOLOGO=1 \
+    NUGET_XMLDOC_MODE=skip
+
 ARG NEBULARAG_REPO_URL=https://github.com/MarkBovee/NebulaRAG.git
 ARG NEBULARAG_REPO_REF=main
 
@@ -11,8 +15,18 @@ RUN apt-get update \
 RUN git clone --depth 1 --branch "${NEBULARAG_REPO_REF}" "${NEBULARAG_REPO_URL}" /src/NebulaRAG
 WORKDIR /src/NebulaRAG
 
-RUN dotnet restore "src/NebulaRAG.AddonHost/NebulaRAG.AddonHost.csproj"
-RUN dotnet publish "src/NebulaRAG.AddonHost/NebulaRAG.AddonHost.csproj" -c Release -o /app/publish /p:UseAppHost=false
+RUN test -f "src/NebulaRAG.AddonHost/NebulaRAG.AddonHost.csproj"
+
+# Home Assistant builders can be resource-constrained; disable parallel restore and retry transient failures.
+RUN set -eux; \
+        for attempt in 1 2 3; do \
+            dotnet restore "src/NebulaRAG.AddonHost/NebulaRAG.AddonHost.csproj" --disable-parallel --verbosity minimal && break; \
+            echo "dotnet restore failed (attempt ${attempt}/3), retrying..."; \
+            sleep $((attempt * 5)); \
+            if [ "${attempt}" -eq 3 ]; then exit 1; fi; \
+        done
+
+RUN dotnet publish "src/NebulaRAG.AddonHost/NebulaRAG.AddonHost.csproj" -c Release -o /app/publish /p:UseAppHost=false --no-restore
 
 FROM mcr.microsoft.com/dotnet/runtime:10.0 AS runtime
 WORKDIR /app
