@@ -101,6 +101,7 @@ public sealed class DatabaseSettings
 public sealed class IngestionSettings
 {
     public int VectorDimensions { get; init; } = 256;
+    public string EmbeddingModel { get; init; } = "nomic-embed-text";
     public int ChunkSize { get; init; } = 1200;
     public int ChunkOverlap { get; init; } = 200;
     public int MaxFileSizeBytes { get; init; } = 1_000_000;
@@ -118,6 +119,8 @@ public sealed class IngestionSettings
     {
         if (VectorDimensions <= 0 || VectorDimensions > 4096)
             errors.Add("Ingestion.VectorDimensions must be between 1 and 4096.");
+        if (string.IsNullOrWhiteSpace(EmbeddingModel))
+            errors.Add("Ingestion.EmbeddingModel is required.");
         if (ChunkSize < 100 || ChunkSize > 5000)
             errors.Add("Ingestion.ChunkSize must be between 100 and 5000.");
         if (ChunkOverlap < 0 || ChunkOverlap >= ChunkSize)

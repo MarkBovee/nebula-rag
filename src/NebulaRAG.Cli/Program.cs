@@ -65,12 +65,15 @@ internal static class ProgramMain
             var store = new PostgresRagStore(settings.Database.BuildConnectionString());
             var chunker = new TextChunker();
             var embeddingGenerator = new HashEmbeddingGenerator();
+            var sourcesManifestLogger = loggerFactory.CreateLogger<RagSourcesManifestService>();
+            var sourcesManifestService = new RagSourcesManifestService(store, settings, sourcesManifestLogger);
 
             switch (command)
             {
                 case "init":
                     logger.LogInformation("Initializing database schema");
                     await store.InitializeSchemaAsync(settings.Ingestion.VectorDimensions);
+                    await TrySyncRagSourcesManifestAsync(sourcesManifestService, null, logger);
                     logger.LogInformation("Database schema initialized successfully");
                     Console.WriteLine("✓ NebulaRAG schema initialized.");
                     return 0;
@@ -83,6 +86,7 @@ internal static class ProgramMain
                         var indexerLogger = loggerFactory.CreateLogger<RagIndexer>();
                         var indexer = new RagIndexer(store, chunker, embeddingGenerator, settings, indexerLogger);
                         var summary = await indexer.IndexDirectoryAsync(source);
+                        await TrySyncRagSourcesManifestAsync(sourcesManifestService, source, logger);
                         Console.WriteLine(
                             $"✓ Index complete: {summary.DocumentsIndexed} documents indexed, " +
                             $"{summary.ChunksIndexed} chunks, {summary.DocumentsSkipped} skipped.");
@@ -177,6 +181,7 @@ internal static class ProgramMain
                         var result = await mgmtService.DeleteSourceAsync(deleteSource);
                         if (result > 0)
                         {
+                            await TrySyncRagSourcesManifestAsync(sourcesManifestService, deleteSource, logger);
                             Console.WriteLine($"✓ Deleted {result} documents.");
                         }
                         else
@@ -195,6 +200,7 @@ internal static class ProgramMain
                             var mgmtLogger = loggerFactory.CreateLogger<RagManagementService>();
                             var mgmtService = new RagManagementService(store, mgmtLogger);
                             await mgmtService.PurgeAllAsync();
+                            await TrySyncRagSourcesManifestAsync(sourcesManifestService, null, logger);
                             Console.WriteLine("✓ Database purged successfully.");
                         }
                         else
@@ -331,6 +337,25 @@ internal static class ProgramMain
         }
 
         return options;
+    }
+
+    /// <summary>
+    /// Synchronizes rag-sources markdown after index mutations without failing the main command when sync fails.
+    /// </summary>
+    /// <param name="sourcesManifestService">Service that writes rag-sources markdown from indexed metadata.</param>
+    /// <param name="contextPath">Optional path context that helps resolve output location.</param>
+    /// <param name="logger">Command logger for non-fatal warnings.</param>
+    private static async Task TrySyncRagSourcesManifestAsync(RagSourcesManifestService sourcesManifestService, string? contextPath, Microsoft.Extensions.Logging.ILogger logger)
+    {
+        try
+        {
+            var syncResult = await sourcesManifestService.SyncAsync(contextPath);
+            logger.LogInformation("RAG sources manifest synchronized at {ManifestPath} ({SourceCount} rows).", syncResult.ManifestPath, syncResult.SourceCount);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to synchronize rag-sources.md automatically.");
+        }
     }
 
     private static void PrintUsage()

@@ -58,6 +58,7 @@ Optional route prefix:
 
 - Runtime image installs `libgssapi-krb5-2` to satisfy .NET native dependency loading.
 - Service listens on port `8099`.
+- Add-on manifest maps `8099/tcp` to host port `8099` by default; adjust in Home Assistant `Network` settings if needed.
 - Home Assistant ingress is enabled in `config.json`.
 
 ## Release Process

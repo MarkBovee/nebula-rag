@@ -123,10 +123,10 @@ const SourceManager: React.FC<SourceManagerProps> = ({ sources, onRefresh }) => 
                       {source.sourcePath}
                     </span>
                   </td>
-                  <td style={styles.td}>{source.documentCount}</td>
+                  <td style={styles.td}>{source.documentCount ?? '-'}</td>
                   <td style={styles.td}>{source.chunkCount}</td>
                   <td style={styles.td}>
-                    {new Date(source.lastIndexedAt).toLocaleDateString()}
+                    {new Date(source.indexedAt ?? source.lastIndexedAt ?? '').toLocaleDateString()}
                   </td>
                   <td style={styles.td}>
                     <button

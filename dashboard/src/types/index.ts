@@ -14,11 +14,18 @@ export interface HealthResponse {
 /// Index statistics including document count, chunk count, and storage info.
 /// </summary>
 export interface IndexStats {
-  totalDocuments: number;
-  totalChunks: number;
-  averageChunkSize: number;
-  vectorDimensions: number;
-  lastUpdated: string;
+  documentCount: number;
+  chunkCount: number;
+  totalTokens: number;
+  oldestIndexedAt?: string | null;
+  newestIndexedAt?: string | null;
+
+  // Legacy fields kept optional for compatibility with older payloads.
+  totalDocuments?: number;
+  totalChunks?: number;
+  averageChunkSize?: number;
+  vectorDimensions?: number;
+  lastUpdated?: string;
   indexSizeBytes?: number;
 }
 
@@ -27,10 +34,13 @@ export interface IndexStats {
 /// </summary>
 export interface SourceInfo {
   sourcePath: string;
-  documentCount: number;
   chunkCount: number;
-  lastIndexedAt: string;
+  indexedAt: string;
   contentHash?: string;
+
+  // Legacy fields kept optional for compatibility with older payloads.
+  documentCount?: number;
+  lastIndexedAt?: string;
 }
 
 /// <summary>

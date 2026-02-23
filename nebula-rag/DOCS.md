@@ -85,6 +85,7 @@ MCP client cannot connect:
 
 - Ensure add-on is running in Home Assistant.
 - Test MCP URL: `http://homeassistant.local:8099/mcp`.
+- In add-on `Network` settings, confirm `8099/tcp` is exposed (not disabled). Home Assistant treats `null` host port mappings as disabled.
 - If using VS Code MCP HTTP config, confirm server entry uses `type: "http"` and the correct URL.
 
 ## Notes

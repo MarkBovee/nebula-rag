@@ -13,7 +13,9 @@ public sealed record IndexStats(
     /// <summary>UTC timestamp of the earliest document indexed, if any.</summary>
     DateTime? OldestIndexedAt,
     /// <summary>UTC timestamp of the most recent document indexed, if any.</summary>
-    DateTime? NewestIndexedAt);
+    DateTime? NewestIndexedAt,
+    /// <summary>Total on-disk size in bytes for the core index relations and indexes.</summary>
+    long IndexSizeBytes);
 
 /// <summary>
 /// Information about an indexed document source.

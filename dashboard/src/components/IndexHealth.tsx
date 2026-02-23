@@ -50,6 +50,13 @@ const styles = {
 /// Shows document count, chunk count, average chunk size, and vector dimensions.
 /// </summary>
 const IndexHealth: React.FC<IndexHealthProps> = ({ stats }) => {
+  const totalDocuments = stats.documentCount ?? stats.totalDocuments ?? 0;
+  const totalChunks = stats.chunkCount ?? stats.totalChunks ?? 0;
+  const averageChunkSize =
+    stats.averageChunkSize ?? (totalChunks > 0 ? stats.totalTokens / totalChunks : 0);
+  const newestIndexedAt = stats.newestIndexedAt ?? stats.lastUpdated;
+  const oldestIndexedAt = stats.oldestIndexedAt;
+
   const formatBytes = (bytes: number | undefined) => {
     if (bytes === undefined) return 'N/A';
     if (bytes < 1024) return `${bytes} B`;
@@ -57,7 +64,8 @@ const IndexHealth: React.FC<IndexHealthProps> = ({ stats }) => {
     return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
   };
 
-  const lastUpdated = new Date(stats.lastUpdated).toLocaleString();
+  const lastUpdated = newestIndexedAt ? new Date(newestIndexedAt).toLocaleString() : 'N/A';
+  const oldestIndexed = oldestIndexedAt ? new Date(oldestIndexedAt).toLocaleString() : 'N/A';
 
   return (
     <div style={styles.card}>
@@ -65,24 +73,31 @@ const IndexHealth: React.FC<IndexHealthProps> = ({ stats }) => {
       
       <div style={styles.metric}>
         <p style={styles.metricLabel}>Total Documents</p>
-        <p style={styles.metricValue}>{stats.totalDocuments.toLocaleString()}</p>
+        <p style={styles.metricValue}>{totalDocuments.toLocaleString()}</p>
       </div>
 
       <div style={styles.metric}>
         <p style={styles.metricLabel}>Total Chunks</p>
-        <p style={styles.metricValue}>{stats.totalChunks.toLocaleString()}</p>
+        <p style={styles.metricValue}>{totalChunks.toLocaleString()}</p>
       </div>
 
       <div style={styles.metric}>
         <p style={styles.metricLabel}>Average Chunk Size</p>
         <p style={styles.metricValue}>
-          {stats.averageChunkSize > 0 ? `${stats.averageChunkSize.toFixed(0)} chars` : 'N/A'}
+          {averageChunkSize > 0 ? `${averageChunkSize.toFixed(0)} chars` : 'N/A'}
         </p>
       </div>
 
       <div style={styles.metric}>
-        <p style={styles.metricLabel}>Vector Dimensions</p>
-        <p style={styles.metricValue}>{stats.vectorDimensions}</p>
+        <p style={styles.metricLabel}>Total Tokens</p>
+        <p style={styles.metricValue}>{stats.totalTokens.toLocaleString()}</p>
+      </div>
+
+      <div style={styles.metric}>
+        <p style={styles.metricLabel}>First Indexed</p>
+        <p style={{ ...styles.metricValue, fontSize: nebulaTheme.typography.fontSize.sm }}>
+          {oldestIndexed}
+        </p>
       </div>
 
       <div style={styles.metric}>

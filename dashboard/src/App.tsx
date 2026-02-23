@@ -9,6 +9,8 @@ import ActivityFeed from '@/components/ActivityFeed';
 import SourceManager from '@/components/SourceManager';
 import PerfTimeline from '@/components/PerfTimeline';
 
+type DashboardTab = 'overview' | 'search' | 'sources' | 'activity' | 'performance';
+
 const styles = {
   container: {
     background: `linear-gradient(135deg, ${nebulaTheme.colors.background} 0%, #1a0033 50%, #0f001a 100%)`,
@@ -65,7 +67,32 @@ const styles = {
   fullWidth: {
     gridColumn: '1 / -1',
   } as React.CSSProperties,
+  tabBar: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: nebulaTheme.spacing.sm,
+    marginBottom: nebulaTheme.spacing.xl,
+  } as React.CSSProperties,
+  tabButton: (active: boolean) => ({
+    padding: `${nebulaTheme.spacing.sm} ${nebulaTheme.spacing.md}`,
+    borderRadius: nebulaTheme.borderRadius.md,
+    border: `1px solid ${active ? nebulaTheme.colors.neonCyan : nebulaTheme.colors.surfaceBorder}`,
+    background: active ? 'rgba(0, 217, 255, 0.15)' : nebulaTheme.colors.surfaceLight,
+    color: active ? nebulaTheme.colors.neonCyan : nebulaTheme.colors.textSecondary,
+    fontWeight: active ? nebulaTheme.typography.fontWeight.semibold : nebulaTheme.typography.fontWeight.medium,
+    cursor: 'pointer',
+    transition: nebulaTheme.transition.base,
+    boxShadow: active ? nebulaTheme.shadow.glow.cyan : 'none',
+  } as React.CSSProperties),
 };
+
+const tabs: Array<{ key: DashboardTab; label: string }> = [
+  { key: 'overview', label: 'Overview' },
+  { key: 'search', label: 'Search' },
+  { key: 'sources', label: 'Sources' },
+  { key: 'activity', label: 'Activity' },
+  { key: 'performance', label: 'Performance' },
+];
 
 /// <summary>
 /// Main App component for the Nebula RAG management dashboard.
@@ -75,6 +102,7 @@ const App: React.FC = () => {
   const [dashboard, setDashboard] = useState<Partial<DashboardState>>({
     loading: true,
   });
+  const [activeTab, setActiveTab] = useState<DashboardTab>('overview');
 
   /// <summary>
   /// Refreshes all dashboard data by fetching from the API.
@@ -150,11 +178,11 @@ const App: React.FC = () => {
             <>
               <div style={styles.statusItem}>
                 <span style={{ color: nebulaTheme.colors.neonCyan }}>📄</span>
-                <span>{stats.totalDocuments} Documents</span>
+                <span>{(stats.documentCount ?? stats.totalDocuments ?? 0).toLocaleString()} Documents</span>
               </div>
               <div style={styles.statusItem}>
                 <span style={{ color: nebulaTheme.colors.neonMagenta }}>📦</span>
-                <span>{stats.totalChunks} Chunks</span>
+                <span>{(stats.chunkCount ?? stats.totalChunks ?? 0).toLocaleString()} Chunks</span>
               </div>
             </>
           )}
@@ -185,36 +213,64 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {/* Main Dashboard Grid */}
-      <div style={styles.gridContainer}>
-        {/* Index Health */}
-        {stats && <IndexHealth stats={stats} />}
-
-        {/* Search Analytics */}
-        <SearchAnalytics />
-
-        {/* Source Breakdown */}
-        {sources && <SourceBreakdown sources={sources} />}
-
-        {/* Performance Timeline */}
-        <div style={styles.fullWidth}>
-          <PerfTimeline />
-        </div>
-
-        {/* Activity Feed */}
-        {recentActivity && (
-          <div style={styles.fullWidth}>
-            <ActivityFeed activities={recentActivity} />
-          </div>
-        )}
-
-        {/* Source Manager */}
-        {sources && (
-          <div style={styles.fullWidth}>
-            <SourceManager sources={sources} onRefresh={refreshDashboard} />
-          </div>
-        )}
+      {/* Topic Tabs */}
+      <div style={styles.tabBar}>
+        {tabs.map((tab) => (
+          <button
+            key={tab.key}
+            onClick={() => setActiveTab(tab.key)}
+            style={styles.tabButton(activeTab === tab.key)}
+            aria-pressed={activeTab === tab.key}
+          >
+            {tab.label}
+          </button>
+        ))}
       </div>
+
+      {/* Main Dashboard Grid */}
+      {activeTab === 'overview' && (
+        <div style={styles.gridContainer}>
+          {stats && <IndexHealth stats={stats} />}
+          {sources && <SourceBreakdown sources={sources} />}
+          <div style={styles.fullWidth}>
+            <PerfTimeline />
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'search' && (
+        <div style={styles.gridContainer}>
+          <SearchAnalytics />
+        </div>
+      )}
+
+      {activeTab === 'sources' && (
+        <div style={styles.gridContainer}>
+          {sources && (
+            <div style={styles.fullWidth}>
+              <SourceManager sources={sources} onRefresh={refreshDashboard} />
+            </div>
+          )}
+        </div>
+      )}
+
+      {activeTab === 'activity' && (
+        <div style={styles.gridContainer}>
+          {recentActivity && (
+            <div style={styles.fullWidth}>
+              <ActivityFeed activities={recentActivity} />
+            </div>
+          )}
+        </div>
+      )}
+
+      {activeTab === 'performance' && (
+        <div style={styles.gridContainer}>
+          <div style={styles.fullWidth}>
+            <PerfTimeline />
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -15,7 +15,7 @@
   "webui": "http://[HOST]:[PORT:8099]",
   "arch": ["amd64", "aarch64"],
   "ports": {
-    "8099/tcp": null
+    "8099/tcp": 8099
   },
   "ports_description": {
     "8099/tcp": "Nebula RAG web UI and MCP endpoint"

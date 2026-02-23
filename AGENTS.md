@@ -85,6 +85,19 @@ Write a memory after each session or when:
 
 Do not write memory for trivial Q&A, duplicates of existing memory, or generic facts that are not user/project specific.
 
+### Write Decision Table
+
+| Situation | Write? | Type |
+|---|---|---|
+| User preference was stated | Yes | `semantic` |
+| Architecture decision made | Yes | `semantic` |
+| Recurring bug or gotcha found | Yes | `episodic` |
+| New project convention agreed | Yes | `procedural` |
+| Milestone completed | Yes | `episodic` |
+| Trivial one-off Q&A | No | - |
+| Generic language/library fact | No | - |
+| Duplicate of existing memory | No | - |
+
 ## Memory Categories and Tags
 
 - `semantic`: facts, preferences, decisions

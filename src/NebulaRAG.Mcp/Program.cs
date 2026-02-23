@@ -65,6 +65,8 @@ var queryLogger = loggerFactory.CreateLogger<RagQueryService>();
 var queryService = new RagQueryService(store, embeddingGenerator, settings, queryLogger);
 var managementLogger = loggerFactory.CreateLogger<RagManagementService>();
 var managementService = new RagManagementService(store, managementLogger);
+var sourcesManifestLogger = loggerFactory.CreateLogger<RagSourcesManifestService>();
+var sourcesManifestService = new RagSourcesManifestService(store, settings, sourcesManifestLogger);
 var indexerLogger = loggerFactory.CreateLogger<RagIndexer>();
 var indexer = new RagIndexer(store, chunker, embeddingGenerator, settings, indexerLogger);
 var sourcePathMappings = LoadSourcePathMappings();
@@ -79,7 +81,7 @@ if (selfTestOnly)
     return;
 }
 
-await RunServerAsync(queryService, managementService, store, chunker, embeddingGenerator, indexer, settings, sourcePathMappings, supportedProtocolVersions);
+await RunServerAsync(queryService, managementService, sourcesManifestService, store, chunker, embeddingGenerator, indexer, settings, sourcePathMappings, supportedProtocolVersions);
 return;
 
 /// <summary>
@@ -196,6 +198,7 @@ static void ValidateToolCatalog()
 static async Task RunServerAsync(
     RagQueryService queryService,
     RagManagementService managementService,
+    RagSourcesManifestService sourcesManifestService,
     PostgresRagStore store,
     TextChunker chunker,
     IEmbeddingGenerator embeddingGenerator,
@@ -292,7 +295,7 @@ static async Task RunServerAsync(
                 break;
 
             case "tools/call":
-                await HandleToolsCallAsync(output, id, request["params"]?.AsObject(), queryService, managementService, store, chunker, embeddingGenerator, indexer, settings, sourcePathMappings, jsonOptions, messageFraming);
+                await HandleToolsCallAsync(output, id, request["params"]?.AsObject(), queryService, managementService, sourcesManifestService, store, chunker, embeddingGenerator, indexer, settings, sourcePathMappings, jsonOptions, messageFraming);
                 break;
 
             default:
@@ -741,6 +744,7 @@ static async Task HandleToolsCallAsync(
     JsonObject? parameters,
     RagQueryService queryService,
     RagManagementService managementService,
+    RagSourcesManifestService sourcesManifestService,
     PostgresRagStore store,
     TextChunker chunker,
     IEmbeddingGenerator embeddingGenerator,
@@ -771,6 +775,7 @@ static async Task HandleToolsCallAsync(
             arguments,
             queryService,
             managementService,
+            sourcesManifestService,
             store,
             chunker,
             embeddingGenerator,
@@ -805,6 +810,7 @@ static async Task DispatchToolCallAsync(
     JsonObject? arguments,
     RagQueryService queryService,
     RagManagementService managementService,
+    RagSourcesManifestService sourcesManifestService,
     PostgresRagStore store,
     TextChunker chunker,
     IEmbeddingGenerator embeddingGenerator,
@@ -817,7 +823,7 @@ static async Task DispatchToolCallAsync(
 {
     if (string.Equals(toolName, RagInitSchemaToolName, StringComparison.Ordinal))
     {
-        await HandleRagInitSchemaToolAsync(output, id, store, settings, jsonOptions, framing, cancellationToken);
+        await HandleRagInitSchemaToolAsync(output, id, store, sourcesManifestService, settings, jsonOptions, framing, cancellationToken);
         return;
     }
 
@@ -859,25 +865,25 @@ static async Task DispatchToolCallAsync(
 
     if (string.Equals(toolName, RagIndexPathToolName, StringComparison.Ordinal))
     {
-        await HandleRagIndexPathToolAsync(output, id, arguments, indexer, sourcePathMappings, jsonOptions, framing, cancellationToken);
+        await HandleRagIndexPathToolAsync(output, id, arguments, indexer, sourcesManifestService, sourcePathMappings, jsonOptions, framing, cancellationToken);
         return;
     }
 
     if (string.Equals(toolName, RagUpsertSourceToolName, StringComparison.Ordinal))
     {
-        await HandleRagUpsertSourceToolAsync(output, id, arguments, store, chunker, embeddingGenerator, settings, jsonOptions, framing, cancellationToken);
+        await HandleRagUpsertSourceToolAsync(output, id, arguments, store, chunker, embeddingGenerator, sourcesManifestService, settings, jsonOptions, framing, cancellationToken);
         return;
     }
 
     if (string.Equals(toolName, RagDeleteSourceToolName, StringComparison.Ordinal))
     {
-        await HandleRagDeleteSourceToolAsync(output, id, arguments, managementService, jsonOptions, framing, cancellationToken);
+        await HandleRagDeleteSourceToolAsync(output, id, arguments, managementService, sourcesManifestService, jsonOptions, framing, cancellationToken);
         return;
     }
 
     if (string.Equals(toolName, RagPurgeAllToolName, StringComparison.Ordinal))
     {
-        await HandleRagPurgeAllToolAsync(output, id, arguments, managementService, jsonOptions, framing, cancellationToken);
+        await HandleRagPurgeAllToolAsync(output, id, arguments, managementService, sourcesManifestService, jsonOptions, framing, cancellationToken);
         return;
     }
 
@@ -1003,6 +1009,7 @@ static async Task HandleRagInitSchemaToolAsync(
     Stream output,
     JsonNode? id,
     PostgresRagStore store,
+    RagSourcesManifestService sourcesManifestService,
     RagSettings settings,
     JsonSerializerOptions jsonOptions,
     McpMessageFraming framing,
@@ -1011,9 +1018,12 @@ static async Task HandleRagInitSchemaToolAsync(
     try
     {
         await store.InitializeSchemaAsync(settings.Ingestion.VectorDimensions, cancellationToken);
+        var manifestSyncResult = await TrySyncRagSourcesManifestAsync(sourcesManifestService, null, cancellationToken);
         var structuredResult = new JsonObject
         {
-            ["vectorDimensions"] = settings.Ingestion.VectorDimensions
+            ["vectorDimensions"] = settings.Ingestion.VectorDimensions,
+            ["sourcesManifestPath"] = manifestSyncResult?.ManifestPath,
+            ["sourcesManifestSourceCount"] = manifestSyncResult?.SourceCount
         };
 
         await WriteResponseAsync(output, id, BuildToolResult("Nebula RAG schema initialized.", structuredResult), jsonOptions, framing);
@@ -1229,6 +1239,7 @@ static async Task HandleRagDeleteSourceToolAsync(
     JsonNode? id,
     JsonObject? arguments,
     RagManagementService managementService,
+    RagSourcesManifestService sourcesManifestService,
     JsonSerializerOptions jsonOptions,
     McpMessageFraming framing,
     CancellationToken cancellationToken)
@@ -1251,10 +1262,13 @@ static async Task HandleRagDeleteSourceToolAsync(
     try
     {
         var deletedCount = await managementService.DeleteSourceAsync(sourcePath, cancellationToken);
+        var manifestSyncResult = await TrySyncRagSourcesManifestAsync(sourcesManifestService, sourcePath, cancellationToken);
         var structuredResult = new JsonObject
         {
             ["sourcePath"] = sourcePath,
-            ["deletedCount"] = deletedCount
+            ["deletedCount"] = deletedCount,
+            ["sourcesManifestPath"] = manifestSyncResult?.ManifestPath,
+            ["sourcesManifestSourceCount"] = manifestSyncResult?.SourceCount
         };
 
         await WriteResponseAsync(output, id, BuildToolResult($"Deleted {deletedCount} document rows for source '{sourcePath}'.", structuredResult), jsonOptions, framing);
@@ -1276,6 +1290,7 @@ static async Task HandleRagUpsertSourceToolAsync(
     PostgresRagStore store,
     TextChunker chunker,
     IEmbeddingGenerator embeddingGenerator,
+    RagSourcesManifestService sourcesManifestService,
     RagSettings settings,
     JsonSerializerOptions jsonOptions,
     McpMessageFraming framing,
@@ -1315,13 +1330,16 @@ static async Task HandleRagUpsertSourceToolAsync(
 
         var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(content)));
         var updated = await store.UpsertDocumentAsync(sourcePath, hash, chunkEmbeddings, cancellationToken);
+        var manifestSyncResult = await TrySyncRagSourcesManifestAsync(sourcesManifestService, sourcePath, cancellationToken);
 
         var structuredResult = new JsonObject
         {
             ["sourcePath"] = sourcePath,
             ["updated"] = updated,
             ["chunkCount"] = chunkEmbeddings.Count,
-            ["contentHash"] = hash
+            ["contentHash"] = hash,
+            ["sourcesManifestPath"] = manifestSyncResult?.ManifestPath,
+            ["sourcesManifestSourceCount"] = manifestSyncResult?.SourceCount
         };
 
         var text = updated
@@ -1345,6 +1363,7 @@ static async Task HandleRagIndexPathToolAsync(
     JsonNode? id,
     JsonObject? arguments,
     RagIndexer indexer,
+    RagSourcesManifestService sourcesManifestService,
     IReadOnlyList<SourcePathMapping> sourcePathMappings,
     JsonSerializerOptions jsonOptions,
     McpMessageFraming framing,
@@ -1370,13 +1389,16 @@ static async Task HandleRagIndexPathToolAsync(
         }
 
         var summary = await indexer.IndexDirectoryAsync(resolvedSourcePath, cancellationToken);
+        var manifestSyncResult = await TrySyncRagSourcesManifestAsync(sourcesManifestService, resolvedSourcePath, cancellationToken);
         var structuredResult = new JsonObject
         {
             ["sourcePath"] = sourcePath,
             ["resolvedSourcePath"] = resolvedSourcePath,
             ["documentsIndexed"] = summary.DocumentsIndexed,
             ["documentsSkipped"] = summary.DocumentsSkipped,
-            ["chunksIndexed"] = summary.ChunksIndexed
+            ["chunksIndexed"] = summary.ChunksIndexed,
+            ["sourcesManifestPath"] = manifestSyncResult?.ManifestPath,
+            ["sourcesManifestSourceCount"] = manifestSyncResult?.SourceCount
         };
 
         var text =
@@ -1398,6 +1420,7 @@ static async Task HandleRagPurgeAllToolAsync(
     JsonNode? id,
     JsonObject? arguments,
     RagManagementService managementService,
+    RagSourcesManifestService sourcesManifestService,
     JsonSerializerOptions jsonOptions,
     McpMessageFraming framing,
     CancellationToken cancellationToken)
@@ -1413,7 +1436,14 @@ static async Task HandleRagPurgeAllToolAsync(
     try
     {
         await managementService.PurgeAllAsync(cancellationToken);
-        await WriteResponseAsync(output, id, BuildToolResult("Nebula RAG index purge complete."), jsonOptions, framing);
+        var manifestSyncResult = await TrySyncRagSourcesManifestAsync(sourcesManifestService, null, cancellationToken);
+        var structuredResult = new JsonObject
+        {
+            ["sourcesManifestPath"] = manifestSyncResult?.ManifestPath,
+            ["sourcesManifestSourceCount"] = manifestSyncResult?.SourceCount
+        };
+
+        await WriteResponseAsync(output, id, BuildToolResult("Nebula RAG index purge complete.", structuredResult), jsonOptions, framing);
     }
     catch (OperationCanceledException)
     {
@@ -1501,6 +1531,29 @@ static JsonObject BuildToolResult(string text, JsonObject? structuredContent = n
     }
 
     return result;
+}
+
+/// <summary>
+/// Synchronizes rag-sources markdown without failing a successful tool operation.
+/// </summary>
+/// <param name="sourcesManifestService">Service that writes rag-sources markdown.</param>
+/// <param name="contextPath">Optional source path to help determine output location.</param>
+/// <param name="cancellationToken">Cancellation token.</param>
+/// <returns>Sync result when successful; otherwise <c>null</c>.</returns>
+static async Task<RagSourcesManifestSyncResult?> TrySyncRagSourcesManifestAsync(
+    RagSourcesManifestService sourcesManifestService,
+    string? contextPath,
+    CancellationToken cancellationToken)
+{
+    try
+    {
+        return await sourcesManifestService.SyncAsync(contextPath, cancellationToken);
+    }
+    catch (Exception ex)
+    {
+        Log.Warning(ex, "Failed to synchronize rag-sources.md after a successful MCP operation.");
+        return null;
+    }
 }
 
 static string FormatResults(IReadOnlyList<NebulaRAG.Core.Models.RagSearchResult> results)

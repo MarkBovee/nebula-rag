@@ -62,6 +62,16 @@ public sealed class PostgresRagStore
                 UNIQUE(document_id, chunk_index)
             );
 
+            CREATE TABLE IF NOT EXISTS memories (
+                id BIGSERIAL PRIMARY KEY,
+                session_id TEXT NOT NULL,
+                type TEXT NOT NULL CHECK (type IN ('episodic', 'semantic', 'procedural')),
+                content TEXT NOT NULL,
+                embedding VECTOR({vectorDimensions}) NOT NULL,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                tags TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[]
+            );
+
             CREATE INDEX IF NOT EXISTS ix_rag_chunks_document_id ON rag_chunks(document_id);
             CREATE INDEX IF NOT EXISTS ix_rag_chunks_embedding_ivfflat
                 ON rag_chunks
@@ -70,6 +80,14 @@ public sealed class PostgresRagStore
             CREATE INDEX IF NOT EXISTS ix_rag_chunks_text_search
                 ON rag_chunks
                 USING gin (to_tsvector('english', chunk_text));
+
+            CREATE INDEX IF NOT EXISTS ix_memories_created_at ON memories (created_at DESC);
+            CREATE INDEX IF NOT EXISTS ix_memories_type ON memories (type);
+            CREATE INDEX IF NOT EXISTS ix_memories_tags_gin ON memories USING GIN (tags);
+            CREATE INDEX IF NOT EXISTS ix_memories_embedding_ivfflat
+                ON memories
+                USING ivfflat (embedding vector_cosine_ops)
+                WITH (lists = 100);
             """;
 
         // Open connection and execute schema creation, including pgvector extension
@@ -328,7 +346,11 @@ public sealed class PostgresRagStore
                 COUNT(c.id) as chunk_count,
                 COALESCE(SUM(c.token_count), 0) as total_tokens,
                 MIN(d.indexed_at) as oldest,
-                MAX(d.indexed_at) as newest
+                MAX(d.indexed_at) as newest,
+                COALESCE(
+                    (SELECT pg_total_relation_size('rag_documents') + pg_total_relation_size('rag_chunks')),
+                    0
+                ) as index_size_bytes
             FROM rag_documents d
             LEFT JOIN rag_chunks c ON d.id = c.document_id";
 
@@ -344,10 +366,11 @@ public sealed class PostgresRagStore
                 ChunkCount: reader.GetInt32(1),
                 TotalTokens: reader.GetInt64(2),
                 OldestIndexedAt: reader.IsDBNull(3) ? null : reader.GetDateTime(3),
-                NewestIndexedAt: reader.IsDBNull(4) ? null : reader.GetDateTime(4));
+                NewestIndexedAt: reader.IsDBNull(4) ? null : reader.GetDateTime(4),
+                IndexSizeBytes: reader.GetInt64(5));
         }
 
-        return new IndexStats(0, 0, 0, null, null);
+        return new IndexStats(0, 0, 0, null, null, 0);
     }
 
     /// <summary>
