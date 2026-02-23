@@ -6,8 +6,8 @@
       "args": [
         "run",
         "--rm",
-        "--pull=never",
         "-i",
+        "--pull=never",
         "--memory=2g",
         "--cpus=1.0",
         "--env-file",
@@ -24,8 +24,8 @@
       "args": [
         "run",
         "--rm",
-        "--pull=never",
         "-i",
+        "--pull=never",
         "--memory=2g",
         "--cpus=1.0",
         "--env-file",

@@ -12,3 +12,8 @@ For implementation tasks:
 - Query RAG before proposing code changes.
 - Re-query after edits when validating impacted behavior.
 - Keep changes minimal and scoped to the request.
+
+Agent setup baseline:
+
+- Keep `.github/copilot-instructions.md`, `.github/instructions/rag.instructions.md`, and `.github/skills/nebularag/SKILL.md` in target projects.
+- Prompt files are optional convenience helpers and are not required for RAG-first behavior.

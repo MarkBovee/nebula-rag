@@ -65,8 +65,10 @@ Nebula RAG includes an MCP server in `src\NebulaRAG.Mcp` that exposes tool:
 - `rag_index_stats`
 - `rag_recent_sources`
 - `rag_list_sources`
+- `rag_index_path` (indexes a server-visible directory path)
+- `rag_upsert_source` (indexes provided `sourcePath` + `content` text directly)
 - `rag_delete_source` (requires `sourcePath` + `confirm=true`)
-- `rag_purge_all` (requires `confirmPhrase="PURGE ALL"` and `managementToken`)
+- `rag_purge_all` (requires `confirmPhrase="PURGE ALL"`)
 
 Run it directly:
 
@@ -121,13 +123,6 @@ npx -y @modelcontextprotocol/inspector --cli podman run --rm -i --pull=never --e
 npx -y @modelcontextprotocol/inspector --cli podman run --rm -i --pull=never --env-file .env localhost/nebula-rag-mcp:latest --skip-self-test --method tools/call --tool-name rag_server_info
 ```
 
-Run scripted smoke tests:
-
-```powershell
-pwsh -File .\scripts\test-mcp-server.ps1
-pwsh -File .\scripts\test-mcp.ps1
-```
-
 `.env` should contain runtime variables like:
 
 ```dotenv
@@ -135,7 +130,6 @@ NEBULARAG_Database__Host=192.168.1.135
 NEBULARAG_Database__Database=brewmind
 NEBULARAG_Database__Username=postgres
 NEBULARAG_Database__Password=<password>
-NEBULARAG_MANAGEMENT_TOKEN=<token>
 ```
 
 Optional environment overrides for container/runtime config:
@@ -147,7 +141,6 @@ Optional environment overrides for container/runtime config:
 - `NEBULARAG_Database__Password`
 - `NEBULARAG_Database__SslMode`
 - `NEBULARAG_CONFIG`
-- `NEBULARAG_MANAGEMENT_TOKEN` (required for `rag_delete_source` and `rag_purge_all`)
 
 ### VS Code Copilot MCP config
 
@@ -158,6 +151,36 @@ Optional environment overrides for container/runtime config:
 Use `copilot.mcp.json` as your MCP server config when starting/configuring Copilot CLI.
 
 ## Use In Any Project
+
+Single setup script (global + project):
+
+```powershell
+pwsh -File .\scripts\setup-nebula-rag.ps1 -Mode Both -TargetPath C:\path\to\your-project -Channel Auto -CreateEnvTemplate
+```
+
+Common options:
+
+```powershell
+pwsh -File .\scripts\setup-nebula-rag.ps1 -Mode User -Channel Both -Force
+pwsh -File .\scripts\setup-nebula-rag.ps1 -Mode Project -TargetPath C:\path\to\your-project
+pwsh -File .\scripts\setup-nebula-rag.ps1 -Mode User -UserConfigPath C:\Users\you\AppData\Roaming\Code\User\mcp.json -EnvFilePath C:\Users\you\.nebula-rag\.env
+```
+
+What it does:
+
+- Merges (or creates) user `mcp.json` server entries under both `mcpServers` and `servers`.
+- Adds/updates a `nebula-rag` stdio server definition using Podman.
+- Backs up existing config to `mcp.json.bak` before writing.
+- Creates/updates project files:
+
+- `.vscode/mcp.json`
+- `copilot.mcp.json`
+- `.github/copilot-instructions.md`
+- `.github/instructions/rag.instructions.md`
+- `.github/skills/nebularag/SKILL.md` (unless `-SkipSkill`)
+- `.env.example` (if available)
+- `.gitignore` entry for `.env`
+- Optionally writes an env template at `-EnvFilePath` when `-CreateEnvTemplate` is used.
 
 1. Build the image once (or publish it to your own registry):
 
@@ -198,19 +221,9 @@ This repository now includes:
 
 - `.github\copilot-instructions.md`
 - `.github\instructions\rag.instructions.md`
-- `.github\prompts\rag-first.prompt.md`
-- `.github\prompts\rag-setup.prompt.md`
-- `.github\prompts\rag-init.prompt.md`
-- `.github\prompts\rag-index.prompt.md`
 - `.github\skills\nebularag\SKILL.md`
 
 These files instruct Copilot agents to call `query_project_rag` first for project-context tasks.
-
-### Slash prompts you can run
-
-- `/rag-setup` -> validates config, runs init, runs index, runs smoke query
-- `/rag-init` -> runs DB schema init
-- `/rag-index` -> runs indexing and query verification
 
 ## Workflow for continuous indexing
 

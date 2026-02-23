@@ -1,4 +1,5 @@
 ﻿using System.Diagnostics;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -6,6 +7,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Serilog;
 using Serilog.Formatting.Compact;
+using NebulaRAG.Core.Chunking;
 using NebulaRAG.Core.Configuration;
 using NebulaRAG.Core.Embeddings;
 using NebulaRAG.Core.Models;
@@ -18,9 +20,10 @@ const string RagServerInfoToolName = "rag_server_info";
 const string RagIndexStatsToolName = "rag_index_stats";
 const string RagRecentSourcesToolName = "rag_recent_sources";
 const string RagListSourcesToolName = "rag_list_sources";
+const string RagIndexPathToolName = "rag_index_path";
+const string RagUpsertSourceToolName = "rag_upsert_source";
 const string RagDeleteSourceToolName = "rag_delete_source";
 const string RagPurgeAllToolName = "rag_purge_all";
-const string ManagementTokenEnvName = "NEBULARAG_MANAGEMENT_TOKEN";
 const int DefaultToolTimeoutMs = 30000;
 const int QueryToolTimeoutMs = 30000;
 const int HealthToolTimeoutMs = 10000;
@@ -28,6 +31,8 @@ const int ServerInfoToolTimeoutMs = 5000;
 const int IndexStatsToolTimeoutMs = 10000;
 const int RecentSourcesToolTimeoutMs = 10000;
 const int ListSourcesToolTimeoutMs = 10000;
+const int IndexPathToolTimeoutMs = 120000;
+const int UpsertSourceToolTimeoutMs = 60000;
 const int DeleteSourceToolTimeoutMs = 10000;
 const int PurgeAllToolTimeoutMs = 20000;
 
@@ -46,6 +51,7 @@ var runSelfTests = !HasFlag(args, "--skip-self-test");
 var selfTestOnly = HasFlag(args, "--self-test-only");
 var store = new PostgresRagStore(settings.Database.BuildConnectionString());
 var embeddingGenerator = new HashEmbeddingGenerator();
+var chunker = new TextChunker();
 
 var loggerFactory = LoggerFactory.Create(builder =>
 {
@@ -56,7 +62,8 @@ var queryLogger = loggerFactory.CreateLogger<RagQueryService>();
 var queryService = new RagQueryService(store, embeddingGenerator, settings, queryLogger);
 var managementLogger = loggerFactory.CreateLogger<RagManagementService>();
 var managementService = new RagManagementService(store, managementLogger);
-var managementToken = Environment.GetEnvironmentVariable(ManagementTokenEnvName);
+var indexerLogger = loggerFactory.CreateLogger<RagIndexer>();
+var indexer = new RagIndexer(store, chunker, embeddingGenerator, settings, indexerLogger);
 
 if (runSelfTests)
 {
@@ -68,7 +75,7 @@ if (selfTestOnly)
     return;
 }
 
-await RunServerAsync(queryService, managementService, store, settings, supportedProtocolVersions, managementToken);
+await RunServerAsync(queryService, managementService, store, chunker, embeddingGenerator, indexer, settings, supportedProtocolVersions);
 return;
 
 /// <summary>
@@ -172,6 +179,8 @@ static void ValidateToolCatalog()
         !toolNames.Contains(RagIndexStatsToolName) ||
         !toolNames.Contains(RagRecentSourcesToolName) ||
         !toolNames.Contains(RagListSourcesToolName) ||
+        !toolNames.Contains(RagIndexPathToolName) ||
+        !toolNames.Contains(RagUpsertSourceToolName) ||
         !toolNames.Contains(RagDeleteSourceToolName) ||
         !toolNames.Contains(RagPurgeAllToolName))
     {
@@ -183,9 +192,11 @@ static async Task RunServerAsync(
     RagQueryService queryService,
     RagManagementService managementService,
     PostgresRagStore store,
+    TextChunker chunker,
+    IEmbeddingGenerator embeddingGenerator,
+    RagIndexer indexer,
     RagSettings settings,
-    IReadOnlyList<string> supportedProtocolVersions,
-    string? managementToken)
+    IReadOnlyList<string> supportedProtocolVersions)
 {
     using var input = Console.OpenStandardInput();
     using var output = Console.OpenStandardOutput();
@@ -275,7 +286,7 @@ static async Task RunServerAsync(
                 break;
 
             case "tools/call":
-                await HandleToolsCallAsync(output, id, request["params"]?.AsObject(), queryService, managementService, store, settings, jsonOptions, messageFraming, managementToken);
+                await HandleToolsCallAsync(output, id, request["params"]?.AsObject(), queryService, managementService, store, chunker, embeddingGenerator, indexer, settings, jsonOptions, messageFraming);
                 break;
 
             default:
@@ -297,6 +308,8 @@ static JsonObject BuildToolsList()
             BuildRagIndexStatsToolDefinition(),
             BuildRagRecentSourcesToolDefinition(),
             BuildRagListSourcesToolDefinition(),
+            BuildRagIndexPathToolDefinition(),
+            BuildRagUpsertSourceToolDefinition(),
             BuildRagDeleteSourceToolDefinition(),
             BuildRagPurgeAllToolDefinition()
         }
@@ -563,6 +576,81 @@ static JsonObject BuildRagListSourcesToolDefinition()
     };
 }
 
+static JsonObject BuildRagUpsertSourceToolDefinition()
+{
+    return new JsonObject
+    {
+        ["name"] = RagUpsertSourceToolName,
+        ["title"] = "RAG Upsert Source",
+        ["description"] = "Index or update source content directly in Nebula RAG storage.",
+        ["inputSchema"] = new JsonObject
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                ["sourcePath"] = new JsonObject
+                {
+                    ["type"] = "string",
+                    ["description"] = "Logical source path key for this content (for example docs/guide.md)."
+                },
+                ["content"] = new JsonObject
+                {
+                    ["type"] = "string",
+                    ["description"] = "Full text content to chunk, embed, and index."
+                }
+            },
+            ["required"] = new JsonArray("sourcePath", "content")
+        },
+        ["outputSchema"] = new JsonObject
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                ["sourcePath"] = new JsonObject { ["type"] = "string" },
+                ["updated"] = new JsonObject { ["type"] = "boolean" },
+                ["chunkCount"] = new JsonObject { ["type"] = "integer" },
+                ["contentHash"] = new JsonObject { ["type"] = "string" }
+            },
+            ["required"] = new JsonArray("sourcePath", "updated", "chunkCount", "contentHash")
+        }
+    };
+}
+
+static JsonObject BuildRagIndexPathToolDefinition()
+{
+    return new JsonObject
+    {
+        ["name"] = RagIndexPathToolName,
+        ["title"] = "RAG Index Path",
+        ["description"] = "Recursively index files from a server-accessible directory path.",
+        ["inputSchema"] = new JsonObject
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                ["sourcePath"] = new JsonObject
+                {
+                    ["type"] = "string",
+                    ["description"] = "Absolute or relative directory path visible to the MCP server process."
+                }
+            },
+            ["required"] = new JsonArray("sourcePath")
+        },
+        ["outputSchema"] = new JsonObject
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                ["sourcePath"] = new JsonObject { ["type"] = "string" },
+                ["documentsIndexed"] = new JsonObject { ["type"] = "integer" },
+                ["documentsSkipped"] = new JsonObject { ["type"] = "integer" },
+                ["chunksIndexed"] = new JsonObject { ["type"] = "integer" }
+            },
+            ["required"] = new JsonArray("sourcePath", "documentsIndexed", "documentsSkipped", "chunksIndexed")
+        }
+    };
+}
+
 static JsonObject BuildRagDeleteSourceToolDefinition()
 {
     return new JsonObject
@@ -585,14 +673,9 @@ static JsonObject BuildRagDeleteSourceToolDefinition()
                     ["type"] = "boolean",
                     ["description"] = "Must be true to execute deletion.",
                     ["default"] = false
-                },
-                ["managementToken"] = new JsonObject
-                {
-                    ["type"] = "string",
-                    ["description"] = "Must match NEBULARAG_MANAGEMENT_TOKEN for destructive operations."
                 }
             },
-            ["required"] = new JsonArray("sourcePath", "confirm", "managementToken")
+            ["required"] = new JsonArray("sourcePath", "confirm")
         }
     };
 }
@@ -603,7 +686,7 @@ static JsonObject BuildRagPurgeAllToolDefinition()
     {
         ["name"] = RagPurgeAllToolName,
         ["title"] = "RAG Purge All",
-        ["description"] = "Permanently delete all indexed RAG documents and chunks. Requires explicit confirmation and management token.",
+        ["description"] = "Permanently delete all indexed RAG documents and chunks. Requires explicit confirmation phrase.",
         ["inputSchema"] = new JsonObject
         {
             ["type"] = "object",
@@ -613,14 +696,9 @@ static JsonObject BuildRagPurgeAllToolDefinition()
                 {
                     ["type"] = "string",
                     ["description"] = "Must be exactly 'PURGE ALL'."
-                },
-                ["managementToken"] = new JsonObject
-                {
-                    ["type"] = "string",
-                    ["description"] = "Must match NEBULARAG_MANAGEMENT_TOKEN for destructive operations."
                 }
             },
-            ["required"] = new JsonArray("confirmPhrase", "managementToken")
+            ["required"] = new JsonArray("confirmPhrase")
         }
     };
 }
@@ -632,10 +710,12 @@ static async Task HandleToolsCallAsync(
     RagQueryService queryService,
     RagManagementService managementService,
     PostgresRagStore store,
+    TextChunker chunker,
+    IEmbeddingGenerator embeddingGenerator,
+    RagIndexer indexer,
     RagSettings settings,
     JsonSerializerOptions jsonOptions,
-    McpMessageFraming framing,
-    string? managementToken)
+    McpMessageFraming framing)
 {
     var toolName = parameters?["name"]?.GetValue<string>();
     var arguments = parameters?["arguments"]?.AsObject();
@@ -659,10 +739,12 @@ static async Task HandleToolsCallAsync(
             queryService,
             managementService,
             store,
+            chunker,
+            embeddingGenerator,
+            indexer,
             settings,
             jsonOptions,
             framing,
-            managementToken,
             timeoutCts.Token);
     }
     catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested)
@@ -690,10 +772,12 @@ static async Task DispatchToolCallAsync(
     RagQueryService queryService,
     RagManagementService managementService,
     PostgresRagStore store,
+    TextChunker chunker,
+    IEmbeddingGenerator embeddingGenerator,
+    RagIndexer indexer,
     RagSettings settings,
     JsonSerializerOptions jsonOptions,
     McpMessageFraming framing,
-    string? managementToken,
     CancellationToken cancellationToken)
 {
     if (string.Equals(toolName, QueryProjectRagToolName, StringComparison.Ordinal))
@@ -732,15 +816,27 @@ static async Task DispatchToolCallAsync(
         return;
     }
 
+    if (string.Equals(toolName, RagIndexPathToolName, StringComparison.Ordinal))
+    {
+        await HandleRagIndexPathToolAsync(output, id, arguments, indexer, jsonOptions, framing, cancellationToken);
+        return;
+    }
+
+    if (string.Equals(toolName, RagUpsertSourceToolName, StringComparison.Ordinal))
+    {
+        await HandleRagUpsertSourceToolAsync(output, id, arguments, store, chunker, embeddingGenerator, settings, jsonOptions, framing, cancellationToken);
+        return;
+    }
+
     if (string.Equals(toolName, RagDeleteSourceToolName, StringComparison.Ordinal))
     {
-        await HandleRagDeleteSourceToolAsync(output, id, arguments, managementService, jsonOptions, framing, managementToken, cancellationToken);
+        await HandleRagDeleteSourceToolAsync(output, id, arguments, managementService, jsonOptions, framing, cancellationToken);
         return;
     }
 
     if (string.Equals(toolName, RagPurgeAllToolName, StringComparison.Ordinal))
     {
-        await HandleRagPurgeAllToolAsync(output, id, arguments, managementService, jsonOptions, framing, managementToken, cancellationToken);
+        await HandleRagPurgeAllToolAsync(output, id, arguments, managementService, jsonOptions, framing, cancellationToken);
         return;
     }
 
@@ -777,6 +873,16 @@ static int ResolveToolTimeoutMs(string toolName)
     if (string.Equals(toolName, RagListSourcesToolName, StringComparison.Ordinal))
     {
         return ListSourcesToolTimeoutMs;
+    }
+
+    if (string.Equals(toolName, RagIndexPathToolName, StringComparison.Ordinal))
+    {
+        return IndexPathToolTimeoutMs;
+    }
+
+    if (string.Equals(toolName, RagUpsertSourceToolName, StringComparison.Ordinal))
+    {
+        return UpsertSourceToolTimeoutMs;
     }
 
     if (string.Equals(toolName, RagDeleteSourceToolName, StringComparison.Ordinal))
@@ -1038,12 +1144,10 @@ static async Task HandleRagDeleteSourceToolAsync(
     RagManagementService managementService,
     JsonSerializerOptions jsonOptions,
     McpMessageFraming framing,
-    string? configuredManagementToken,
     CancellationToken cancellationToken)
 {
     var sourcePath = arguments?["sourcePath"]?.GetValue<string>();
     var confirm = arguments?["confirm"]?.GetValue<bool>() == true;
-    var providedToken = arguments?["managementToken"]?.GetValue<string>();
 
     if (string.IsNullOrWhiteSpace(sourcePath))
     {
@@ -1054,18 +1158,6 @@ static async Task HandleRagDeleteSourceToolAsync(
     if (!confirm)
     {
         await WriteErrorResponseAsync(output, id, -32602, "Deletion requires confirm=true.", framing);
-        return;
-    }
-
-    if (string.IsNullOrWhiteSpace(configuredManagementToken))
-    {
-        await WriteResponseAsync(output, id, BuildToolResult($"Server management token is not configured. Set {ManagementTokenEnvName} to enable delete operations.", isError: true), jsonOptions, framing);
-        return;
-    }
-
-    if (!string.Equals(configuredManagementToken, providedToken, StringComparison.Ordinal))
-    {
-        await WriteErrorResponseAsync(output, id, -32602, "Invalid management token.", framing);
         return;
     }
 
@@ -1090,6 +1182,119 @@ static async Task HandleRagDeleteSourceToolAsync(
     }
 }
 
+static async Task HandleRagUpsertSourceToolAsync(
+    Stream output,
+    JsonNode? id,
+    JsonObject? arguments,
+    PostgresRagStore store,
+    TextChunker chunker,
+    IEmbeddingGenerator embeddingGenerator,
+    RagSettings settings,
+    JsonSerializerOptions jsonOptions,
+    McpMessageFraming framing,
+    CancellationToken cancellationToken)
+{
+    var sourcePath = arguments?["sourcePath"]?.GetValue<string>();
+    var content = arguments?["content"]?.GetValue<string>();
+
+    if (string.IsNullOrWhiteSpace(sourcePath))
+    {
+        await WriteErrorResponseAsync(output, id, -32602, "Missing required argument: sourcePath", framing);
+        return;
+    }
+
+    if (string.IsNullOrWhiteSpace(content))
+    {
+        await WriteErrorResponseAsync(output, id, -32602, "Missing required argument: content", framing);
+        return;
+    }
+
+    try
+    {
+        var chunks = chunker.Chunk(content, settings.Ingestion.ChunkSize, settings.Ingestion.ChunkOverlap);
+        if (chunks.Count == 0)
+        {
+            await WriteResponseAsync(output, id, BuildToolResult("No indexable chunks were produced from the provided content.", isError: true), jsonOptions, framing);
+            return;
+        }
+
+        var chunkEmbeddings = chunks
+            .Select(chunk => new ChunkEmbedding(
+                chunk.Index,
+                chunk.Text,
+                chunk.TokenCount,
+                embeddingGenerator.GenerateEmbedding(chunk.Text, settings.Ingestion.VectorDimensions)))
+            .ToList();
+
+        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(content)));
+        var updated = await store.UpsertDocumentAsync(sourcePath, hash, chunkEmbeddings, cancellationToken);
+
+        var structuredResult = new JsonObject
+        {
+            ["sourcePath"] = sourcePath,
+            ["updated"] = updated,
+            ["chunkCount"] = chunkEmbeddings.Count,
+            ["contentHash"] = hash
+        };
+
+        var text = updated
+            ? $"Indexed source '{sourcePath}' with {chunkEmbeddings.Count} chunks."
+            : $"Source '{sourcePath}' is unchanged and was not re-indexed.";
+
+        await WriteResponseAsync(output, id, BuildToolResult(text, structuredResult), jsonOptions, framing);
+    }
+    catch (OperationCanceledException)
+    {
+        throw;
+    }
+    catch (Exception ex)
+    {
+        await WriteResponseAsync(output, id, BuildToolResult($"Failed to upsert source: {ex.Message}", isError: true), jsonOptions, framing);
+    }
+}
+
+static async Task HandleRagIndexPathToolAsync(
+    Stream output,
+    JsonNode? id,
+    JsonObject? arguments,
+    RagIndexer indexer,
+    JsonSerializerOptions jsonOptions,
+    McpMessageFraming framing,
+    CancellationToken cancellationToken)
+{
+    var sourcePath = arguments?["sourcePath"]?.GetValue<string>();
+
+    if (string.IsNullOrWhiteSpace(sourcePath))
+    {
+        await WriteErrorResponseAsync(output, id, -32602, "Missing required argument: sourcePath", framing);
+        return;
+    }
+
+    try
+    {
+        var summary = await indexer.IndexDirectoryAsync(sourcePath, cancellationToken);
+        var structuredResult = new JsonObject
+        {
+            ["sourcePath"] = sourcePath,
+            ["documentsIndexed"] = summary.DocumentsIndexed,
+            ["documentsSkipped"] = summary.DocumentsSkipped,
+            ["chunksIndexed"] = summary.ChunksIndexed
+        };
+
+        var text =
+            $"Index complete for '{sourcePath}': {summary.DocumentsIndexed} documents indexed, {summary.ChunksIndexed} chunks, {summary.DocumentsSkipped} skipped.";
+        await WriteResponseAsync(output, id, BuildToolResult(text, structuredResult), jsonOptions, framing);
+    }
+    catch (OperationCanceledException)
+    {
+        throw;
+    }
+    catch (Exception ex)
+    {
+        await WriteResponseAsync(output, id, BuildToolResult($"Failed to index path: {ex.Message}", isError: true), jsonOptions, framing);
+    }
+}
+
 static async Task HandleRagPurgeAllToolAsync(
     Stream output,
     JsonNode? id,
@@ -1097,27 +1302,13 @@ static async Task HandleRagPurgeAllToolAsync(
     RagManagementService managementService,
     JsonSerializerOptions jsonOptions,
     McpMessageFraming framing,
-    string? configuredManagementToken,
     CancellationToken cancellationToken)
 {
     var confirmPhrase = arguments?["confirmPhrase"]?.GetValue<string>();
-    var providedToken = arguments?["managementToken"]?.GetValue<string>();
 
     if (!string.Equals(confirmPhrase, "PURGE ALL", StringComparison.Ordinal))
     {
         await WriteErrorResponseAsync(output, id, -32602, "Purge requires confirmPhrase='PURGE ALL'.", framing);
-        return;
-    }
-
-    if (string.IsNullOrWhiteSpace(configuredManagementToken))
-    {
-        await WriteResponseAsync(output, id, BuildToolResult($"Server management token is not configured. Set {ManagementTokenEnvName} to enable purge operations.", isError: true), jsonOptions, framing);
-        return;
-    }
-
-    if (!string.Equals(configuredManagementToken, providedToken, StringComparison.Ordinal))
-    {
-        await WriteErrorResponseAsync(output, id, -32602, "Invalid management token.", framing);
         return;
     }
 

@@ -10,7 +10,8 @@
         "--pull=never",
         "--memory=2g",
         "--cpus=1.0",
-        "--env-file", ".env",
+        "--env-file",
+        ".env",
         "localhost/nebula-rag-mcp:latest",
         "--skip-self-test"
       ]
@@ -27,7 +28,8 @@
         "--pull=never",
         "--memory=2g",
         "--cpus=1.0",
-        "--env-file", ".env",
+        "--env-file",
+        ".env",
         "localhost/nebula-rag-mcp:latest",
         "--skip-self-test"
       ]
