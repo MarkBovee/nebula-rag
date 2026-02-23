@@ -224,34 +224,6 @@ public sealed class PostgresRagStore
         return results;
     }
 
-    public async Task<RagIndexStats> GetIndexStatsAsync(CancellationToken cancellationToken = default)
-    {
-        const string sql = """
-            SELECT
-                (SELECT COUNT(*) FROM rag_documents) AS document_count,
-                (SELECT COUNT(*) FROM rag_chunks) AS chunk_count,
-                (SELECT MAX(indexed_at) FROM rag_documents) AS latest_indexed_at
-            """;
-
-        await using var connection = new NpgsqlConnection(_connectionString);
-        await connection.OpenAsync(cancellationToken);
-
-        await using var command = new NpgsqlCommand(sql, connection);
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        if (!await reader.ReadAsync(cancellationToken))
-        {
-            return new RagIndexStats(0, 0, null);
-        }
-
-        var documentCount = reader.GetInt64(0);
-        var chunkCount = reader.GetInt64(1);
-        var latestIndexedAtUtc = reader.IsDBNull(2)
-            ? (DateTimeOffset?)null
-            : reader.GetFieldValue<DateTimeOffset>(2);
-
-        return new RagIndexStats(documentCount, chunkCount, latestIndexedAtUtc);
-    }
-
     public async Task<IReadOnlyList<RagIndexedDocumentSummary>> GetRecentDocumentsAsync(
         int limit,
         CancellationToken cancellationToken = default)
@@ -289,6 +261,123 @@ public sealed class PostgresRagStore
         }
 
         return documents;
+    }
+
+    /// <summary>
+    /// Gets detailed index statistics with token count and date range.
+    /// </summary>
+    public async Task<IndexStats> GetIndexStatsAsync(CancellationToken cancellationToken = default)
+    {
+        const string sql = @"
+            SELECT 
+                COUNT(DISTINCT d.id) as doc_count,
+                COUNT(c.id) as chunk_count,
+                COALESCE(SUM(c.token_count), 0) as total_tokens,
+                MIN(d.indexed_at) as oldest,
+                MAX(d.indexed_at) as newest
+            FROM rag_documents d
+            LEFT JOIN rag_chunks c ON d.id = c.document_id";
+
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = new NpgsqlCommand(sql, connection);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (await reader.ReadAsync(cancellationToken))
+        {
+            return new IndexStats(
+                DocumentCount: reader.GetInt32(0),
+                ChunkCount: reader.GetInt32(1),
+                TotalTokens: reader.GetInt64(2),
+                OldestIndexedAt: reader.IsDBNull(3) ? null : reader.GetDateTime(3),
+                NewestIndexedAt: reader.IsDBNull(4) ? null : reader.GetDateTime(4));
+        }
+
+        return new IndexStats(0, 0, 0, null, null);
+    }
+
+    /// <summary>
+    /// Gets all indexed document sources with their chunk counts.
+    /// </summary>
+    public async Task<IReadOnlyList<SourceInfo>> ListSourcesAsync(CancellationToken cancellationToken = default)
+    {
+        const string sql = @"
+            SELECT d.source_path, COUNT(c.id) as chunk_count, d.indexed_at, d.content_hash
+            FROM rag_documents d
+            LEFT JOIN rag_chunks c ON d.id = c.document_id
+            GROUP BY d.id, d.source_path, d.indexed_at, d.content_hash
+            ORDER BY d.indexed_at DESC";
+
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+
+        var sources = new List<SourceInfo>();
+        await using var command = new NpgsqlCommand(sql, connection);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            sources.Add(new SourceInfo(
+                SourcePath: reader.GetString(0),
+                ChunkCount: reader.GetInt32(1),
+                IndexedAt: reader.GetDateTime(2),
+                ContentHash: reader.GetString(3)));
+        }
+
+        return sources.AsReadOnly();
+    }
+
+    /// <summary>
+    /// Deletes all chunks for a specific document source.
+    /// </summary>
+    /// <param name="sourcePath">The source path to delete.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Number of documents deleted.</returns>
+    public async Task<int> DeleteSourceAsync(string sourcePath, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(sourcePath))
+        {
+            throw new ArgumentException("Source path cannot be null or empty.", nameof(sourcePath));
+        }
+
+        const string sql = @"
+            DELETE FROM rag_documents
+            WHERE source_path = @sourcePath";
+
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("sourcePath", sourcePath);
+
+        return await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Purges all documents and chunks from the index.
+    /// </summary>
+    public async Task PurgeAllAsync(CancellationToken cancellationToken = default)
+    {
+        const string sql = @"
+            DELETE FROM rag_chunks;
+            DELETE FROM rag_documents;";
+
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = new NpgsqlCommand(sql, connection);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Performs a health check by testing database connectivity.
+    /// </summary>
+    public async Task HealthCheckAsync(CancellationToken cancellationToken = default)
+    {
+        const string sql = "SELECT 1";
+
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = new NpgsqlCommand(sql, connection);
+        await command.ExecuteScalarAsync(cancellationToken);
     }
 
     private static string ToVectorLiteral(IReadOnlyList<float> embedding)

@@ -3,8 +3,9 @@ $ContainerArgs = @($args)
 $ErrorActionPreference = "Stop"
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
-$imageName = "nebula-rag-mcp:latest"
+$imageName = "localhost/nebula-rag-mcp:latest"
 $forceRebuild = $env:NEBULARAG_REBUILD_IMAGE -eq "1"
+$envFilePath = Join-Path $repoRoot ".env"
 
 $engine = if (Get-Command podman -ErrorAction SilentlyContinue) {
     "podman"
@@ -29,12 +30,7 @@ $runArgs = @(
     "-i",
     "-a", "stdin",
     "-a", "stdout",
-    "-e", "NEBULARAG_Database__Host=192.168.1.135",
-    "-e", "NEBULARAG_Database__Port=5432",
-    "-e", "NEBULARAG_Database__Database=brewmind",
-    "-e", "NEBULARAG_Database__Username=postgres",
-    "-e", "NEBULARAG_Database__Password=ENRZpeMpfHPXfw8PN8mi",
-    "-e", "NEBULARAG_Database__SslMode=Prefer"
+    "--env-file", $envFilePath
 )
 
 Get-ChildItem Env: | Where-Object { $_.Name -like "NEBULARAG_*" } | ForEach-Object {

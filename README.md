@@ -21,6 +21,12 @@ Settings are in:
 
 Set your database password in `ragsettings.local.json`.
 
+For containerized MCP usage, prefer `.env` from `.env.example`:
+
+```powershell
+Copy-Item .env.example .env
+```
+
 ## CLI usage
 
 From project root:
@@ -58,6 +64,9 @@ Nebula RAG includes an MCP server in `src\NebulaRAG.Mcp` that exposes tool:
 - `rag_server_info`
 - `rag_index_stats`
 - `rag_recent_sources`
+- `rag_list_sources`
+- `rag_delete_source` (requires `sourcePath` + `confirm=true`)
+- `rag_purge_all` (requires `confirmPhrase="PURGE ALL"` and `managementToken`)
 
 Run it directly:
 
@@ -85,6 +94,12 @@ To run MCP via container stdio from this repo:
 pwsh -File .\scripts\start-nebula-rag-mcp-container.ps1
 ```
 
+Build the MCP image directly with the Dockerfile:
+
+```powershell
+podman build -t localhost/nebula-rag-mcp:latest -f Dockerfile .
+```
+
 Pass through MCP arguments to the containerized server:
 
 ```powershell
@@ -96,15 +111,31 @@ pwsh -File .\scripts\start-nebula-rag-mcp-container.ps1 --self-test-only
 Use the official MCP Inspector to test capabilities, `tools/list`, and `tools/call`:
 
 ```powershell
-npx @modelcontextprotocol/inspector --config .vscode/mcp.json --server "Nebula RAG"
+npx @modelcontextprotocol/inspector --config .vscode/mcp.json --server "nebula-rag"
 ```
 
 CLI-only smoke tests with Inspector:
 
 ```powershell
-npx @modelcontextprotocol/inspector --cli --config .vscode/mcp.json --server "Nebula RAG" --method tools/list
-npx @modelcontextprotocol/inspector --cli --config .vscode/mcp.json --server "Nebula RAG" --method tools/call --tool-name rag_health_check
-npx @modelcontextprotocol/inspector --cli --config .vscode/mcp.json --server "Nebula RAG" --method tools/call --tool-name query_project_rag --tool-arg text="Where is RagQueryService used?"
+npx -y @modelcontextprotocol/inspector --cli podman run --rm -i --pull=never --env-file .env localhost/nebula-rag-mcp:latest --skip-self-test --method tools/list
+npx -y @modelcontextprotocol/inspector --cli podman run --rm -i --pull=never --env-file .env localhost/nebula-rag-mcp:latest --skip-self-test --method tools/call --tool-name rag_server_info
+```
+
+Run scripted smoke tests:
+
+```powershell
+pwsh -File .\scripts\test-mcp-server.ps1
+pwsh -File .\scripts\test-mcp.ps1
+```
+
+`.env` should contain runtime variables like:
+
+```dotenv
+NEBULARAG_Database__Host=192.168.1.135
+NEBULARAG_Database__Database=brewmind
+NEBULARAG_Database__Username=postgres
+NEBULARAG_Database__Password=<password>
+NEBULARAG_MANAGEMENT_TOKEN=<token>
 ```
 
 Optional environment overrides for container/runtime config:
@@ -116,6 +147,7 @@ Optional environment overrides for container/runtime config:
 - `NEBULARAG_Database__Password`
 - `NEBULARAG_Database__SslMode`
 - `NEBULARAG_CONFIG`
+- `NEBULARAG_MANAGEMENT_TOKEN` (required for `rag_delete_source` and `rag_purge_all`)
 
 ### VS Code Copilot MCP config
 
@@ -124,6 +156,41 @@ Optional environment overrides for container/runtime config:
 ### Copilot CLI MCP config
 
 Use `copilot.mcp.json` as your MCP server config when starting/configuring Copilot CLI.
+
+## Use In Any Project
+
+1. Build the image once (or publish it to your own registry):
+
+```powershell
+podman build -t localhost/nebula-rag-mcp:latest -f Dockerfile .
+```
+
+2. In each target project, place a project-local `.env` (copy from `NebulaRAG/.env.example`).
+3. Add an MCP entry that uses that project-local `.env`:
+
+```json
+{
+  "mcpServers": {
+    "nebula-rag": {
+      "type": "stdio",
+      "command": "podman",
+      "args": [
+        "run",
+        "--rm",
+        "-i",
+        "--pull=never",
+        "--memory=2g",
+        "--cpus=1.0",
+        "--env-file", ".env",
+        "localhost/nebula-rag-mcp:latest",
+        "--skip-self-test"
+      ]
+    }
+  }
+}
+```
+
+This keeps credentials out of config files and lets every project control its own DB target.
 
 ## .github Copilot automation assets
 

@@ -5,9 +5,17 @@ on:
   schedule:
     - cron: "0 */6 * * *"
 
+permissions:
+  contents: read
+
+concurrency:
+  group: rag-reindex
+  cancel-in-progress: true
+
 jobs:
   reindex:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -38,7 +46,8 @@ jobs:
               "ChunkSize": 1200,
               "ChunkOverlap": 200,
               "MaxFileSizeBytes": 1000000,
-              "IncludeExtensions": [".md", ".txt", ".cs", ".json", ".ts", ".tsx", ".js", ".py"]
+              "IncludeExtensions": [".md", ".txt", ".cs", ".json", ".ts", ".tsx", ".js", ".py"],
+              "ExcludeDirectories": ["bin", "obj", ".git", "node_modules", ".next", "dist", "build"]
             },
             "Retrieval": {
               "DefaultTopK": 5

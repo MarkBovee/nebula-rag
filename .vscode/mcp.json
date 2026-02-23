@@ -1,40 +1,34 @@
 {
   "mcpServers": {
-    "Nebula RAG": {
+    "nebula-rag": {
       "type": "stdio",
-      "command": "pwsh",
-      "env": {
-        "NEBULARAG_Database__Host": "192.168.1.135",
-        "NEBULARAG_Database__Port": "5432",
-        "NEBULARAG_Database__Database": "brewmind",
-        "NEBULARAG_Database__Username": "postgres",
-        "NEBULARAG_Database__Password": "ENRZpeMpfHPXfw8PN8mi",
-        "NEBULARAG_Database__SslMode": "Prefer"
-      },
+      "command": "podman",
       "args": [
-        "-NoProfile",
-        "-File",
-        "${workspaceFolder}\\scripts\\start-nebula-rag-mcp-container.ps1",
+        "run",
+        "--rm",
+        "-i",
+        "--pull=never",
+        "--memory=2g",
+        "--cpus=1.0",
+        "--env-file", ".env",
+        "localhost/nebula-rag-mcp:latest",
         "--skip-self-test"
       ]
     }
   },
   "servers": {
-    "Nebula RAG": {
+    "nebula-rag": {
       "type": "stdio",
-      "command": "pwsh",
-      "env": {
-        "NEBULARAG_Database__Host": "192.168.1.135",
-        "NEBULARAG_Database__Port": "5432",
-        "NEBULARAG_Database__Database": "brewmind",
-        "NEBULARAG_Database__Username": "postgres",
-        "NEBULARAG_Database__Password": "ENRZpeMpfHPXfw8PN8mi",
-        "NEBULARAG_Database__SslMode": "Prefer"
-      },
+      "command": "podman",
       "args": [
-        "-NoProfile",
-        "-File",
-        "${workspaceFolder}\\scripts\\start-nebula-rag-mcp-container.ps1",
+        "run",
+        "--rm",
+        "-i",
+        "--pull=never",
+        "--memory=2g",
+        "--cpus=1.0",
+        "--env-file", ".env",
+        "localhost/nebula-rag-mcp:latest",
         "--skip-self-test"
       ]
     }

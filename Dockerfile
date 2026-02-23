@@ -18,7 +18,5 @@ RUN apt-get update \
 
 COPY --from=build /app/publish ./
 COPY container/ragsettings.container.json /app/ragsettings.json
-COPY container/entrypoint.sh /app/entrypoint.sh
-RUN chmod +x /app/entrypoint.sh
 
-ENTRYPOINT ["/app/entrypoint.sh"]
+ENTRYPOINT ["dotnet", "NebulaRAG.Mcp.dll"]

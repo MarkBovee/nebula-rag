@@ -3,6 +3,9 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
+using Serilog;
+using Serilog.Formatting.Compact;
 using NebulaRAG.Core.Configuration;
 using NebulaRAG.Core.Embeddings;
 using NebulaRAG.Core.Models;
@@ -14,6 +17,28 @@ const string RagHealthCheckToolName = "rag_health_check";
 const string RagServerInfoToolName = "rag_server_info";
 const string RagIndexStatsToolName = "rag_index_stats";
 const string RagRecentSourcesToolName = "rag_recent_sources";
+const string RagListSourcesToolName = "rag_list_sources";
+const string RagDeleteSourceToolName = "rag_delete_source";
+const string RagPurgeAllToolName = "rag_purge_all";
+const string ManagementTokenEnvName = "NEBULARAG_MANAGEMENT_TOKEN";
+const int DefaultToolTimeoutMs = 30000;
+const int QueryToolTimeoutMs = 30000;
+const int HealthToolTimeoutMs = 10000;
+const int ServerInfoToolTimeoutMs = 5000;
+const int IndexStatsToolTimeoutMs = 10000;
+const int RecentSourcesToolTimeoutMs = 10000;
+const int ListSourcesToolTimeoutMs = 10000;
+const int DeleteSourceToolTimeoutMs = 10000;
+const int PurgeAllToolTimeoutMs = 20000;
+
+var supportedProtocolVersions = new[] { "2025-11-25", "2025-03-26", "2024-11-05" };
+
+// Setup Serilog for MCP server
+Log.Logger = new LoggerConfiguration()
+    .MinimumLevel.Information()
+    // MCP stdio servers must avoid stdout logging because it corrupts protocol frames.
+    .WriteTo.Console(new CompactJsonFormatter(), standardErrorFromLevel: Serilog.Events.LogEventLevel.Verbose)
+    .CreateLogger();
 
 var configPath = GetConfigPath(args);
 var settings = LoadSettings(configPath);
@@ -21,7 +46,17 @@ var runSelfTests = !HasFlag(args, "--skip-self-test");
 var selfTestOnly = HasFlag(args, "--self-test-only");
 var store = new PostgresRagStore(settings.Database.BuildConnectionString());
 var embeddingGenerator = new HashEmbeddingGenerator();
-var queryService = new RagQueryService(store, embeddingGenerator, settings);
+
+var loggerFactory = LoggerFactory.Create(builder =>
+{
+    builder.AddSerilog();
+    builder.SetMinimumLevel(LogLevel.Information);
+});
+var queryLogger = loggerFactory.CreateLogger<RagQueryService>();
+var queryService = new RagQueryService(store, embeddingGenerator, settings, queryLogger);
+var managementLogger = loggerFactory.CreateLogger<RagManagementService>();
+var managementService = new RagManagementService(store, managementLogger);
+var managementToken = Environment.GetEnvironmentVariable(ManagementTokenEnvName);
 
 if (runSelfTests)
 {
@@ -33,7 +68,7 @@ if (selfTestOnly)
     return;
 }
 
-await RunServerAsync(queryService, store, settings);
+await RunServerAsync(queryService, managementService, store, settings, supportedProtocolVersions, managementToken);
 return;
 
 /// <summary>
@@ -135,25 +170,37 @@ static void ValidateToolCatalog()
         !toolNames.Contains(RagHealthCheckToolName) ||
         !toolNames.Contains(RagServerInfoToolName) ||
         !toolNames.Contains(RagIndexStatsToolName) ||
-        !toolNames.Contains(RagRecentSourcesToolName))
+        !toolNames.Contains(RagRecentSourcesToolName) ||
+        !toolNames.Contains(RagListSourcesToolName) ||
+        !toolNames.Contains(RagDeleteSourceToolName) ||
+        !toolNames.Contains(RagPurgeAllToolName))
     {
         throw new InvalidOperationException("Required Nebula RAG MCP tools are not fully registered.");
     }
 }
 
-static async Task RunServerAsync(RagQueryService queryService, PostgresRagStore store, RagSettings settings)
+static async Task RunServerAsync(
+    RagQueryService queryService,
+    RagManagementService managementService,
+    PostgresRagStore store,
+    RagSettings settings,
+    IReadOnlyList<string> supportedProtocolVersions,
+    string? managementToken)
 {
     using var input = Console.OpenStandardInput();
     using var output = Console.OpenStandardOutput();
     var jsonOptions = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+    var messageFraming = McpMessageFraming.Unknown;
 
     while (true)
     {
-        var payload = await ReadMessageAsync(input);
+        var (payload, detectedFraming) = await ReadMessageAsync(input);
         if (payload is null)
         {
             return;
         }
+
+        messageFraming = detectedFraming;
 
         JsonObject request;
         try
@@ -163,7 +210,7 @@ static async Task RunServerAsync(RagQueryService queryService, PostgresRagStore 
         }
         catch
         {
-            await WriteErrorResponseAsync(output, null, -32700, "Parse error");
+            await WriteErrorResponseAsync(output, null, -32700, "Parse error", messageFraming);
             continue;
         }
 
@@ -171,7 +218,7 @@ static async Task RunServerAsync(RagQueryService queryService, PostgresRagStore 
         var id = request["id"]?.DeepClone();
         if (string.IsNullOrWhiteSpace(method))
         {
-            await WriteErrorResponseAsync(output, id, -32600, "Invalid request");
+            await WriteErrorResponseAsync(output, id, -32600, "Invalid request", messageFraming);
             continue;
         }
 
@@ -183,9 +230,27 @@ static async Task RunServerAsync(RagQueryService queryService, PostgresRagStore 
         switch (method)
         {
             case "initialize":
+                var requestedVersion = request["params"]?["protocolVersion"]?.GetValue<string>();
+                var negotiatedVersion = NegotiateProtocolVersion(requestedVersion, supportedProtocolVersions);
+                if (negotiatedVersion is null)
+                {
+                    await WriteErrorResponseAsync(
+                        output,
+                        id,
+                        -32602,
+                        "Unsupported protocol version",
+                        messageFraming,
+                        new JsonObject
+                        {
+                            ["requested"] = requestedVersion,
+                            ["supported"] = JsonSerializer.SerializeToNode(supportedProtocolVersions, jsonOptions)
+                        });
+                    break;
+                }
+
                 await WriteResponseAsync(output, id, new JsonObject
                 {
-                    ["protocolVersion"] = "2025-06-18",
+                    ["protocolVersion"] = negotiatedVersion,
                     ["serverInfo"] = new JsonObject
                     {
                         ["name"] = "Nebula RAG MCP",
@@ -198,23 +263,23 @@ static async Task RunServerAsync(RagQueryService queryService, PostgresRagStore 
                             ["listChanged"] = false
                         }
                     }
-                }, jsonOptions);
+                }, jsonOptions, messageFraming);
                 break;
 
             case "ping":
-                await WriteResponseAsync(output, id, new JsonObject(), jsonOptions);
+                await WriteResponseAsync(output, id, new JsonObject(), jsonOptions, messageFraming);
                 break;
 
             case "tools/list":
-                await WriteResponseAsync(output, id, BuildToolsList(), jsonOptions);
+                await WriteResponseAsync(output, id, BuildToolsList(), jsonOptions, messageFraming);
                 break;
 
             case "tools/call":
-                await HandleToolsCallAsync(output, id, request["params"]?.AsObject(), queryService, store, settings, jsonOptions);
+                await HandleToolsCallAsync(output, id, request["params"]?.AsObject(), queryService, managementService, store, settings, jsonOptions, messageFraming, managementToken);
                 break;
 
             default:
-                await WriteErrorResponseAsync(output, id, -32601, $"Method not found: {method}");
+                await WriteErrorResponseAsync(output, id, -32601, $"Method not found: {method}", messageFraming);
                 break;
         }
     }
@@ -230,7 +295,10 @@ static JsonObject BuildToolsList()
             BuildRagHealthCheckToolDefinition(),
             BuildRagServerInfoToolDefinition(),
             BuildRagIndexStatsToolDefinition(),
-            BuildRagRecentSourcesToolDefinition()
+            BuildRagRecentSourcesToolDefinition(),
+            BuildRagListSourcesToolDefinition(),
+            BuildRagDeleteSourceToolDefinition(),
+            BuildRagPurgeAllToolDefinition()
         }
     };
 }
@@ -446,49 +514,282 @@ static JsonObject BuildRagRecentSourcesToolDefinition()
     };
 }
 
+static JsonObject BuildRagListSourcesToolDefinition()
+{
+    return new JsonObject
+    {
+        ["name"] = RagListSourcesToolName,
+        ["title"] = "RAG List Sources",
+        ["description"] = "List all indexed source paths and metadata for index management.",
+        ["inputSchema"] = new JsonObject
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                ["limit"] = new JsonObject
+                {
+                    ["type"] = "integer",
+                    ["minimum"] = 1,
+                    ["maximum"] = 500,
+                    ["default"] = 100,
+                    ["description"] = "Maximum number of sources to return."
+                }
+            }
+        },
+        ["outputSchema"] = new JsonObject
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                ["count"] = new JsonObject { ["type"] = "integer" },
+                ["items"] = new JsonObject
+                {
+                    ["type"] = "array",
+                    ["items"] = new JsonObject
+                    {
+                        ["type"] = "object",
+                        ["properties"] = new JsonObject
+                        {
+                            ["sourcePath"] = new JsonObject { ["type"] = "string" },
+                            ["chunkCount"] = new JsonObject { ["type"] = "integer" },
+                            ["indexedAtUtc"] = new JsonObject { ["type"] = "string" }
+                        },
+                        ["required"] = new JsonArray("sourcePath", "chunkCount", "indexedAtUtc")
+                    }
+                }
+            },
+            ["required"] = new JsonArray("count", "items")
+        }
+    };
+}
+
+static JsonObject BuildRagDeleteSourceToolDefinition()
+{
+    return new JsonObject
+    {
+        ["name"] = RagDeleteSourceToolName,
+        ["title"] = "RAG Delete Source",
+        ["description"] = "Delete a specific indexed source path and all associated chunks.",
+        ["inputSchema"] = new JsonObject
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                ["sourcePath"] = new JsonObject
+                {
+                    ["type"] = "string",
+                    ["description"] = "Exact source path to delete from the index."
+                },
+                ["confirm"] = new JsonObject
+                {
+                    ["type"] = "boolean",
+                    ["description"] = "Must be true to execute deletion.",
+                    ["default"] = false
+                },
+                ["managementToken"] = new JsonObject
+                {
+                    ["type"] = "string",
+                    ["description"] = "Must match NEBULARAG_MANAGEMENT_TOKEN for destructive operations."
+                }
+            },
+            ["required"] = new JsonArray("sourcePath", "confirm", "managementToken")
+        }
+    };
+}
+
+static JsonObject BuildRagPurgeAllToolDefinition()
+{
+    return new JsonObject
+    {
+        ["name"] = RagPurgeAllToolName,
+        ["title"] = "RAG Purge All",
+        ["description"] = "Permanently delete all indexed RAG documents and chunks. Requires explicit confirmation and management token.",
+        ["inputSchema"] = new JsonObject
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                ["confirmPhrase"] = new JsonObject
+                {
+                    ["type"] = "string",
+                    ["description"] = "Must be exactly 'PURGE ALL'."
+                },
+                ["managementToken"] = new JsonObject
+                {
+                    ["type"] = "string",
+                    ["description"] = "Must match NEBULARAG_MANAGEMENT_TOKEN for destructive operations."
+                }
+            },
+            ["required"] = new JsonArray("confirmPhrase", "managementToken")
+        }
+    };
+}
+
 static async Task HandleToolsCallAsync(
     Stream output,
     JsonNode? id,
     JsonObject? parameters,
     RagQueryService queryService,
+    RagManagementService managementService,
     PostgresRagStore store,
     RagSettings settings,
-    JsonSerializerOptions jsonOptions)
+    JsonSerializerOptions jsonOptions,
+    McpMessageFraming framing,
+    string? managementToken)
 {
     var toolName = parameters?["name"]?.GetValue<string>();
     var arguments = parameters?["arguments"]?.AsObject();
 
+    if (string.IsNullOrWhiteSpace(toolName))
+    {
+        await WriteErrorResponseAsync(output, id, -32602, "Missing required parameter: name", framing);
+        return;
+    }
+
+    var timeoutMs = ResolveToolTimeoutMs(toolName);
+    using var timeoutCts = new CancellationTokenSource(TimeSpan.FromMilliseconds(timeoutMs));
+
+    try
+    {
+        await DispatchToolCallAsync(
+            output,
+            id,
+            toolName,
+            arguments,
+            queryService,
+            managementService,
+            store,
+            settings,
+            jsonOptions,
+            framing,
+            managementToken,
+            timeoutCts.Token);
+    }
+    catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested)
+    {
+        var structuredResult = new JsonObject
+        {
+            ["toolName"] = toolName,
+            ["timeoutMs"] = timeoutMs
+        };
+
+        await WriteResponseAsync(
+            output,
+            id,
+            BuildToolResult($"Tool '{toolName}' timed out after {timeoutMs} ms.", structuredResult, isError: true),
+            jsonOptions,
+            framing);
+    }
+}
+
+static async Task DispatchToolCallAsync(
+    Stream output,
+    JsonNode? id,
+    string toolName,
+    JsonObject? arguments,
+    RagQueryService queryService,
+    RagManagementService managementService,
+    PostgresRagStore store,
+    RagSettings settings,
+    JsonSerializerOptions jsonOptions,
+    McpMessageFraming framing,
+    string? managementToken,
+    CancellationToken cancellationToken)
+{
     if (string.Equals(toolName, QueryProjectRagToolName, StringComparison.Ordinal))
     {
-        await HandleQueryProjectRagToolAsync(output, id, arguments, queryService, settings, jsonOptions);
+        await HandleQueryProjectRagToolAsync(output, id, arguments, queryService, settings, jsonOptions, framing, cancellationToken);
         return;
     }
 
     if (string.Equals(toolName, RagHealthCheckToolName, StringComparison.Ordinal))
     {
-        await HandleRagHealthCheckToolAsync(output, id, arguments, queryService, store, settings, jsonOptions);
+        await HandleRagHealthCheckToolAsync(output, id, arguments, queryService, store, settings, jsonOptions, framing, cancellationToken);
         return;
     }
 
     if (string.Equals(toolName, RagServerInfoToolName, StringComparison.Ordinal))
     {
-        await HandleRagServerInfoToolAsync(output, id, settings, jsonOptions);
+        await HandleRagServerInfoToolAsync(output, id, settings, jsonOptions, framing, cancellationToken);
         return;
     }
 
     if (string.Equals(toolName, RagIndexStatsToolName, StringComparison.Ordinal))
     {
-        await HandleRagIndexStatsToolAsync(output, id, store, jsonOptions);
+        await HandleRagIndexStatsToolAsync(output, id, store, jsonOptions, framing, cancellationToken);
         return;
     }
 
     if (string.Equals(toolName, RagRecentSourcesToolName, StringComparison.Ordinal))
     {
-        await HandleRagRecentSourcesToolAsync(output, id, arguments, store, jsonOptions);
+        await HandleRagRecentSourcesToolAsync(output, id, arguments, store, jsonOptions, framing, cancellationToken);
         return;
     }
 
-    await WriteErrorResponseAsync(output, id, -32602, "Unknown tool name.");
+    if (string.Equals(toolName, RagListSourcesToolName, StringComparison.Ordinal))
+    {
+        await HandleRagListSourcesToolAsync(output, id, arguments, managementService, jsonOptions, framing, cancellationToken);
+        return;
+    }
+
+    if (string.Equals(toolName, RagDeleteSourceToolName, StringComparison.Ordinal))
+    {
+        await HandleRagDeleteSourceToolAsync(output, id, arguments, managementService, jsonOptions, framing, managementToken, cancellationToken);
+        return;
+    }
+
+    if (string.Equals(toolName, RagPurgeAllToolName, StringComparison.Ordinal))
+    {
+        await HandleRagPurgeAllToolAsync(output, id, arguments, managementService, jsonOptions, framing, managementToken, cancellationToken);
+        return;
+    }
+
+    await WriteErrorResponseAsync(output, id, -32602, "Unknown tool name.", framing);
+}
+
+static int ResolveToolTimeoutMs(string toolName)
+{
+    if (string.Equals(toolName, QueryProjectRagToolName, StringComparison.Ordinal))
+    {
+        return QueryToolTimeoutMs;
+    }
+
+    if (string.Equals(toolName, RagHealthCheckToolName, StringComparison.Ordinal))
+    {
+        return HealthToolTimeoutMs;
+    }
+
+    if (string.Equals(toolName, RagServerInfoToolName, StringComparison.Ordinal))
+    {
+        return ServerInfoToolTimeoutMs;
+    }
+
+    if (string.Equals(toolName, RagIndexStatsToolName, StringComparison.Ordinal))
+    {
+        return IndexStatsToolTimeoutMs;
+    }
+
+    if (string.Equals(toolName, RagRecentSourcesToolName, StringComparison.Ordinal))
+    {
+        return RecentSourcesToolTimeoutMs;
+    }
+
+    if (string.Equals(toolName, RagListSourcesToolName, StringComparison.Ordinal))
+    {
+        return ListSourcesToolTimeoutMs;
+    }
+
+    if (string.Equals(toolName, RagDeleteSourceToolName, StringComparison.Ordinal))
+    {
+        return DeleteSourceToolTimeoutMs;
+    }
+
+    if (string.Equals(toolName, RagPurgeAllToolName, StringComparison.Ordinal))
+    {
+        return PurgeAllToolTimeoutMs;
+    }
+
+    return DefaultToolTimeoutMs;
 }
 
 static async Task HandleQueryProjectRagToolAsync(
@@ -497,12 +798,14 @@ static async Task HandleQueryProjectRagToolAsync(
     JsonObject? arguments,
     RagQueryService queryService,
     RagSettings settings,
-    JsonSerializerOptions jsonOptions)
+    JsonSerializerOptions jsonOptions,
+    McpMessageFraming framing,
+    CancellationToken cancellationToken)
 {
     var text = arguments?["text"]?.GetValue<string>();
     if (string.IsNullOrWhiteSpace(text))
     {
-        await WriteErrorResponseAsync(output, id, -32602, "Missing required argument: text");
+        await WriteErrorResponseAsync(output, id, -32602, "Missing required argument: text", framing);
         return;
     }
 
@@ -522,7 +825,7 @@ static async Task HandleQueryProjectRagToolAsync(
             ? limit
             : Math.Min(limit * 5, 100);
 
-        var rawResults = await queryService.QueryAsync(text, queryLimit);
+        var rawResults = await queryService.QueryAsync(text, queryLimit, cancellationToken);
         var filteredResults = rawResults
             .Where(r => sourcePathContains is null || r.SourcePath.Contains(sourcePathContains, StringComparison.OrdinalIgnoreCase))
             .Where(r => minScore is null || r.Score >= minScore.Value)
@@ -532,11 +835,15 @@ static async Task HandleQueryProjectRagToolAsync(
         var textResult = FormatResults(filteredResults);
         var structuredResult = BuildQueryStructuredResult(text, limit, sourcePathContains, minScore, filteredResults);
 
-        await WriteResponseAsync(output, id, BuildToolResult(textResult, structuredResult), jsonOptions);
+        await WriteResponseAsync(output, id, BuildToolResult(textResult, structuredResult), jsonOptions, framing);
+    }
+    catch (OperationCanceledException)
+    {
+        throw;
     }
     catch (Exception ex)
     {
-        await WriteResponseAsync(output, id, BuildToolResult($"RAG query failed: {ex.Message}", isError: true), jsonOptions);
+        await WriteResponseAsync(output, id, BuildToolResult($"RAG query failed: {ex.Message}", isError: true), jsonOptions, framing);
     }
 }
 
@@ -547,7 +854,9 @@ static async Task HandleRagHealthCheckToolAsync(
     RagQueryService queryService,
     PostgresRagStore store,
     RagSettings settings,
-    JsonSerializerOptions jsonOptions)
+    JsonSerializerOptions jsonOptions,
+    McpMessageFraming framing,
+    CancellationToken cancellationToken)
 {
     var probeQuery = arguments?["smokeQuery"]?.GetValue<string>();
     if (string.IsNullOrWhiteSpace(probeQuery))
@@ -557,8 +866,8 @@ static async Task HandleRagHealthCheckToolAsync(
 
     try
     {
-        await store.InitializeSchemaAsync(settings.Ingestion.VectorDimensions);
-        var results = await queryService.QueryAsync(probeQuery, 1);
+        await store.InitializeSchemaAsync(settings.Ingestion.VectorDimensions, cancellationToken);
+        var results = await queryService.QueryAsync(probeQuery, 1, cancellationToken);
         var structuredResult = new JsonObject
         {
             ["status"] = "healthy",
@@ -568,16 +877,22 @@ static async Task HandleRagHealthCheckToolAsync(
             ["retrievalProbeCount"] = results.Count
         };
 
-        await WriteResponseAsync(output, id, BuildToolResult("Nebula RAG MCP health check passed.", structuredResult), jsonOptions);
+        await WriteResponseAsync(output, id, BuildToolResult("Nebula RAG MCP health check passed.", structuredResult), jsonOptions, framing);
+    }
+    catch (OperationCanceledException)
+    {
+        throw;
     }
     catch (Exception ex)
     {
-        await WriteResponseAsync(output, id, BuildToolResult($"Nebula RAG MCP health check failed: {ex.Message}", isError: true), jsonOptions);
+        await WriteResponseAsync(output, id, BuildToolResult($"Nebula RAG MCP health check failed: {ex.Message}", isError: true), jsonOptions, framing);
     }
 }
 
-static async Task HandleRagServerInfoToolAsync(Stream output, JsonNode? id, RagSettings settings, JsonSerializerOptions jsonOptions)
+static async Task HandleRagServerInfoToolAsync(Stream output, JsonNode? id, RagSettings settings, JsonSerializerOptions jsonOptions, McpMessageFraming framing, CancellationToken cancellationToken)
 {
+    cancellationToken.ThrowIfCancellationRequested();
+
     var toolCount = BuildToolsList()["tools"]?.AsArray()?.Count ?? 0;
     var structuredResult = new JsonObject
     {
@@ -591,26 +906,32 @@ static async Task HandleRagServerInfoToolAsync(Stream output, JsonNode? id, RagS
         ["toolCount"] = toolCount
     };
 
-    await WriteResponseAsync(output, id, BuildToolResult("Nebula RAG MCP server information.", structuredResult), jsonOptions);
+    await WriteResponseAsync(output, id, BuildToolResult("Nebula RAG MCP server information.", structuredResult), jsonOptions, framing);
 }
 
-static async Task HandleRagIndexStatsToolAsync(Stream output, JsonNode? id, PostgresRagStore store, JsonSerializerOptions jsonOptions)
+static async Task HandleRagIndexStatsToolAsync(Stream output, JsonNode? id, PostgresRagStore store, JsonSerializerOptions jsonOptions, McpMessageFraming framing, CancellationToken cancellationToken)
 {
     try
     {
-        var stats = await store.GetIndexStatsAsync();
+        var stats = await store.GetIndexStatsAsync(cancellationToken);
         var structuredResult = new JsonObject
         {
             ["documentCount"] = stats.DocumentCount,
             ["chunkCount"] = stats.ChunkCount,
-            ["latestIndexedAtUtc"] = stats.LatestIndexedAtUtc?.ToUniversalTime().ToString("O")
+            ["totalTokens"] = stats.TotalTokens,
+            ["oldestIndexedAt"] = stats.OldestIndexedAt?.ToString("O"),
+            ["newestIndexedAt"] = stats.NewestIndexedAt?.ToString("O")
         };
 
-        await WriteResponseAsync(output, id, BuildToolResult("Nebula RAG index statistics retrieved.", structuredResult), jsonOptions);
+        await WriteResponseAsync(output, id, BuildToolResult("Nebula RAG index statistics retrieved.", structuredResult), jsonOptions, framing);
+    }
+    catch (OperationCanceledException)
+    {
+        throw;
     }
     catch (Exception ex)
     {
-        await WriteResponseAsync(output, id, BuildToolResult($"Failed to retrieve index statistics: {ex.Message}", isError: true), jsonOptions);
+        await WriteResponseAsync(output, id, BuildToolResult($"Failed to retrieve index statistics: {ex.Message}", isError: true), jsonOptions, framing);
     }
 }
 
@@ -619,7 +940,9 @@ static async Task HandleRagRecentSourcesToolAsync(
     JsonNode? id,
     JsonObject? arguments,
     PostgresRagStore store,
-    JsonSerializerOptions jsonOptions)
+    JsonSerializerOptions jsonOptions,
+    McpMessageFraming framing,
+    CancellationToken cancellationToken)
 {
     var limit = 10;
     var limitNode = arguments?["limit"];
@@ -630,7 +953,7 @@ static async Task HandleRagRecentSourcesToolAsync(
 
     try
     {
-        var recentDocuments = await store.GetRecentDocumentsAsync(limit);
+        var recentDocuments = await store.GetRecentDocumentsAsync(limit, cancellationToken);
         var items = new JsonArray();
         foreach (var document in recentDocuments)
         {
@@ -648,11 +971,168 @@ static async Task HandleRagRecentSourcesToolAsync(
             ["items"] = items
         };
 
-        await WriteResponseAsync(output, id, BuildToolResult("Nebula RAG recent sources retrieved.", structuredResult), jsonOptions);
+        await WriteResponseAsync(output, id, BuildToolResult("Nebula RAG recent sources retrieved.", structuredResult), jsonOptions, framing);
+    }
+    catch (OperationCanceledException)
+    {
+        throw;
     }
     catch (Exception ex)
     {
-        await WriteResponseAsync(output, id, BuildToolResult($"Failed to retrieve recent sources: {ex.Message}", isError: true), jsonOptions);
+        await WriteResponseAsync(output, id, BuildToolResult($"Failed to retrieve recent sources: {ex.Message}", isError: true), jsonOptions, framing);
+    }
+}
+
+static async Task HandleRagListSourcesToolAsync(
+    Stream output,
+    JsonNode? id,
+    JsonObject? arguments,
+    RagManagementService managementService,
+    JsonSerializerOptions jsonOptions,
+    McpMessageFraming framing,
+    CancellationToken cancellationToken)
+{
+    var limit = 100;
+    if (arguments?["limit"] is not null && int.TryParse(arguments["limit"]!.ToString(), out var parsedLimit) && parsedLimit > 0)
+    {
+        limit = Math.Min(parsedLimit, 500);
+    }
+
+    try
+    {
+        var sources = await managementService.ListSourcesAsync(cancellationToken);
+        var selected = sources.Take(limit).ToList();
+        var items = new JsonArray();
+        foreach (var source in selected)
+        {
+            items.Add(new JsonObject
+            {
+                ["sourcePath"] = source.SourcePath,
+                ["chunkCount"] = source.ChunkCount,
+                ["indexedAtUtc"] = source.IndexedAt.ToUniversalTime().ToString("O")
+            });
+        }
+
+        var structuredResult = new JsonObject
+        {
+            ["count"] = selected.Count,
+            ["items"] = items
+        };
+
+        await WriteResponseAsync(output, id, BuildToolResult("Nebula RAG indexed sources retrieved.", structuredResult), jsonOptions, framing);
+    }
+    catch (OperationCanceledException)
+    {
+        throw;
+    }
+    catch (Exception ex)
+    {
+        await WriteResponseAsync(output, id, BuildToolResult($"Failed to list sources: {ex.Message}", isError: true), jsonOptions, framing);
+    }
+}
+
+static async Task HandleRagDeleteSourceToolAsync(
+    Stream output,
+    JsonNode? id,
+    JsonObject? arguments,
+    RagManagementService managementService,
+    JsonSerializerOptions jsonOptions,
+    McpMessageFraming framing,
+    string? configuredManagementToken,
+    CancellationToken cancellationToken)
+{
+    var sourcePath = arguments?["sourcePath"]?.GetValue<string>();
+    var confirm = arguments?["confirm"]?.GetValue<bool>() == true;
+    var providedToken = arguments?["managementToken"]?.GetValue<string>();
+
+    if (string.IsNullOrWhiteSpace(sourcePath))
+    {
+        await WriteErrorResponseAsync(output, id, -32602, "Missing required argument: sourcePath", framing);
+        return;
+    }
+
+    if (!confirm)
+    {
+        await WriteErrorResponseAsync(output, id, -32602, "Deletion requires confirm=true.", framing);
+        return;
+    }
+
+    if (string.IsNullOrWhiteSpace(configuredManagementToken))
+    {
+        await WriteResponseAsync(output, id, BuildToolResult($"Server management token is not configured. Set {ManagementTokenEnvName} to enable delete operations.", isError: true), jsonOptions, framing);
+        return;
+    }
+
+    if (!string.Equals(configuredManagementToken, providedToken, StringComparison.Ordinal))
+    {
+        await WriteErrorResponseAsync(output, id, -32602, "Invalid management token.", framing);
+        return;
+    }
+
+    try
+    {
+        var deletedCount = await managementService.DeleteSourceAsync(sourcePath, cancellationToken);
+        var structuredResult = new JsonObject
+        {
+            ["sourcePath"] = sourcePath,
+            ["deletedCount"] = deletedCount
+        };
+
+        await WriteResponseAsync(output, id, BuildToolResult($"Deleted {deletedCount} document rows for source '{sourcePath}'.", structuredResult), jsonOptions, framing);
+    }
+    catch (OperationCanceledException)
+    {
+        throw;
+    }
+    catch (Exception ex)
+    {
+        await WriteResponseAsync(output, id, BuildToolResult($"Failed to delete source: {ex.Message}", isError: true), jsonOptions, framing);
+    }
+}
+
+static async Task HandleRagPurgeAllToolAsync(
+    Stream output,
+    JsonNode? id,
+    JsonObject? arguments,
+    RagManagementService managementService,
+    JsonSerializerOptions jsonOptions,
+    McpMessageFraming framing,
+    string? configuredManagementToken,
+    CancellationToken cancellationToken)
+{
+    var confirmPhrase = arguments?["confirmPhrase"]?.GetValue<string>();
+    var providedToken = arguments?["managementToken"]?.GetValue<string>();
+
+    if (!string.Equals(confirmPhrase, "PURGE ALL", StringComparison.Ordinal))
+    {
+        await WriteErrorResponseAsync(output, id, -32602, "Purge requires confirmPhrase='PURGE ALL'.", framing);
+        return;
+    }
+
+    if (string.IsNullOrWhiteSpace(configuredManagementToken))
+    {
+        await WriteResponseAsync(output, id, BuildToolResult($"Server management token is not configured. Set {ManagementTokenEnvName} to enable purge operations.", isError: true), jsonOptions, framing);
+        return;
+    }
+
+    if (!string.Equals(configuredManagementToken, providedToken, StringComparison.Ordinal))
+    {
+        await WriteErrorResponseAsync(output, id, -32602, "Invalid management token.", framing);
+        return;
+    }
+
+    try
+    {
+        await managementService.PurgeAllAsync(cancellationToken);
+        await WriteResponseAsync(output, id, BuildToolResult("Nebula RAG index purge complete."), jsonOptions, framing);
+    }
+    catch (OperationCanceledException)
+    {
+        throw;
+    }
+    catch (Exception ex)
+    {
+        await WriteResponseAsync(output, id, BuildToolResult($"Failed to purge index: {ex.Message}", isError: true), jsonOptions, framing);
     }
 }
 
@@ -758,74 +1238,108 @@ static string FormatResults(IReadOnlyList<NebulaRAG.Core.Models.RagSearchResult>
     return builder.ToString();
 }
 
-static async Task<string?> ReadMessageAsync(Stream input)
+static async Task<(string? Payload, McpMessageFraming Framing)> ReadMessageAsync(Stream input)
 {
-    var singleByte = new byte[1];
-
-    while (true)
+    var firstByteBuffer = new byte[1];
+    var firstRead = await input.ReadAsync(firstByteBuffer);
+    if (firstRead == 0)
     {
-        var headerBuilder = new StringBuilder();
+        return (null, McpMessageFraming.Unknown);
+    }
+
+    var firstChar = (char)firstByteBuffer[0];
+    if (firstChar == '{' || firstChar == '[')
+    {
+        var payloadBuilder = new StringBuilder();
+        payloadBuilder.Append(firstChar);
+        var newlineBuffer = new byte[1];
 
         while (true)
         {
-            var read = await input.ReadAsync(singleByte);
+            var read = await input.ReadAsync(newlineBuffer);
             if (read == 0)
-            {
-                return null;
-            }
-
-            headerBuilder.Append((char)singleByte[0]);
-            var headerText = headerBuilder.ToString();
-            if (headerText.EndsWith("\r\n\r\n", StringComparison.Ordinal) ||
-                headerText.EndsWith("\n\n", StringComparison.Ordinal))
             {
                 break;
             }
+
+            var ch = (char)newlineBuffer[0];
+            if (ch == '\n')
+            {
+                break;
+            }
+
+            if (ch != '\r')
+            {
+                payloadBuilder.Append(ch);
+            }
         }
 
-        var headerLines = headerBuilder
-            .ToString()
-            .Replace("\r\n", "\n", StringComparison.Ordinal)
-            .Split('\n', StringSplitOptions.RemoveEmptyEntries);
+        return (payloadBuilder.ToString(), McpMessageFraming.NewlineDelimitedJsonRpc);
+    }
 
-        var contentLength = 0;
-        foreach (var line in headerLines)
+    var headerBuilder = new StringBuilder();
+    headerBuilder.Append(firstChar);
+    var headerByte = new byte[1];
+
+    while (true)
+    {
+        var read = await input.ReadAsync(headerByte);
+        if (read == 0)
         {
-            if (!line.StartsWith("Content-Length:", StringComparison.OrdinalIgnoreCase))
-            {
-                continue;
-            }
-
-            var value = line["Content-Length:".Length..].Trim();
-            if (int.TryParse(value, out var parsedLength))
-            {
-                contentLength = parsedLength;
-            }
+            return (null, McpMessageFraming.ContentLength);
         }
 
-        if (contentLength <= 0)
+        headerBuilder.Append((char)headerByte[0]);
+        var headerText = headerBuilder.ToString();
+        if (headerText.EndsWith("\r\n\r\n", StringComparison.Ordinal) ||
+            headerText.EndsWith("\n\n", StringComparison.Ordinal))
+        {
+            break;
+        }
+    }
+
+    var headerLines = headerBuilder
+        .ToString()
+        .Replace("\r\n", "\n", StringComparison.Ordinal)
+        .Split('\n', StringSplitOptions.RemoveEmptyEntries);
+
+    var contentLength = 0;
+    foreach (var line in headerLines)
+    {
+        if (!line.StartsWith("Content-Length:", StringComparison.OrdinalIgnoreCase))
         {
             continue;
         }
 
-        var body = new byte[contentLength];
-        var offset = 0;
-        while (offset < contentLength)
+        var value = line["Content-Length:".Length..].Trim();
+        if (int.TryParse(value, out var parsedLength))
         {
-            var read = await input.ReadAsync(body.AsMemory(offset, contentLength - offset));
-            if (read == 0)
-            {
-                return null;
-            }
+            contentLength = parsedLength;
+        }
+    }
 
-            offset += read;
+    if (contentLength <= 0)
+    {
+        return (null, McpMessageFraming.ContentLength);
+    }
+
+    var body = new byte[contentLength];
+    var offset = 0;
+    while (offset < contentLength)
+    {
+        var read = await input.ReadAsync(body.AsMemory(offset, contentLength - offset));
+        if (read == 0)
+        {
+            return (null, McpMessageFraming.ContentLength);
         }
 
-        return Encoding.UTF8.GetString(body);
+        offset += read;
     }
+
+    return (Encoding.UTF8.GetString(body), McpMessageFraming.ContentLength);
 }
 
-static async Task WriteResponseAsync(Stream output, JsonNode? id, JsonObject result, JsonSerializerOptions jsonOptions)
+static async Task WriteResponseAsync(Stream output, JsonNode? id, JsonObject result, JsonSerializerOptions jsonOptions, McpMessageFraming framing)
 {
     var response = new JsonObject
     {
@@ -834,32 +1348,70 @@ static async Task WriteResponseAsync(Stream output, JsonNode? id, JsonObject res
         ["result"] = result
     };
 
-    await WriteMessageAsync(output, response.ToJsonString(jsonOptions));
+    await WriteMessageAsync(output, response.ToJsonString(jsonOptions), framing);
 }
 
-static async Task WriteErrorResponseAsync(Stream output, JsonNode? id, int code, string message)
+static async Task WriteErrorResponseAsync(
+    Stream output,
+    JsonNode? id,
+    int code,
+    string message,
+    McpMessageFraming framing,
+    JsonNode? errorData = null)
 {
+    var errorNode = new JsonObject
+    {
+        ["code"] = code,
+        ["message"] = message
+    };
+
+    if (errorData is not null)
+    {
+        errorNode["data"] = errorData;
+    }
+
     var response = new JsonObject
     {
         ["jsonrpc"] = "2.0",
         ["id"] = id,
-        ["error"] = new JsonObject
-        {
-            ["code"] = code,
-            ["message"] = message
-        }
+        ["error"] = errorNode
     };
 
-    await WriteMessageAsync(output, response.ToJsonString());
+    await WriteMessageAsync(output, response.ToJsonString(), framing);
 }
 
-static async Task WriteMessageAsync(Stream output, string json)
+static async Task WriteMessageAsync(Stream output, string json, McpMessageFraming framing)
 {
+    if (framing == McpMessageFraming.NewlineDelimitedJsonRpc)
+    {
+        var newlinePayload = Encoding.UTF8.GetBytes($"{json}\n");
+        await output.WriteAsync(newlinePayload);
+        await output.FlushAsync();
+        return;
+    }
+
     var payloadBytes = Encoding.UTF8.GetBytes(json);
     var headerBytes = Encoding.ASCII.GetBytes($"Content-Length: {payloadBytes.Length}\r\n\r\n");
     await output.WriteAsync(headerBytes);
     await output.WriteAsync(payloadBytes);
     await output.FlushAsync();
+}
+
+static string? NegotiateProtocolVersion(string? requestedVersion, IReadOnlyList<string> supportedProtocolVersions)
+{
+    if (!string.IsNullOrWhiteSpace(requestedVersion) &&
+        supportedProtocolVersions.Contains(requestedVersion, StringComparer.Ordinal))
+    {
+        return requestedVersion;
+    }
+
+    // Fallback for older clients that omit protocolVersion in initialize.
+    if (string.IsNullOrWhiteSpace(requestedVersion))
+    {
+        return supportedProtocolVersions[^1];
+    }
+
+    return supportedProtocolVersions[^1];
 }
 
 static string? GetConfigPath(string[] args)
@@ -938,6 +1490,13 @@ static string? ResolveConfigPath(string fileName)
     }
 
     return null;
+}
+
+file enum McpMessageFraming
+{
+    Unknown = 0,
+    ContentLength = 1,
+    NewlineDelimitedJsonRpc = 2
 }
 
 file sealed record SelfTestCase(string Name, string Description, Func<CancellationToken, Task> Run);
