@@ -85,11 +85,12 @@ public sealed class PostgresRagStore
     /// If the source path exists with the same content hash, returns false (no update performed).
     /// Otherwise, deletes old chunks and inserts new ones in a single transaction.
     /// </summary>
-    /// <param name="sourcePath\">The unique source path or identifier for this document.</param>\n    /// <param name=\"contentHash\">SHA256 hash of the document content for change detection.</param>
-    /// <param name=\"chunks\">Collection of chunk embeddings to store for this document.</param>
-    /// <param name=\"cancellationToken\">Cancellation token.</param>
+    /// <param name="sourcePath">The unique source path or identifier for this document.</param>
+    /// <param name="contentHash">SHA256 hash of the document content for change detection.</param>
+    /// <param name="chunks">Collection of chunk embeddings to store for this document.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>True if the document was inserted or updated; false if unchanged.</returns>
-    /// <exception cref=\"ArgumentException\">Thrown if sourcePath or contentHash is null or empty.</exception>
+    /// <exception cref="ArgumentException">Thrown if sourcePath or contentHash is null or empty.</exception>
     public async Task<bool> UpsertDocumentAsync(
         string sourcePath,
         string contentHash,
@@ -98,12 +99,12 @@ public sealed class PostgresRagStore
     {
         if (string.IsNullOrWhiteSpace(sourcePath))
         {
-            throw new ArgumentException(\"Source path cannot be null or empty.\", nameof(sourcePath));
+            throw new ArgumentException("Source path cannot be null or empty.", nameof(sourcePath));
         }
 
         if (string.IsNullOrWhiteSpace(contentHash))
         {
-            throw new ArgumentException(\"Content hash cannot be null or empty.\", nameof(contentHash));
+            throw new ArgumentException("Content hash cannot be null or empty.", nameof(contentHash));
         }
 
         await using var connection = new NpgsqlConnection(_connectionString);
@@ -115,11 +116,11 @@ public sealed class PostgresRagStore
         string? existingHash = null;
 
         await using (var findCommand = new NpgsqlCommand(
-                         \"SELECT id, content_hash FROM rag_documents WHERE source_path = @sourcePath\",
+                         "SELECT id, content_hash FROM rag_documents WHERE source_path = @sourcePath",
                          connection,
                          transaction))
         {
-            findCommand.Parameters.AddWithValue(\"sourcePath\", sourcePath);
+            findCommand.Parameters.AddWithValue("sourcePath", sourcePath);
 
             await using var reader = await findCommand.ExecuteReaderAsync(cancellationToken);
             if (await reader.ReadAsync(cancellationToken))
