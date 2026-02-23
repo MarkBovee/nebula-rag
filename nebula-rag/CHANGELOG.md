@@ -4,6 +4,11 @@ All notable changes to the Nebula RAG Home Assistant add-on are documented in th
 
 The format is inspired by Keep a Changelog and follows semantic versioning.
 
+## [0.2.2] - 2026-02-23
+
+- Fixed add-on host startup failure by switching runtime image to `mcr.microsoft.com/dotnet/aspnet:10.0`.
+- Resolved missing `Microsoft.AspNetCore.App` framework error when launching `NebulaRAG.AddonHost.dll`.
+
 ## [0.2.1] - 2026-02-23
 
 - Hardened add-on Docker build restore flow for Home Assistant builders:

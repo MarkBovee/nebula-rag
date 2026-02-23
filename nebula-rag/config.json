@@ -1,6 +1,6 @@
 {
   "name": "Nebula RAG",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "slug": "nebula_rag",
   "description": "NebulaRAG long-running add-on with Nebula web UI and MCP endpoint.",
   "url": "https://github.com/MarkBovee/NebulaRAG/tree/main/nebula-rag",

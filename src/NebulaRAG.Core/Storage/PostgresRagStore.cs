@@ -5,10 +5,19 @@ using Npgsql;
 
 namespace NebulaRAG.Core.Storage;
 
+/// <summary>
+/// PostgreSQL-based storage backend for the RAG system.
+/// Manages document index, chunks, embeddings, and semantic search via pgvector.
+/// </summary>
 public sealed class PostgresRagStore
 {
     private readonly string _connectionString;
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="PostgresRagStore"/> class.
+    /// </summary>
+    /// <param name="connectionString">The PostgreSQL connection string.</param>
+    /// <exception cref="ArgumentException">Thrown if connectionString is null or empty.</exception>
     public PostgresRagStore(string connectionString)
     {
         if (string.IsNullOrWhiteSpace(connectionString))
@@ -19,6 +28,13 @@ public sealed class PostgresRagStore
         _connectionString = connectionString;
     }
 
+    /// <summary>
+    /// Initializes the PostgreSQL schema including tables, indexes, and pgvector extension.
+    /// Creates rag_documents, rag_chunks tables, and sets up vector similarity search indexes.
+    /// </summary>
+    /// <param name="vectorDimensions">The dimension count for vector embeddings.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown if vectorDimensions is not greater than 0.</exception>
     public async Task InitializeSchemaAsync(int vectorDimensions, CancellationToken cancellationToken = default)
     {
         if (vectorDimensions <= 0)
@@ -56,6 +72,7 @@ public sealed class PostgresRagStore
                 USING gin (to_tsvector('english', chunk_text));
             """;
 
+        // Open connection and execute schema creation, including pgvector extension
         await using var connection = new NpgsqlConnection(_connectionString);
         await connection.OpenAsync(cancellationToken);
 
@@ -63,6 +80,16 @@ public sealed class PostgresRagStore
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
+    /// <summary>
+    /// Inserts or updates a document and its chunks in the index.
+    /// If the source path exists with the same content hash, returns false (no update performed).
+    /// Otherwise, deletes old chunks and inserts new ones in a single transaction.
+    /// </summary>
+    /// <param name="sourcePath\">The unique source path or identifier for this document.</param>\n    /// <param name=\"contentHash\">SHA256 hash of the document content for change detection.</param>
+    /// <param name=\"chunks\">Collection of chunk embeddings to store for this document.</param>
+    /// <param name=\"cancellationToken\">Cancellation token.</param>
+    /// <returns>True if the document was inserted or updated; false if unchanged.</returns>
+    /// <exception cref=\"ArgumentException\">Thrown if sourcePath or contentHash is null or empty.</exception>
     public async Task<bool> UpsertDocumentAsync(
         string sourcePath,
         string contentHash,
@@ -71,27 +98,28 @@ public sealed class PostgresRagStore
     {
         if (string.IsNullOrWhiteSpace(sourcePath))
         {
-            throw new ArgumentException("Source path cannot be null or empty.", nameof(sourcePath));
+            throw new ArgumentException(\"Source path cannot be null or empty.\", nameof(sourcePath));
         }
 
         if (string.IsNullOrWhiteSpace(contentHash))
         {
-            throw new ArgumentException("Content hash cannot be null or empty.", nameof(contentHash));
+            throw new ArgumentException(\"Content hash cannot be null or empty.\", nameof(contentHash));
         }
 
         await using var connection = new NpgsqlConnection(_connectionString);
         await connection.OpenAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
+        // Check if document already exists with the same content hash
         long? existingDocumentId = null;
         string? existingHash = null;
 
         await using (var findCommand = new NpgsqlCommand(
-                         "SELECT id, content_hash FROM rag_documents WHERE source_path = @sourcePath",
+                         \"SELECT id, content_hash FROM rag_documents WHERE source_path = @sourcePath\",
                          connection,
                          transaction))
         {
-            findCommand.Parameters.AddWithValue("sourcePath", sourcePath);
+            findCommand.Parameters.AddWithValue(\"sourcePath\", sourcePath);
 
             await using var reader = await findCommand.ExecuteReaderAsync(cancellationToken);
             if (await reader.ReadAsync(cancellationToken))
@@ -103,10 +131,12 @@ public sealed class PostgresRagStore
 
         if (existingDocumentId.HasValue && string.Equals(existingHash, contentHash, StringComparison.Ordinal))
         {
+            // Document already exists with same content hash, no update needed
             await transaction.RollbackAsync(cancellationToken);
             return false;
         }
 
+        // Update existing document or insert new one
         long documentId;
         if (existingDocumentId.HasValue)
         {
@@ -157,6 +187,7 @@ public sealed class PostgresRagStore
             VALUES (@documentId, @chunkIndex, @chunkText, @tokenCount, CAST(@embedding AS vector))
             """;
 
+        // Insert all chunks for this document
         foreach (var chunk in chunks)
         {
             await using var insertChunkCommand = new NpgsqlCommand(insertChunkSql, connection, transaction);
@@ -172,6 +203,16 @@ public sealed class PostgresRagStore
         return true;
     }
 
+    /// <summary>
+    /// Executes a semantic search using vector similarity.
+    /// Returns the top K most similar chunks ranked by cosine distance.
+    /// </summary>
+    /// <param name=\"queryEmbedding\">The query vector embedding.</param>
+    /// <param name=\"topK\">Maximum number of results to return (must be > 0).</param>
+    /// <param name=\"cancellationToken\">Cancellation token.</param>
+    /// <returns>List of search results ranked by relevance (descending score).</returns>
+    /// <exception cref=\"ArgumentException\">Thrown if queryEmbedding is empty.</exception>
+    /// <exception cref=\"ArgumentOutOfRangeException\">Thrown if topK is not greater than 0.</exception>
     public async Task<IReadOnlyList<RagSearchResult>> SearchAsync(
         float[] queryEmbedding,
         int topK,
@@ -199,6 +240,7 @@ public sealed class PostgresRagStore
             """;
 
         var results = new List<RagSearchResult>();
+        // Use cosine distance operator (<=>)to find nearest neighbors
         await using var connection = new NpgsqlConnection(_connectionString);
         await connection.OpenAsync(cancellationToken);
 
@@ -210,6 +252,7 @@ public sealed class PostgresRagStore
         while (await reader.ReadAsync(cancellationToken))
         {
             var scoreValue = reader.GetValue(3);
+            // Convert distance to similarity (1 - distance for cosine)
             var score = scoreValue is double d
                 ? d
                 : Convert.ToDouble(scoreValue, CultureInfo.InvariantCulture);
@@ -224,6 +267,13 @@ public sealed class PostgresRagStore
         return results;
     }
 
+    /// <summary>
+    /// Retrieves the most recently indexed documents.
+    /// </summary>
+    /// <param name=\"limit\">Maximum number of documents to return.</param>
+    /// <param name=\"cancellationToken\">Cancellation token.</param>
+    /// <returns>List of recent documents ordered by indexed_at descending.</returns>
+    /// <exception cref=\"ArgumentOutOfRangeException\">Thrown if limit is not greater than 0.</exception>
     public async Task<IReadOnlyList<RagIndexedDocumentSummary>> GetRecentDocumentsAsync(
         int limit,
         CancellationToken cancellationToken = default)
@@ -245,6 +295,7 @@ public sealed class PostgresRagStore
             """;
 
         var documents = new List<RagIndexedDocumentSummary>();
+        // Group by document and aggregate chunk counts
         await using var connection = new NpgsqlConnection(_connectionString);
         await connection.OpenAsync(cancellationToken);
 
@@ -264,8 +315,10 @@ public sealed class PostgresRagStore
     }
 
     /// <summary>
-    /// Gets detailed index statistics with token count and date range.
+    /// Gets detailed index statistics including document count, chunk count, token estimates, and date range.
     /// </summary>
+    /// <param name=\"cancellationToken\">Cancellation token.</param>
+    /// <returns>Aggregated index statistics.</returns>
     public async Task<IndexStats> GetIndexStatsAsync(CancellationToken cancellationToken = default)
     {
         const string sql = @"
@@ -353,8 +406,10 @@ public sealed class PostgresRagStore
     }
 
     /// <summary>
-    /// Purges all documents and chunks from the index.
+    /// Permanently deletes all indexed documents and chunks from the RAG store.
+    /// WARNING: This operation cannot be undone.
     /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
     public async Task PurgeAllAsync(CancellationToken cancellationToken = default)
     {
         const string sql = @"
@@ -363,23 +418,33 @@ public sealed class PostgresRagStore
 
         await using var connection = new NpgsqlConnection(_connectionString);
         await connection.OpenAsync(cancellationToken);
+        // Cascading delete ensures chunks are removed when documents are cleared
         await using var command = new NpgsqlCommand(sql, connection);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     /// <summary>
-    /// Performs a health check by testing database connectivity.
+    /// Performs a health check by testing database connectivity and basic functionality.
     /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <exception cref="Exception">Thrown if the database connection or query fails.</exception>
     public async Task HealthCheckAsync(CancellationToken cancellationToken = default)
     {
         const string sql = "SELECT 1";
 
         await using var connection = new NpgsqlConnection(_connectionString);
+        // Attempt to open connection and execute simple query
         await connection.OpenAsync(cancellationToken);
         await using var command = new NpgsqlCommand(sql, connection);
         await command.ExecuteScalarAsync(cancellationToken);
     }
 
+    /// <summary>
+    /// Converts a float array to a PostgreSQL vector literal string format.
+    /// </summary>
+    /// <remarks>
+    /// Produces output like "[0.5, 0.3, -0.2]" suitable for pgvector operations.
+    /// </remarks>
     private static string ToVectorLiteral(IReadOnlyList<float> embedding)
     {
         var builder = new StringBuilder("[");
@@ -390,6 +455,7 @@ public sealed class PostgresRagStore
                 builder.Append(',');
             }
 
+            // Format with sufficient precision and invariant culture for PostgreSQL compatibility
             builder.Append(embedding[i].ToString("0.######", CultureInfo.InvariantCulture));
         }
 

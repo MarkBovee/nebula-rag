@@ -32,6 +32,7 @@ If instruction files conflict, prioritize repository-local instruction files and
 - Keep parameter lists concise; introduce request models when argument lists grow.
 - Add XML documentation comments for classes and methods.
 - Add comments only where intent is not obvious from code.
+- Add brief intent comments for non-obvious handlers/functions so protocol or orchestration behavior is clear at a glance.
 
 ## Formatting and Style
 

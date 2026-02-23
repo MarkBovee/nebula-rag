@@ -62,6 +62,11 @@ When adding properties that touch many files, prefer optional parameters with de
 - This applies to `public`, `internal`, and `private` members.
 - Keep comments concise and useful: summarize intent, key parameters, and return behavior where relevant.
 
+### Helpful Inline Comments
+- Add a short inline intent comment for non-obvious logic blocks and handlers where behavior is not immediately clear from naming alone.
+- Apply this especially to minimal API endpoint handlers and protocol dispatch sections
+- Keep comments brief and focused on why/intent, not line-by-line narration.
+
 ## EF Core Best Practices
 
 - **Centralize timestamps** in `DbContext.SaveChanges()` override — set `SysAdd` on insert, `SysMod` on insert+update. Never manage timestamps in business logic.

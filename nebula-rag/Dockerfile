@@ -28,7 +28,7 @@ RUN set -eux; \
 
 RUN dotnet publish "src/NebulaRAG.AddonHost/NebulaRAG.AddonHost.csproj" -c Release -o /app/publish /p:UseAppHost=false --no-restore
 
-FROM mcr.microsoft.com/dotnet/runtime:10.0 AS runtime
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 WORKDIR /app
 
 RUN apt-get update \

@@ -121,6 +121,7 @@ app.MapPost("/api/purge", async (PurgeRequest request, CancellationToken cancell
     return Results.Json(new { purged = true });
 });
 
+// Handle MCP JSON-RPC transport for initialize, ping, tool listing, and tool execution.
 app.MapPost("/mcp", async (JsonObject request, CancellationToken cancellationToken) =>
 {
     var method = request["method"]?.GetValue<string>();
