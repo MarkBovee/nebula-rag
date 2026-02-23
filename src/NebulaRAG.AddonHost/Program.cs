@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Http.Json;
 using Microsoft.Extensions.Configuration;
@@ -19,8 +20,20 @@ const string RagServerInfoToolName = "rag_server_info";
 const string RagIndexStatsToolName = "rag_index_stats";
 const string RagListSourcesToolName = "rag_list_sources";
 const string RagIndexPathToolName = "rag_index_path";
+const string RagIndexTextToolName = "rag_index_text";
+const string RagIndexUrlToolName = "rag_index_url";
+const string RagReindexSourceToolName = "rag_reindex_source";
+const string RagGetChunkToolName = "rag_get_chunk";
+const string RagSearchSimilarToolName = "rag_search_similar";
 const string RagDeleteSourceToolName = "rag_delete_source";
 const string RagPurgeAllToolName = "rag_purge_all";
+const string MemoryStoreToolName = "memory_store";
+const string MemoryRecallToolName = "memory_recall";
+const string MemoryListToolName = "memory_list";
+const string MemoryDeleteToolName = "memory_delete";
+const string MemoryUpdateToolName = "memory_update";
+
+var httpClient = new HttpClient();
 
 Log.Logger = new LoggerConfiguration()
     .MinimumLevel.Information()
@@ -51,6 +64,7 @@ var chunker = new TextChunker();
 var embeddingGenerator = new HashEmbeddingGenerator();
 var queryService = new RagQueryService(store, embeddingGenerator, settings, loggerFactory.CreateLogger<RagQueryService>());
 var managementService = new RagManagementService(store, loggerFactory.CreateLogger<RagManagementService>());
+var sourcesManifestService = new RagSourcesManifestService(store, settings, loggerFactory.CreateLogger<RagSourcesManifestService>());
 var indexer = new RagIndexer(store, chunker, embeddingGenerator, settings, loggerFactory.CreateLogger<RagIndexer>());
 
 await store.InitializeSchemaAsync(settings.Ingestion.VectorDimensions);
@@ -174,7 +188,7 @@ app.MapPost("/mcp", async (JsonObject request, CancellationToken cancellationTok
         return Results.Json(BuildError(id, -32602, "Missing tool name"));
     }
 
-    var result = await ExecuteToolAsync(toolName, arguments, queryService, managementService, store, indexer, settings, cancellationToken);
+    var result = await ExecuteToolAsync(toolName, arguments, queryService, managementService, sourcesManifestService, store, chunker, embeddingGenerator, indexer, settings, httpClient, cancellationToken);
     return Results.Json(BuildResult(id, result));
 });
 
@@ -241,8 +255,18 @@ static JsonObject BuildToolsList()
             BuildToolDefinition(RagIndexStatsToolName, "Get index statistics."),
             BuildToolDefinition(RagListSourcesToolName, "List indexed sources."),
             BuildToolDefinition(RagIndexPathToolName, "Index a source directory path."),
+            BuildToolDefinition(RagIndexTextToolName, "Index direct text content under a source key."),
+            BuildToolDefinition(RagIndexUrlToolName, "Fetch URL content and index it."),
+            BuildToolDefinition(RagReindexSourceToolName, "Reindex an existing source path from disk."),
+            BuildToolDefinition(RagGetChunkToolName, "Get one indexed chunk by chunk id."),
+            BuildToolDefinition(RagSearchSimilarToolName, "Run similarity search without project path filtering."),
             BuildToolDefinition(RagDeleteSourceToolName, "Delete one indexed source path."),
-            BuildToolDefinition(RagPurgeAllToolName, "Purge all indexed content.")
+            BuildToolDefinition(RagPurgeAllToolName, "Purge all indexed content."),
+            BuildToolDefinition(MemoryStoreToolName, "Store one memory observation with tags and type."),
+            BuildToolDefinition(MemoryRecallToolName, "Recall semantically similar memories."),
+            BuildToolDefinition(MemoryListToolName, "List recent memories with optional filters."),
+            BuildToolDefinition(MemoryDeleteToolName, "Delete one memory by id."),
+            BuildToolDefinition(MemoryUpdateToolName, "Update one memory entry.")
         }
     };
 }
@@ -288,9 +312,13 @@ static async Task<JsonObject> ExecuteToolAsync(
     JsonObject? arguments,
     RagQueryService queryService,
     RagManagementService managementService,
+    RagSourcesManifestService sourcesManifestService,
     PostgresRagStore store,
+    TextChunker chunker,
+    IEmbeddingGenerator embeddingGenerator,
     RagIndexer indexer,
     RagSettings settings,
+    HttpClient httpClient,
     CancellationToken cancellationToken)
 {
     try
@@ -299,7 +327,12 @@ static async Task<JsonObject> ExecuteToolAsync(
         if (toolName == RagInitSchemaToolName)
         {
             await store.InitializeSchemaAsync(settings.Ingestion.VectorDimensions, cancellationToken);
-            return BuildToolResult("Schema initialized.");
+            var manifestSyncResult = await TrySyncRagSourcesManifestAsync(sourcesManifestService, null, cancellationToken);
+            return BuildToolResult("Schema initialized.", new JsonObject
+            {
+                ["sourcesManifestPath"] = manifestSyncResult?.ManifestPath,
+                ["sourcesManifestSourceCount"] = manifestSyncResult?.SourceCount
+            });
         }
 
         if (toolName == QueryProjectRagToolName)
@@ -386,11 +419,151 @@ static async Task<JsonObject> ExecuteToolAsync(
             }
 
             var summary = await indexer.IndexDirectoryAsync(sourcePath, cancellationToken);
+            var manifestSyncResult = await TrySyncRagSourcesManifestAsync(sourcesManifestService, sourcePath, cancellationToken);
             return BuildToolResult("Index complete.", new JsonObject
             {
                 ["documentsIndexed"] = summary.DocumentsIndexed,
                 ["documentsSkipped"] = summary.DocumentsSkipped,
-                ["chunksIndexed"] = summary.ChunksIndexed
+                ["chunksIndexed"] = summary.ChunksIndexed,
+                ["sourcesManifestPath"] = manifestSyncResult?.ManifestPath,
+                ["sourcesManifestSourceCount"] = manifestSyncResult?.SourceCount
+            });
+        }
+
+        if (toolName == RagIndexTextToolName)
+        {
+            var sourcePath = arguments?["sourcePath"]?.GetValue<string>();
+            var content = arguments?["content"]?.GetValue<string>();
+            if (string.IsNullOrWhiteSpace(sourcePath) || string.IsNullOrWhiteSpace(content))
+            {
+                return BuildToolResult("sourcePath and content are required.", isError: true);
+            }
+
+            var chunks = chunker.Chunk(content, settings.Ingestion.ChunkSize, settings.Ingestion.ChunkOverlap);
+            if (chunks.Count == 0)
+            {
+                return BuildToolResult("No indexable chunks produced.", isError: true);
+            }
+
+            var chunkEmbeddings = chunks
+                .Select(chunk => new ChunkEmbedding(
+                    chunk.Index,
+                    chunk.Text,
+                    chunk.TokenCount,
+                    embeddingGenerator.GenerateEmbedding(chunk.Text, settings.Ingestion.VectorDimensions)))
+                .ToList();
+
+            var contentHash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(content)));
+            var updated = await store.UpsertDocumentAsync(sourcePath, contentHash, chunkEmbeddings, cancellationToken);
+            var manifestSyncResult = await TrySyncRagSourcesManifestAsync(sourcesManifestService, sourcePath, cancellationToken);
+
+            return BuildToolResult(updated ? "Source text indexed." : "Source text unchanged.", new JsonObject
+            {
+                ["sourcePath"] = sourcePath,
+                ["updated"] = updated,
+                ["chunkCount"] = chunkEmbeddings.Count,
+                ["contentHash"] = contentHash,
+                ["sourcesManifestPath"] = manifestSyncResult?.ManifestPath,
+                ["sourcesManifestSourceCount"] = manifestSyncResult?.SourceCount
+            });
+        }
+
+        if (toolName == RagIndexUrlToolName)
+        {
+            var url = arguments?["url"]?.GetValue<string>();
+            var sourcePath = arguments?["sourcePath"]?.GetValue<string>();
+            if (string.IsNullOrWhiteSpace(url))
+            {
+                return BuildToolResult("url is required.", isError: true);
+            }
+
+            var fetchedContent = await httpClient.GetStringAsync(url, cancellationToken);
+            var targetSourcePath = string.IsNullOrWhiteSpace(sourcePath) ? url : sourcePath;
+            var indexArgs = new JsonObject
+            {
+                ["sourcePath"] = targetSourcePath,
+                ["content"] = fetchedContent
+            };
+
+            var indexResult = await ExecuteToolAsync(RagIndexTextToolName, indexArgs, queryService, managementService, sourcesManifestService, store, chunker, embeddingGenerator, indexer, settings, httpClient, cancellationToken);
+            return indexResult;
+        }
+
+        if (toolName == RagReindexSourceToolName)
+        {
+            var sourcePath = arguments?["sourcePath"]?.GetValue<string>();
+            if (string.IsNullOrWhiteSpace(sourcePath))
+            {
+                return BuildToolResult("sourcePath is required.", isError: true);
+            }
+
+            if (!File.Exists(sourcePath))
+            {
+                return BuildToolResult("sourcePath must point to a readable file for reindex.", isError: true);
+            }
+
+            var content = await File.ReadAllTextAsync(sourcePath, cancellationToken);
+            var reindexArgs = new JsonObject
+            {
+                ["sourcePath"] = sourcePath,
+                ["content"] = content
+            };
+
+            return await ExecuteToolAsync(RagIndexTextToolName, reindexArgs, queryService, managementService, sourcesManifestService, store, chunker, embeddingGenerator, indexer, settings, httpClient, cancellationToken);
+        }
+
+        if (toolName == RagGetChunkToolName)
+        {
+            var chunkId = arguments?["chunkId"]?.GetValue<long?>();
+            if (chunkId is null || chunkId.Value <= 0)
+            {
+                return BuildToolResult("chunkId is required and must be > 0.", isError: true);
+            }
+
+            var chunk = await store.GetChunkByIdAsync(chunkId.Value, cancellationToken);
+            if (chunk is null)
+            {
+                return BuildToolResult("Chunk not found.", isError: true);
+            }
+
+            return BuildToolResult("Chunk retrieved.", new JsonObject
+            {
+                ["chunkId"] = chunk.ChunkId,
+                ["sourcePath"] = chunk.SourcePath,
+                ["chunkIndex"] = chunk.ChunkIndex,
+                ["tokenCount"] = chunk.TokenCount,
+                ["indexedAtUtc"] = chunk.IndexedAtUtc.ToUniversalTime().ToString("O"),
+                ["chunkText"] = chunk.ChunkText
+            });
+        }
+
+        if (toolName == RagSearchSimilarToolName)
+        {
+            var text = arguments?["text"]?.GetValue<string>();
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                return BuildToolResult("text is required.", isError: true);
+            }
+
+            var limit = Math.Clamp(arguments?["limit"]?.GetValue<int?>() ?? settings.Retrieval.DefaultTopK, 1, 20);
+            var results = await queryService.QueryAsync(text, limit, cancellationToken);
+            var matches = new JsonArray();
+            foreach (var item in results)
+            {
+                matches.Add(new JsonObject
+                {
+                    ["sourcePath"] = item.SourcePath,
+                    ["chunkIndex"] = item.ChunkIndex,
+                    ["score"] = item.Score,
+                    ["snippet"] = TrimSnippet(item.ChunkText)
+                });
+            }
+
+            return BuildToolResult($"Found {results.Count} similar chunks.", new JsonObject
+            {
+                ["query"] = text,
+                ["limit"] = limit,
+                ["matches"] = matches
             });
         }
 
@@ -404,7 +577,13 @@ static async Task<JsonObject> ExecuteToolAsync(
             }
 
             var deleted = await managementService.DeleteSourceAsync(sourcePath, cancellationToken);
-            return BuildToolResult($"Deleted {deleted} items.", new JsonObject { ["deleted"] = deleted });
+            var manifestSyncResult = await TrySyncRagSourcesManifestAsync(sourcesManifestService, sourcePath, cancellationToken);
+            return BuildToolResult($"Deleted {deleted} items.", new JsonObject
+            {
+                ["deleted"] = deleted,
+                ["sourcesManifestPath"] = manifestSyncResult?.ManifestPath,
+                ["sourcesManifestSourceCount"] = manifestSyncResult?.SourceCount
+            });
         }
 
         if (toolName == RagPurgeAllToolName)
@@ -416,7 +595,121 @@ static async Task<JsonObject> ExecuteToolAsync(
             }
 
             await managementService.PurgeAllAsync(cancellationToken);
-            return BuildToolResult("Purge complete.");
+            var manifestSyncResult = await TrySyncRagSourcesManifestAsync(sourcesManifestService, null, cancellationToken);
+            return BuildToolResult("Purge complete.", new JsonObject
+            {
+                ["sourcesManifestPath"] = manifestSyncResult?.ManifestPath,
+                ["sourcesManifestSourceCount"] = manifestSyncResult?.SourceCount
+            });
+        }
+
+        if (toolName == MemoryStoreToolName)
+        {
+            var sessionId = arguments?["sessionId"]?.GetValue<string>();
+            var type = arguments?["type"]?.GetValue<string>();
+            var content = arguments?["content"]?.GetValue<string>();
+            if (string.IsNullOrWhiteSpace(sessionId) || string.IsNullOrWhiteSpace(type) || string.IsNullOrWhiteSpace(content))
+            {
+                return BuildToolResult("sessionId, type and content are required.", isError: true);
+            }
+
+            var tags = ParseTags(arguments?["tags"]);
+            var embedding = embeddingGenerator.GenerateEmbedding(content, settings.Ingestion.VectorDimensions);
+            var memoryId = await store.CreateMemoryAsync(sessionId, type, content, tags, embedding, cancellationToken);
+
+            return BuildToolResult("Memory stored.", new JsonObject
+            {
+                ["memoryId"] = memoryId,
+                ["sessionId"] = sessionId,
+                ["type"] = type,
+                ["tags"] = JsonSerializer.SerializeToNode(tags)
+            });
+        }
+
+        if (toolName == MemoryRecallToolName)
+        {
+            var text = arguments?["text"]?.GetValue<string>();
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                return BuildToolResult("text is required.", isError: true);
+            }
+
+            var limit = Math.Clamp(arguments?["limit"]?.GetValue<int?>() ?? 10, 1, 50);
+            var type = arguments?["type"]?.GetValue<string>();
+            var tag = arguments?["tag"]?.GetValue<string>();
+            var queryEmbedding = embeddingGenerator.GenerateEmbedding(text, settings.Ingestion.VectorDimensions);
+            var memories = await store.SearchMemoriesAsync(queryEmbedding, limit, type, tag, cancellationToken);
+            var items = new JsonArray();
+            foreach (var memory in memories)
+            {
+                items.Add(new JsonObject
+                {
+                    ["id"] = memory.Id,
+                    ["sessionId"] = memory.SessionId,
+                    ["type"] = memory.Type,
+                    ["content"] = memory.Content,
+                    ["tags"] = JsonSerializer.SerializeToNode(memory.Tags),
+                    ["createdAtUtc"] = memory.CreatedAtUtc.ToUniversalTime().ToString("O"),
+                    ["score"] = memory.Score
+                });
+            }
+
+            return BuildToolResult($"Recalled {memories.Count} memories.", new JsonObject { ["items"] = items });
+        }
+
+        if (toolName == MemoryListToolName)
+        {
+            var limit = Math.Clamp(arguments?["limit"]?.GetValue<int?>() ?? 20, 1, 100);
+            var type = arguments?["type"]?.GetValue<string>();
+            var tag = arguments?["tag"]?.GetValue<string>();
+            var memories = await store.ListMemoriesAsync(limit, type, tag, cancellationToken);
+            var items = new JsonArray();
+            foreach (var memory in memories)
+            {
+                items.Add(new JsonObject
+                {
+                    ["id"] = memory.Id,
+                    ["sessionId"] = memory.SessionId,
+                    ["type"] = memory.Type,
+                    ["content"] = memory.Content,
+                    ["tags"] = JsonSerializer.SerializeToNode(memory.Tags),
+                    ["createdAtUtc"] = memory.CreatedAtUtc.ToUniversalTime().ToString("O")
+                });
+            }
+
+            return BuildToolResult($"Listed {memories.Count} memories.", new JsonObject { ["items"] = items });
+        }
+
+        if (toolName == MemoryDeleteToolName)
+        {
+            var memoryId = arguments?["memoryId"]?.GetValue<long?>();
+            if (memoryId is null || memoryId.Value <= 0)
+            {
+                return BuildToolResult("memoryId is required and must be > 0.", isError: true);
+            }
+
+            var deleted = await store.DeleteMemoryAsync(memoryId.Value, cancellationToken);
+            return BuildToolResult(deleted ? "Memory deleted." : "Memory not found.", new JsonObject { ["deleted"] = deleted });
+        }
+
+        if (toolName == MemoryUpdateToolName)
+        {
+            var memoryId = arguments?["memoryId"]?.GetValue<long?>();
+            if (memoryId is null || memoryId.Value <= 0)
+            {
+                return BuildToolResult("memoryId is required and must be > 0.", isError: true);
+            }
+
+            var type = arguments?["type"]?.GetValue<string>();
+            var content = arguments?["content"]?.GetValue<string>();
+            var tagsNode = arguments?["tags"];
+            var tags = tagsNode is null ? null : ParseTags(tagsNode);
+            var embedding = string.IsNullOrWhiteSpace(content)
+                ? null
+                : embeddingGenerator.GenerateEmbedding(content, settings.Ingestion.VectorDimensions);
+
+            var updated = await store.UpdateMemoryAsync(memoryId.Value, type, content, tags, embedding, cancellationToken);
+            return BuildToolResult(updated ? "Memory updated." : "Memory not found.", new JsonObject { ["updated"] = updated });
         }
 
         return BuildToolResult($"Unknown tool: {toolName}", isError: true);
@@ -501,6 +794,53 @@ static JsonObject BuildToolResult(string text, JsonObject? structuredContent = n
     }
 
     return result;
+}
+
+/// <summary>
+/// Synchronizes rag-sources markdown while keeping tool execution resilient to write failures.
+/// </summary>
+/// <param name="sourcesManifestService">Manifest synchronization service.</param>
+/// <param name="contextPath">Optional path context used for manifest destination resolution.</param>
+/// <param name="cancellationToken">Cancellation token.</param>
+/// <returns>Sync result when successful; otherwise <c>null</c>.</returns>
+static async Task<RagSourcesManifestSyncResult?> TrySyncRagSourcesManifestAsync(RagSourcesManifestService sourcesManifestService, string? contextPath, CancellationToken cancellationToken)
+{
+    try
+    {
+        return await sourcesManifestService.SyncAsync(contextPath, cancellationToken);
+    }
+    catch (Exception ex)
+    {
+        Log.Warning(ex, "Failed to synchronize rag-sources manifest after successful index operation.");
+        return null;
+    }
+}
+
+/// <summary>
+/// Parses tags from MCP arguments into a normalized string list.
+/// </summary>
+/// <param name="tagsNode">JSON node expected to contain an array of strings.</param>
+/// <returns>Tag list, empty when node is null or invalid.</returns>
+static List<string> ParseTags(JsonNode? tagsNode)
+{
+    if (tagsNode is not JsonArray tagsArray)
+    {
+        return [];
+    }
+
+    var tags = new List<string>();
+    foreach (var item in tagsArray)
+    {
+        var tag = item?.GetValue<string>();
+        if (string.IsNullOrWhiteSpace(tag))
+        {
+            continue;
+        }
+
+        tags.Add(tag.Trim());
+    }
+
+    return tags;
 }
 
 /// <summary>

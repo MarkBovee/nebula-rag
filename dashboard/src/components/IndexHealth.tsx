@@ -50,10 +50,13 @@ const styles = {
 /// Shows document count, chunk count, average chunk size, and vector dimensions.
 /// </summary>
 const IndexHealth: React.FC<IndexHealthProps> = ({ stats }) => {
-  const totalDocuments = stats.documentCount ?? stats.totalDocuments ?? 0;
-  const totalChunks = stats.chunkCount ?? stats.totalChunks ?? 0;
+  const toCount = (value: number | undefined) => (typeof value === 'number' ? value : 0);
+
+  const totalDocuments = toCount(stats.documentCount ?? stats.totalDocuments);
+  const totalChunks = toCount(stats.chunkCount ?? stats.totalChunks);
+  const totalTokens = toCount(stats.totalTokens);
   const averageChunkSize =
-    stats.averageChunkSize ?? (totalChunks > 0 ? stats.totalTokens / totalChunks : 0);
+    stats.averageChunkSize ?? (totalChunks > 0 ? totalTokens / totalChunks : 0);
   const newestIndexedAt = stats.newestIndexedAt ?? stats.lastUpdated;
   const oldestIndexedAt = stats.oldestIndexedAt;
 
@@ -90,7 +93,7 @@ const IndexHealth: React.FC<IndexHealthProps> = ({ stats }) => {
 
       <div style={styles.metric}>
         <p style={styles.metricLabel}>Total Tokens</p>
-        <p style={styles.metricValue}>{stats.totalTokens.toLocaleString()}</p>
+        <p style={styles.metricValue}>{totalTokens.toLocaleString()}</p>
       </div>
 
       <div style={styles.metric}>

@@ -464,6 +464,297 @@ public sealed class PostgresRagStore
     }
 
     /// <summary>
+    /// Retrieves a specific chunk by its primary key identifier.
+    /// </summary>
+    /// <param name="chunkId">Chunk row identifier.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Chunk record when found; otherwise <c>null</c>.</returns>
+    public async Task<ChunkRecord?> GetChunkByIdAsync(long chunkId, CancellationToken cancellationToken = default)
+    {
+        if (chunkId <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(chunkId), "Chunk id must be greater than 0.");
+        }
+
+        const string sql = """
+            SELECT c.id, d.source_path, c.chunk_index, c.chunk_text, c.token_count, d.indexed_at
+            FROM rag_chunks c
+            INNER JOIN rag_documents d ON d.id = c.document_id
+            WHERE c.id = @chunkId
+            """;
+
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("chunkId", chunkId);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        return new ChunkRecord(
+            ChunkId: reader.GetInt64(0),
+            SourcePath: reader.GetString(1),
+            ChunkIndex: reader.GetInt32(2),
+            ChunkText: reader.GetString(3),
+            TokenCount: reader.GetInt32(4),
+            IndexedAtUtc: reader.GetFieldValue<DateTimeOffset>(5));
+    }
+
+    /// <summary>
+    /// Stores a memory entry and returns its newly assigned identifier.
+    /// </summary>
+    /// <param name="sessionId">Logical session identifier for grouping related memories.</param>
+    /// <param name="type">Memory type: episodic, semantic, or procedural.</param>
+    /// <param name="content">Natural language memory content.</param>
+    /// <param name="tags">Tag collection for memory filtering.</param>
+    /// <param name="embedding">Memory embedding vector.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Identifier of the inserted memory row.</returns>
+    public async Task<long> CreateMemoryAsync(string sessionId, string type, string content, IReadOnlyList<string> tags, IReadOnlyList<float> embedding, CancellationToken cancellationToken = default)
+    {
+        ValidateMemoryArguments(sessionId, type, content, embedding);
+
+        const string sql = """
+            INSERT INTO memories (session_id, type, content, embedding, tags)
+            VALUES (@sessionId, @type, @content, CAST(@embedding AS vector), @tags)
+            RETURNING id
+            """;
+
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("sessionId", sessionId);
+        command.Parameters.AddWithValue("type", type);
+        command.Parameters.AddWithValue("content", content);
+        command.Parameters.AddWithValue("embedding", ToVectorLiteral(embedding));
+        command.Parameters.AddWithValue("tags", tags.ToArray());
+
+        var id = await command.ExecuteScalarAsync(cancellationToken);
+        return (long)(id ?? throw new InvalidOperationException("Failed to insert memory."));
+    }
+
+    /// <summary>
+    /// Lists the most recent memories optionally filtered by type and tag.
+    /// </summary>
+    /// <param name="limit">Maximum number of rows to return.</param>
+    /// <param name="type">Optional memory type filter.</param>
+    /// <param name="tag">Optional tag filter.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Recent memory rows sorted by creation date descending.</returns>
+    public async Task<IReadOnlyList<MemoryRecord>> ListMemoriesAsync(int limit, string? type = null, string? tag = null, CancellationToken cancellationToken = default)
+    {
+        if (limit <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(limit), "Limit must be greater than 0.");
+        }
+
+        const string sql = """
+            SELECT id, session_id, type, content, tags, created_at
+            FROM memories
+            WHERE (@type IS NULL OR type = @type)
+              AND (@tag IS NULL OR @tag = ANY(tags))
+            ORDER BY created_at DESC
+            LIMIT @limit
+            """;
+
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("type", (object?)type ?? DBNull.Value);
+        command.Parameters.AddWithValue("tag", (object?)tag ?? DBNull.Value);
+        command.Parameters.AddWithValue("limit", limit);
+
+        var rows = new List<MemoryRecord>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            rows.Add(new MemoryRecord(
+                Id: reader.GetInt64(0),
+                SessionId: reader.GetString(1),
+                Type: reader.GetString(2),
+                Content: reader.GetString(3),
+                Tags: reader.GetFieldValue<string[]>(4),
+                CreatedAtUtc: reader.GetFieldValue<DateTimeOffset>(5)));
+        }
+
+        return rows;
+    }
+
+    /// <summary>
+    /// Performs semantic recall over memories using cosine similarity.
+    /// </summary>
+    /// <param name="queryEmbedding">Query embedding vector.</param>
+    /// <param name="limit">Maximum number of rows to return.</param>
+    /// <param name="type">Optional memory type filter.</param>
+    /// <param name="tag">Optional tag filter.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Semantically ranked memory rows.</returns>
+    public async Task<IReadOnlyList<MemorySearchResult>> SearchMemoriesAsync(float[] queryEmbedding, int limit, string? type = null, string? tag = null, CancellationToken cancellationToken = default)
+    {
+        if (queryEmbedding.Length == 0)
+        {
+            throw new ArgumentException("Query embedding cannot be empty.", nameof(queryEmbedding));
+        }
+
+        if (limit <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(limit), "Limit must be greater than 0.");
+        }
+
+        const string sql = """
+            SELECT id,
+                   session_id,
+                   type,
+                   content,
+                   tags,
+                   created_at,
+                   1 - (embedding <=> CAST(@embedding AS vector)) AS score
+            FROM memories
+            WHERE (@type IS NULL OR type = @type)
+              AND (@tag IS NULL OR @tag = ANY(tags))
+            ORDER BY embedding <=> CAST(@embedding AS vector)
+            LIMIT @limit
+            """;
+
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("embedding", ToVectorLiteral(queryEmbedding));
+        command.Parameters.AddWithValue("type", (object?)type ?? DBNull.Value);
+        command.Parameters.AddWithValue("tag", (object?)tag ?? DBNull.Value);
+        command.Parameters.AddWithValue("limit", limit);
+
+        var rows = new List<MemorySearchResult>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var scoreValue = reader.GetValue(6);
+            var score = scoreValue is double d
+                ? d
+                : Convert.ToDouble(scoreValue, CultureInfo.InvariantCulture);
+
+            rows.Add(new MemorySearchResult(
+                Id: reader.GetInt64(0),
+                SessionId: reader.GetString(1),
+                Type: reader.GetString(2),
+                Content: reader.GetString(3),
+                Tags: reader.GetFieldValue<string[]>(4),
+                CreatedAtUtc: reader.GetFieldValue<DateTimeOffset>(5),
+                Score: score));
+        }
+
+        return rows;
+    }
+
+    /// <summary>
+    /// Updates a memory entry and optionally recalculates embedding when content changes.
+    /// </summary>
+    /// <param name="memoryId">Memory row identifier.</param>
+    /// <param name="type">Updated type, or <c>null</c> to keep existing value.</param>
+    /// <param name="content">Updated content, or <c>null</c> to keep existing value.</param>
+    /// <param name="tags">Updated tags, or <c>null</c> to keep existing tags.</param>
+    /// <param name="embedding">Updated embedding, required when content changes.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns><c>true</c> when a row was updated, otherwise <c>false</c>.</returns>
+    public async Task<bool> UpdateMemoryAsync(long memoryId, string? type, string? content, IReadOnlyList<string>? tags, IReadOnlyList<float>? embedding, CancellationToken cancellationToken = default)
+    {
+        if (memoryId <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(memoryId), "Memory id must be greater than 0.");
+        }
+
+        if (content is not null && (embedding is null || embedding.Count == 0))
+        {
+            throw new ArgumentException("Embedding is required when content is updated.", nameof(embedding));
+        }
+
+        const string sql = """
+            UPDATE memories
+            SET type = COALESCE(@type, type),
+                content = COALESCE(@content, content),
+                embedding = CASE WHEN @embedding IS NULL THEN embedding ELSE CAST(@embedding AS vector) END,
+                tags = COALESCE(@tags, tags)
+            WHERE id = @id
+            """;
+
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("id", memoryId);
+        command.Parameters.AddWithValue("type", (object?)type ?? DBNull.Value);
+        command.Parameters.AddWithValue("content", (object?)content ?? DBNull.Value);
+        command.Parameters.AddWithValue("embedding", embedding is null ? DBNull.Value : ToVectorLiteral(embedding));
+        command.Parameters.AddWithValue("tags", tags is null ? DBNull.Value : tags.ToArray());
+
+        var updated = await command.ExecuteNonQueryAsync(cancellationToken);
+        return updated > 0;
+    }
+
+    /// <summary>
+    /// Deletes a memory entry by its identifier.
+    /// </summary>
+    /// <param name="memoryId">Memory row identifier.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns><c>true</c> when a row was deleted, otherwise <c>false</c>.</returns>
+    public async Task<bool> DeleteMemoryAsync(long memoryId, CancellationToken cancellationToken = default)
+    {
+        if (memoryId <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(memoryId), "Memory id must be greater than 0.");
+        }
+
+        const string sql = "DELETE FROM memories WHERE id = @id";
+
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("id", memoryId);
+
+        var deleted = await command.ExecuteNonQueryAsync(cancellationToken);
+        return deleted > 0;
+    }
+
+    /// <summary>
+    /// Validates common memory insertion arguments.
+    /// </summary>
+    /// <param name="sessionId">Session identifier value.</param>
+    /// <param name="type">Memory type value.</param>
+    /// <param name="content">Content value.</param>
+    /// <param name="embedding">Embedding value.</param>
+    private static void ValidateMemoryArguments(string sessionId, string type, string content, IReadOnlyList<float> embedding)
+    {
+        if (string.IsNullOrWhiteSpace(sessionId))
+        {
+            throw new ArgumentException("Session id cannot be empty.", nameof(sessionId));
+        }
+
+        if (string.IsNullOrWhiteSpace(type))
+        {
+            throw new ArgumentException("Memory type cannot be empty.", nameof(type));
+        }
+
+        if (!string.Equals(type, "episodic", StringComparison.Ordinal) &&
+            !string.Equals(type, "semantic", StringComparison.Ordinal) &&
+            !string.Equals(type, "procedural", StringComparison.Ordinal))
+        {
+            throw new ArgumentException("Memory type must be episodic, semantic, or procedural.", nameof(type));
+        }
+
+        if (string.IsNullOrWhiteSpace(content))
+        {
+            throw new ArgumentException("Memory content cannot be empty.", nameof(content));
+        }
+
+        if (embedding.Count == 0)
+        {
+            throw new ArgumentException("Memory embedding cannot be empty.", nameof(embedding));
+        }
+    }
+
+    /// <summary>
     /// Converts a float array to a PostgreSQL vector literal string format.
     /// </summary>
     /// <remarks>
