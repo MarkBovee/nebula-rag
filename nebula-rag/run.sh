@@ -15,6 +15,7 @@ db_username="$(jq -r '.database.username // ""' "${OPTIONS_FILE}")"
 db_password="$(jq -r '.database.password // ""' "${OPTIONS_FILE}")"
 db_ssl_mode="$(jq -r '.database.ssl_mode // "Prefer"' "${OPTIONS_FILE}")"
 default_index_path="$(jq -r '.default_index_path // "/share"' "${OPTIONS_FILE}")"
+path_base="$(jq -r '.path_base // ""' "${OPTIONS_FILE}")"
 
 if [ -z "${db_password}" ]; then
   echo "[nebula-rag] database.password is required."
@@ -28,6 +29,7 @@ export NEBULARAG_Database__Username="${db_username}"
 export NEBULARAG_Database__Password="${db_password}"
 export NEBULARAG_Database__SslMode="${db_ssl_mode}"
 export NEBULARAG_DefaultIndexPath="${default_index_path}"
+export NEBULARAG_PathBase="${path_base}"
 export ASPNETCORE_URLS="http://0.0.0.0:8099"
 
 echo "[nebula-rag] Starting Nebula RAG Add-on Host (Web UI + MCP endpoint)..."

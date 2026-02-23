@@ -9,13 +9,19 @@ ARG NEBULARAG_REPO_URL=https://github.com/MarkBovee/NebulaRAG.git
 ARG NEBULARAG_REPO_REF=main
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends git ca-certificates \
+    && apt-get install -y --no-install-recommends git ca-certificates nodejs npm \
     && rm -rf /var/lib/apt/lists/*
 
 RUN git clone --depth 1 --branch "${NEBULARAG_REPO_REF}" "${NEBULARAG_REPO_URL}" /src/NebulaRAG
 WORKDIR /src/NebulaRAG
 
 RUN test -f "src/NebulaRAG.AddonHost/NebulaRAG.AddonHost.csproj"
+RUN test -f "dashboard/package.json"
+
+# Build the dashboard so static assets are included in AddonHost publish output.
+RUN cd dashboard \
+    && npm install --no-audit --no-fund \
+    && npm run build
 
 # Home Assistant builders can be resource-constrained; disable parallel restore and retry transient failures.
 RUN set -eux; \

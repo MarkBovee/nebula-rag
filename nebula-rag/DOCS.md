@@ -26,6 +26,7 @@ Configure database options in add-on settings:
 Optional:
 
 - `default_index_path` (default path used in web UI index form)
+- `path_base` (optional route prefix such as `/nebula`)
 
 ## Web Interface
 
@@ -42,6 +43,12 @@ Open the add-on from Home Assistant sidebar (ingress) to access:
 The add-on exposes MCP JSON-RPC at:
 
 - `http://homeassistant.local:8099/mcp`
+
+When `path_base` is set (for example `/nebula`), endpoints are prefixed:
+
+- Dashboard UI: `http://homeassistant.local:8099/nebula/dashboard/`
+- REST API: `http://homeassistant.local:8099/nebula/api/...`
+- MCP JSON-RPC: `http://homeassistant.local:8099/nebula/mcp`
 
 Supported methods:
 

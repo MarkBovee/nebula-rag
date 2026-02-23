@@ -1,0 +1,167 @@
+import React, { useState } from 'react';
+import { nebulaTheme } from '@/styles/theme';
+import { apiClient } from '@/api/client';
+import type { SourceInfo } from '@/types';
+
+interface SourceManagerProps {
+  sources: SourceInfo[];
+  onRefresh: () => void;
+}
+
+const styles = {
+  card: {
+    background: nebulaTheme.colors.surface,
+    border: `1px solid ${nebulaTheme.colors.surfaceBorder}`,
+    borderRadius: nebulaTheme.borderRadius.lg,
+    padding: nebulaTheme.spacing.lg,
+    boxShadow: nebulaTheme.shadow.lg,
+  } as React.CSSProperties,
+  title: {
+    fontSize: nebulaTheme.typography.fontSize.xl,
+    fontWeight: nebulaTheme.typography.fontWeight.bold,
+    marginBottom: nebulaTheme.spacing.lg,
+    color: nebulaTheme.colors.neonPink,
+    textShadow: `0 0 10px ${nebulaTheme.colors.neonPink}`,
+  } as React.CSSProperties,
+  table: {
+    width: '100%',
+    borderCollapse: 'collapse' as const,
+  } as React.CSSProperties,
+  thead: {
+    background: 'rgba(100, 50, 200, 0.1)',
+    borderBottom: `2px solid ${nebulaTheme.colors.surfaceBorder}`,
+  } as React.CSSProperties,
+  th: {
+    padding: nebulaTheme.spacing.md,
+    textAlign: 'left' as const,
+    fontWeight: nebulaTheme.typography.fontWeight.semibold,
+    color: nebulaTheme.colors.neonCyan,
+    fontSize: nebulaTheme.typography.fontSize.sm,
+  } as React.CSSProperties,
+  td: {
+    padding: nebulaTheme.spacing.md,
+    borderBottom: `1px solid ${nebulaTheme.colors.surfaceBorder}`,
+    fontSize: nebulaTheme.typography.fontSize.sm,
+  } as React.CSSProperties,
+  actionButton: {
+    padding: `${nebulaTheme.spacing.sm} ${nebulaTheme.spacing.md}`,
+    marginRight: nebulaTheme.spacing.sm,
+    border: 'none',
+    borderRadius: nebulaTheme.borderRadius.md,
+    cursor: 'pointer',
+    fontSize: nebulaTheme.typography.fontSize.xs,
+    fontWeight: nebulaTheme.typography.fontWeight.semibold,
+    transition: nebulaTheme.transition.fast,
+  } as React.CSSProperties,
+  deleteButton: {
+    background: 'rgba(255, 51, 51, 0.2)',
+    color: nebulaTheme.colors.error,
+    border: `1px solid ${nebulaTheme.colors.error}`,
+  } as React.CSSProperties,
+  reindexButton: {
+    background: 'rgba(255, 170, 0, 0.2)',
+    color: nebulaTheme.colors.warning,
+    border: `1px solid ${nebulaTheme.colors.warning}`,
+  } as React.CSSProperties,
+};
+
+/// <summary>
+/// SourceManager component provides a table view of all indexed sources.
+/// Users can delete sources or trigger reindexing from this interface.
+/// </summary>
+const SourceManager: React.FC<SourceManagerProps> = ({ sources, onRefresh }) => {
+  const [deleting, setDeleting] = useState<string | null>(null);
+  const [reindexing, setReindexing] = useState<string | null>(null);
+
+  const handleDelete = async (sourcePath: string) => {
+    if (!confirm(`Delete source "${sourcePath}"? This cannot be undone.`)) return;
+
+    setDeleting(sourcePath);
+    try {
+      await apiClient.deleteSource(sourcePath);
+      setTimeout(onRefresh, 1000);
+    } catch (error) {
+      console.error('Delete error:', error);
+      alert('Failed to delete source');
+    }
+    setDeleting(null);
+  };
+
+  const handleReindex = async (sourcePath: string) => {
+    setReindexing(sourcePath);
+    try {
+      await apiClient.indexSource(sourcePath);
+      setTimeout(onRefresh, 2000);
+    } catch (error) {
+      console.error('Reindex error:', error);
+      alert('Failed to reindex source');
+    }
+    setReindexing(null);
+  };
+
+  return (
+    <div style={styles.card}>
+      <h2 style={styles.title}>🗂️ Source Management</h2>
+      
+      {sources.length > 0 ? (
+        <div style={{ overflowX: 'auto' }}>
+          <table style={styles.table}>
+            <thead style={styles.thead}>
+              <tr>
+                <th style={styles.th}>Source Path</th>
+                <th style={styles.th}>Documents</th>
+                <th style={styles.th}>Chunks</th>
+                <th style={styles.th}>Last Indexed</th>
+                <th style={styles.th}>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sources.map((source, idx) => (
+                <tr key={idx}>
+                  <td style={styles.td}>
+                    <span style={{ color: nebulaTheme.colors.neonCyan }}>
+                      {source.sourcePath}
+                    </span>
+                  </td>
+                  <td style={styles.td}>{source.documentCount}</td>
+                  <td style={styles.td}>{source.chunkCount}</td>
+                  <td style={styles.td}>
+                    {new Date(source.lastIndexedAt).toLocaleDateString()}
+                  </td>
+                  <td style={styles.td}>
+                    <button
+                      onClick={() => handleReindex(source.sourcePath)}
+                      disabled={reindexing === source.sourcePath}
+                      style={{
+                        ...styles.actionButton,
+                        ...styles.reindexButton,
+                      }}
+                    >
+                      {reindexing === source.sourcePath ? '⟳' : '🔄'} Reindex
+                    </button>
+                    <button
+                      onClick={() => handleDelete(source.sourcePath)}
+                      disabled={deleting === source.sourcePath}
+                      style={{
+                        ...styles.actionButton,
+                        ...styles.deleteButton,
+                      }}
+                    >
+                      {deleting === source.sourcePath ? '⟳' : '🗑️'} Delete
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <p style={{ color: nebulaTheme.colors.textMuted, textAlign: 'center', padding: nebulaTheme.spacing.lg }}>
+          No sources indexed yet
+        </p>
+      )}
+    </div>
+  );
+};
+
+export default SourceManager;

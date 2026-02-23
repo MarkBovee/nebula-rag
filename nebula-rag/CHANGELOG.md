@@ -4,6 +4,15 @@ All notable changes to the Nebula RAG Home Assistant add-on are documented in th
 
 The format is inspired by Keep a Changelog and follows semantic versioning.
 
+## [0.2.3] - 2026-02-23
+
+- Added optional `path_base` add-on setting to host Nebula RAG behind a route prefix (for example `/nebula`).
+- Added AddonHost path-base support so endpoints can be exposed as `/nebula/dashboard/`, `/nebula/api/...`, and `/nebula/mcp`.
+- Made dashboard the default web UI entry by redirecting root (`/`) to `dashboard/`.
+- Updated dashboard build/runtime behavior for prefixed hosting:
+	- API client now derives route prefix from current dashboard path.
+	- Built dashboard assets now use relative paths for compatibility under prefixed routes.
+
 ## [0.2.2] - 2026-02-23
 
 - Fixed add-on host startup failure by switching runtime image to `mcr.microsoft.com/dotnet/aspnet:10.0`.

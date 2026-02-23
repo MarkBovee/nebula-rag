@@ -26,8 +26,14 @@ Change `build.yaml` to pin a release tag, branch, or fork.
 
 ## Runtime Surface
 
-- Web UI (Home Assistant ingress and optional exposed port)
+- Web UI (Home Assistant ingress and optional exposed port, root `/` redirects to `/dashboard/`)
 - MCP endpoint: `http://homeassistant.local:8099/mcp`
+
+With optional path base (`path_base=/nebula`):
+
+- Web UI root: `http://homeassistant.local:8099/nebula/`
+- Dashboard UI: `http://homeassistant.local:8099/nebula/dashboard/`
+- MCP endpoint: `http://homeassistant.local:8099/nebula/mcp`
 
 ## Required Configuration
 
@@ -43,6 +49,10 @@ Recommended defaults:
 - `default_index_path=/share`
 - `database.port=5432`
 - `database.ssl_mode=Prefer` (or `Disable` on trusted LAN setups)
+
+Optional route prefix:
+
+- `path_base=/nebula` to expose UI/API/MCP under `/nebula/...`
 
 ## Runtime Notes
 

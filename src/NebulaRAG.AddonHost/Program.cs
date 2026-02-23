@@ -37,6 +37,7 @@ builder.Services.Configure<JsonOptions>(options =>
 
 var settings = LoadSettings();
 settings.Validate();
+var pathBase = NormalizePathBase(Environment.GetEnvironmentVariable("NEBULARAG_PathBase"));
 
 var loggerFactory = LoggerFactory.Create(loggingBuilder =>
 {
@@ -55,6 +56,12 @@ var indexer = new RagIndexer(store, chunker, embeddingGenerator, settings, logge
 await store.InitializeSchemaAsync(settings.Ingestion.VectorDimensions);
 
 var app = builder.Build();
+if (!string.IsNullOrEmpty(pathBase))
+{
+    Log.Information("Using path base {PathBase}", pathBase);
+    app.UsePathBase(pathBase);
+}
+
 app.UseDefaultFiles();
 app.UseStaticFiles();
 
@@ -172,6 +179,34 @@ app.MapPost("/mcp", async (JsonObject request, CancellationToken cancellationTok
 });
 
 app.Run();
+
+/// <summary>
+/// Normalizes a path base value from environment configuration.
+/// Ensures the value starts with '/' and does not end with '/'.
+/// Returns empty string when no path base is configured.
+/// </summary>
+/// <param name="rawPathBase">Raw path base value (for example '/nebula' or 'nebula').</param>
+/// <returns>Normalized path base suitable for ASP.NET Core UsePathBase.</returns>
+static string NormalizePathBase(string? rawPathBase)
+{
+    if (string.IsNullOrWhiteSpace(rawPathBase))
+    {
+        return string.Empty;
+    }
+
+    var trimmed = rawPathBase.Trim();
+    if (trimmed == "/")
+    {
+        return string.Empty;
+    }
+
+    if (!trimmed.StartsWith("/", StringComparison.Ordinal))
+    {
+        trimmed = $"/{trimmed}";
+    }
+
+    return trimmed.TrimEnd('/');
+}
 
 /// <summary>
 /// Loads runtime settings from container mount path and environment variables.

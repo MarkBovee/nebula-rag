@@ -73,7 +73,14 @@ Primary MCP tools:
 Add-on endpoints:
 
 - Web UI: Home Assistant ingress or `http://homeassistant.local:8099`
+- Analytics dashboard: `http://homeassistant.local:8099/dashboard/`
 - MCP JSON-RPC: `http://homeassistant.local:8099/mcp`
+
+Optional path base routing (when add-on option `path_base` is set, e.g. `/nebula`):
+
+- Web UI root: `http://homeassistant.local:8099/nebula/`
+- Analytics dashboard: `http://homeassistant.local:8099/nebula/dashboard/`
+- MCP JSON-RPC: `http://homeassistant.local:8099/nebula/mcp`
 
 Add-on package files:
 
