@@ -25,6 +25,7 @@ const string RagIndexPathToolName = "rag_index_path";
 const string RagUpsertSourceToolName = "rag_upsert_source";
 const string RagDeleteSourceToolName = "rag_delete_source";
 const string RagPurgeAllToolName = "rag_purge_all";
+const string PathMappingsEnvironmentVariable = "NEBULARAG_PathMappings";
 const int DefaultToolTimeoutMs = 30000;
 const int InitSchemaToolTimeoutMs = 30000;
 const int QueryToolTimeoutMs = 30000;
@@ -66,6 +67,7 @@ var managementLogger = loggerFactory.CreateLogger<RagManagementService>();
 var managementService = new RagManagementService(store, managementLogger);
 var indexerLogger = loggerFactory.CreateLogger<RagIndexer>();
 var indexer = new RagIndexer(store, chunker, embeddingGenerator, settings, indexerLogger);
+var sourcePathMappings = LoadSourcePathMappings();
 
 if (runSelfTests)
 {
@@ -77,7 +79,7 @@ if (selfTestOnly)
     return;
 }
 
-await RunServerAsync(queryService, managementService, store, chunker, embeddingGenerator, indexer, settings, supportedProtocolVersions);
+await RunServerAsync(queryService, managementService, store, chunker, embeddingGenerator, indexer, settings, sourcePathMappings, supportedProtocolVersions);
 return;
 
 /// <summary>
@@ -199,6 +201,7 @@ static async Task RunServerAsync(
     IEmbeddingGenerator embeddingGenerator,
     RagIndexer indexer,
     RagSettings settings,
+    IReadOnlyList<SourcePathMapping> sourcePathMappings,
     IReadOnlyList<string> supportedProtocolVersions)
 {
     using var input = Console.OpenStandardInput();
@@ -289,7 +292,7 @@ static async Task RunServerAsync(
                 break;
 
             case "tools/call":
-                await HandleToolsCallAsync(output, id, request["params"]?.AsObject(), queryService, managementService, store, chunker, embeddingGenerator, indexer, settings, jsonOptions, messageFraming);
+                await HandleToolsCallAsync(output, id, request["params"]?.AsObject(), queryService, managementService, store, chunker, embeddingGenerator, indexer, settings, sourcePathMappings, jsonOptions, messageFraming);
                 break;
 
             default:
@@ -650,7 +653,7 @@ static JsonObject BuildRagIndexPathToolDefinition()
     {
         ["name"] = RagIndexPathToolName,
         ["title"] = "RAG Index Path",
-        ["description"] = "Recursively index files from a server-accessible directory path.",
+        ["description"] = "Recursively index files from a caller or server directory path. Host paths can be translated with NEBULARAG_PathMappings.",
         ["inputSchema"] = new JsonObject
         {
             ["type"] = "object",
@@ -659,7 +662,7 @@ static JsonObject BuildRagIndexPathToolDefinition()
                 ["sourcePath"] = new JsonObject
                 {
                     ["type"] = "string",
-                    ["description"] = "Absolute or relative directory path visible to the MCP server process."
+                    ["description"] = "Absolute or relative directory path from the caller machine or MCP runtime."
                 }
             },
             ["required"] = new JsonArray("sourcePath")
@@ -670,11 +673,12 @@ static JsonObject BuildRagIndexPathToolDefinition()
             ["properties"] = new JsonObject
             {
                 ["sourcePath"] = new JsonObject { ["type"] = "string" },
+                ["resolvedSourcePath"] = new JsonObject { ["type"] = "string" },
                 ["documentsIndexed"] = new JsonObject { ["type"] = "integer" },
                 ["documentsSkipped"] = new JsonObject { ["type"] = "integer" },
                 ["chunksIndexed"] = new JsonObject { ["type"] = "integer" }
             },
-            ["required"] = new JsonArray("sourcePath", "documentsIndexed", "documentsSkipped", "chunksIndexed")
+            ["required"] = new JsonArray("sourcePath", "resolvedSourcePath", "documentsIndexed", "documentsSkipped", "chunksIndexed")
         }
     };
 }
@@ -742,6 +746,7 @@ static async Task HandleToolsCallAsync(
     IEmbeddingGenerator embeddingGenerator,
     RagIndexer indexer,
     RagSettings settings,
+    IReadOnlyList<SourcePathMapping> sourcePathMappings,
     JsonSerializerOptions jsonOptions,
     McpMessageFraming framing)
 {
@@ -771,6 +776,7 @@ static async Task HandleToolsCallAsync(
             embeddingGenerator,
             indexer,
             settings,
+            sourcePathMappings,
             jsonOptions,
             framing,
             timeoutCts.Token);
@@ -804,6 +810,7 @@ static async Task DispatchToolCallAsync(
     IEmbeddingGenerator embeddingGenerator,
     RagIndexer indexer,
     RagSettings settings,
+    IReadOnlyList<SourcePathMapping> sourcePathMappings,
     JsonSerializerOptions jsonOptions,
     McpMessageFraming framing,
     CancellationToken cancellationToken)
@@ -828,7 +835,7 @@ static async Task DispatchToolCallAsync(
 
     if (string.Equals(toolName, RagServerInfoToolName, StringComparison.Ordinal))
     {
-        await HandleRagServerInfoToolAsync(output, id, settings, jsonOptions, framing, cancellationToken);
+        await HandleRagServerInfoToolAsync(output, id, settings, sourcePathMappings, jsonOptions, framing, cancellationToken);
         return;
     }
 
@@ -852,7 +859,7 @@ static async Task DispatchToolCallAsync(
 
     if (string.Equals(toolName, RagIndexPathToolName, StringComparison.Ordinal))
     {
-        await HandleRagIndexPathToolAsync(output, id, arguments, indexer, jsonOptions, framing, cancellationToken);
+        await HandleRagIndexPathToolAsync(output, id, arguments, indexer, sourcePathMappings, jsonOptions, framing, cancellationToken);
         return;
     }
 
@@ -1063,11 +1070,21 @@ static async Task HandleRagHealthCheckToolAsync(
     }
 }
 
-static async Task HandleRagServerInfoToolAsync(Stream output, JsonNode? id, RagSettings settings, JsonSerializerOptions jsonOptions, McpMessageFraming framing, CancellationToken cancellationToken)
+static async Task HandleRagServerInfoToolAsync(Stream output, JsonNode? id, RagSettings settings, IReadOnlyList<SourcePathMapping> sourcePathMappings, JsonSerializerOptions jsonOptions, McpMessageFraming framing, CancellationToken cancellationToken)
 {
     cancellationToken.ThrowIfCancellationRequested();
 
     var toolCount = BuildToolsList()["tools"]?.AsArray()?.Count ?? 0;
+    var mappings = new JsonArray();
+    foreach (var mapping in sourcePathMappings)
+    {
+        mappings.Add(new JsonObject
+        {
+            ["callerPrefix"] = mapping.CallerPrefix,
+            ["runtimePrefix"] = mapping.RuntimePrefix
+        });
+    }
+
     var structuredResult = new JsonObject
     {
         ["serverName"] = "Nebula RAG MCP",
@@ -1077,7 +1094,9 @@ static async Task HandleRagServerInfoToolAsync(Stream output, JsonNode? id, RagS
         ["databaseName"] = settings.Database.Database,
         ["vectorDimensions"] = settings.Ingestion.VectorDimensions,
         ["defaultTopK"] = settings.Retrieval.DefaultTopK,
-        ["toolCount"] = toolCount
+        ["toolCount"] = toolCount,
+        ["cwd"] = Directory.GetCurrentDirectory(),
+        ["pathMappings"] = mappings
     };
 
     await WriteResponseAsync(output, id, BuildToolResult("Nebula RAG MCP server information.", structuredResult), jsonOptions, framing);
@@ -1326,6 +1345,7 @@ static async Task HandleRagIndexPathToolAsync(
     JsonNode? id,
     JsonObject? arguments,
     RagIndexer indexer,
+    IReadOnlyList<SourcePathMapping> sourcePathMappings,
     JsonSerializerOptions jsonOptions,
     McpMessageFraming framing,
     CancellationToken cancellationToken)
@@ -1340,17 +1360,27 @@ static async Task HandleRagIndexPathToolAsync(
 
     try
     {
-        var summary = await indexer.IndexDirectoryAsync(sourcePath, cancellationToken);
+        var resolvedSourcePath = ResolveSourcePathForRuntime(sourcePath, sourcePathMappings);
+        if (!Directory.Exists(resolvedSourcePath))
+        {
+            var mappingHint = sourcePathMappings.Count == 0
+                ? $" Configure {PathMappingsEnvironmentVariable} to map caller paths to runtime mount paths (example: C:\\repo=/workspace)."
+                : string.Empty;
+            throw new DirectoryNotFoundException($"Resolved source directory does not exist. Requested='{sourcePath}' Resolved='{resolvedSourcePath}'.{mappingHint}");
+        }
+
+        var summary = await indexer.IndexDirectoryAsync(resolvedSourcePath, cancellationToken);
         var structuredResult = new JsonObject
         {
             ["sourcePath"] = sourcePath,
+            ["resolvedSourcePath"] = resolvedSourcePath,
             ["documentsIndexed"] = summary.DocumentsIndexed,
             ["documentsSkipped"] = summary.DocumentsSkipped,
             ["chunksIndexed"] = summary.ChunksIndexed
         };
 
         var text =
-            $"Index complete for '{sourcePath}': {summary.DocumentsIndexed} documents indexed, {summary.ChunksIndexed} chunks, {summary.DocumentsSkipped} skipped.";
+            $"Index complete for '{sourcePath}' (resolved to '{resolvedSourcePath}'): {summary.DocumentsIndexed} documents indexed, {summary.ChunksIndexed} chunks, {summary.DocumentsSkipped} skipped.";
         await WriteResponseAsync(output, id, BuildToolResult(text, structuredResult), jsonOptions, framing);
     }
     catch (OperationCanceledException)
@@ -1751,6 +1781,128 @@ static string? ResolveConfigPath(string fileName)
     return null;
 }
 
+/// <summary>
+/// Loads caller-to-runtime path mappings from NEBULARAG_PathMappings.
+/// </summary>
+/// <remarks>
+/// Format: "callerPrefix=runtimePrefix;callerPrefix2=runtimePrefix2".
+/// </remarks>
+static IReadOnlyList<SourcePathMapping> LoadSourcePathMappings()
+{
+    var rawValue = Environment.GetEnvironmentVariable(PathMappingsEnvironmentVariable);
+    if (string.IsNullOrWhiteSpace(rawValue))
+    {
+        return [];
+    }
+
+    var mappings = new List<SourcePathMapping>();
+    var entries = rawValue.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+    foreach (var entry in entries)
+    {
+        var separatorIndex = entry.IndexOf('=');
+        if (separatorIndex <= 0 || separatorIndex >= entry.Length - 1)
+        {
+            continue;
+        }
+
+        var callerPrefix = entry[..separatorIndex].Trim();
+        var runtimePrefix = entry[(separatorIndex + 1)..].Trim();
+        if (callerPrefix.Length == 0 || runtimePrefix.Length == 0)
+        {
+            continue;
+        }
+
+        mappings.Add(new SourcePathMapping(NormalizeCallerPath(callerPrefix), NormalizeRuntimePath(runtimePrefix)));
+    }
+
+    return mappings;
+}
+
+/// <summary>
+/// Resolves a caller-provided source path into a runtime-accessible directory path.
+/// </summary>
+static string ResolveSourcePathForRuntime(string sourcePath, IReadOnlyList<SourcePathMapping> sourcePathMappings)
+{
+    var candidatePath = sourcePath.Trim();
+
+    if (!Path.IsPathRooted(candidatePath))
+    {
+        return Path.GetFullPath(Path.Combine(Directory.GetCurrentDirectory(), candidatePath));
+    }
+
+    if (Directory.Exists(candidatePath))
+    {
+        return Path.GetFullPath(candidatePath);
+    }
+
+    var mappedPath = TryMapCallerPath(candidatePath, sourcePathMappings);
+    return mappedPath ?? candidatePath;
+}
+
+/// <summary>
+/// Attempts to map a caller path prefix to a runtime path prefix.
+/// </summary>
+static string? TryMapCallerPath(string callerPath, IReadOnlyList<SourcePathMapping> sourcePathMappings)
+{
+    var normalizedCallerPath = NormalizeCallerPath(callerPath);
+
+    foreach (var mapping in sourcePathMappings)
+    {
+        if (!IsPrefixMatch(normalizedCallerPath, mapping.CallerPrefix))
+        {
+            continue;
+        }
+
+        var suffix = normalizedCallerPath[mapping.CallerPrefix.Length..].TrimStart('/', '\\');
+        var normalizedSuffix = suffix.Replace('\\', '/');
+        if (normalizedSuffix.Length == 0)
+        {
+            return mapping.RuntimePrefix;
+        }
+
+        return $"{mapping.RuntimePrefix}/{normalizedSuffix}";
+    }
+
+    return null;
+}
+
+/// <summary>
+/// Normalizes caller path prefixes for matching.
+/// </summary>
+static string NormalizeCallerPath(string path)
+{
+    var normalized = path.Trim();
+    return normalized.TrimEnd('/', '\\');
+}
+
+/// <summary>
+/// Normalizes runtime path prefixes for composition.
+/// </summary>
+static string NormalizeRuntimePath(string path)
+{
+    var normalized = path.Trim().Replace('\\', '/');
+    return normalized.TrimEnd('/');
+}
+
+/// <summary>
+/// Checks whether <paramref name="path"/> starts with <paramref name="prefix"/> on a segment boundary.
+/// </summary>
+static bool IsPrefixMatch(string path, string prefix)
+{
+    if (!path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+    {
+        return false;
+    }
+
+    if (path.Length == prefix.Length)
+    {
+        return true;
+    }
+
+    var boundaryChar = path[prefix.Length];
+    return boundaryChar == '/' || boundaryChar == '\\';
+}
+
 file enum McpMessageFraming
 {
     Unknown = 0,
@@ -1759,3 +1911,5 @@ file enum McpMessageFraming
 }
 
 file sealed record SelfTestCase(string Name, string Description, Func<CancellationToken, Task> Run);
+
+file sealed record SourcePathMapping(string CallerPrefix, string RuntimePrefix);

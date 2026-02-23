@@ -93,7 +93,10 @@ function New-ServerDefinition {
         "--cpus=1.0"
     )
 
+    $envMap = [ordered]@{}
+
     if (-not [string]::IsNullOrWhiteSpace($WorkspaceFolderScope)) {
+        $envMap["NEBULARAG_PathMappings"] = "${workspaceFolder:$WorkspaceFolderScope}=/workspace"
         $args += @(
             "--mount",
             "type=bind,source=${workspaceFolder:$WorkspaceFolderScope},target=/workspace",
@@ -109,11 +112,17 @@ function New-ServerDefinition {
         "--skip-self-test"
     )
 
-    return [ordered]@{
+    $server = [ordered]@{
         type = "stdio"
         command = "podman"
         args = $args
     }
+
+    if ($envMap.Count -gt 0) {
+        $server["env"] = $envMap
+    }
+
+    return $server
 }
 
 function Build-McpConfigJson {

@@ -66,7 +66,7 @@ Nebula RAG includes an MCP server in `src\NebulaRAG.Mcp` that exposes tool:
 - `rag_index_stats`
 - `rag_recent_sources`
 - `rag_list_sources`
-- `rag_index_path` (indexes a server-visible directory path, use `/workspace/...` in container mode)
+- `rag_index_path` (indexes a caller or server directory path; in container mode caller paths are mapped via `NEBULARAG_PathMappings`, e.g. `C:\project=/workspace`)
 - `rag_upsert_source` (indexes provided `sourcePath` + `content` text directly)
 - `rag_delete_source` (requires `sourcePath` + `confirm=true`)
 - `rag_purge_all` (requires `confirmPhrase="PURGE ALL"`)
@@ -144,6 +144,7 @@ Optional environment overrides for container/runtime config:
 - `NEBULARAG_Database__Password`
 - `NEBULARAG_Database__SslMode`
 - `NEBULARAG_CONFIG`
+- `NEBULARAG_PathMappings` (optional caller-to-runtime path mappings: `callerPrefix=runtimePrefix;caller2=runtime2`)
 
 ### VS Code Copilot MCP config
 

@@ -3,6 +3,9 @@
     "nebula-rag": {
       "type": "stdio",
       "command": "podman",
+      "env": {
+        "NEBULARAG_PathMappings": "${workspaceFolder:NebulaRAG}=/workspace"
+      },
       "args": [
         "run",
         "--rm",
@@ -25,6 +28,9 @@
     "nebula-rag": {
       "type": "stdio",
       "command": "podman",
+      "env": {
+        "NEBULARAG_PathMappings": "${workspaceFolder:NebulaRAG}=/workspace"
+      },
       "args": [
         "run",
         "--rm",
