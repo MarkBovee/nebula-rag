@@ -294,12 +294,24 @@ function Write-RootObject {
 function Ensure-EnvTemplate {
     param(
         [string]$ConfiguredEnvPath,
-        [string]$TemplatePath,
+        [string]$TemplateRoot,
         [switch]$ForceWrite
     )
 
-    if (-not (Test-Path -LiteralPath $TemplatePath)) {
-        Write-Host "Skip env template: source .env.example not found in this repo."
+    $rootEnvPath = Join-Path $TemplateRoot ".nebula.env"
+    $exampleEnvPath = Join-Path $TemplateRoot ".env.example"
+
+    $sourceEnvPath = $null
+    if (Test-Path -LiteralPath $rootEnvPath) {
+        # Prefer exact local runtime values when available.
+        $sourceEnvPath = $rootEnvPath
+    }
+    elseif (Test-Path -LiteralPath $exampleEnvPath) {
+        $sourceEnvPath = $exampleEnvPath
+    }
+
+    if ([string]::IsNullOrWhiteSpace($sourceEnvPath)) {
+        Write-Host "Skip env template: no source file found (.nebula.env or .env.example)."
         return
     }
 
@@ -309,8 +321,8 @@ function Ensure-EnvTemplate {
     }
 
     Ensure-Directory -Path (Split-Path -Parent $ConfiguredEnvPath)
-    Copy-Item -LiteralPath $TemplatePath -Destination $ConfiguredEnvPath -Force
-    Write-Host "Wrote env template: $ConfiguredEnvPath"
+    Copy-Item -LiteralPath $sourceEnvPath -Destination $ConfiguredEnvPath -Force
+    Write-Host "Wrote env file from $sourceEnvPath to: $ConfiguredEnvPath"
 }
 
 function Setup-Project {
@@ -384,7 +396,7 @@ function Setup-User {
     }
 
     if ($WriteEnvTemplate) {
-        Ensure-EnvTemplate -ConfiguredEnvPath $ConfiguredEnvFilePath -TemplatePath (Join-Path $TemplateRoot ".env.example") -ForceWrite:$ForceWrite
+        Ensure-EnvTemplate -ConfiguredEnvPath $ConfiguredEnvFilePath -TemplateRoot $TemplateRoot -ForceWrite:$ForceWrite
     }
 
     Write-Host ""
