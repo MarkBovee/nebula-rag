@@ -57,7 +57,7 @@ export class NebularRagClient {
   /// </summary>
   /// <returns>Health status response.</returns>
   async getHealth(): Promise<HealthResponse> {
-    const response = await this.api.get<HealthResponse>('/api/health');
+    const response = await this.api.get<HealthResponse>('api/health');
     return response.data;
   }
 
@@ -66,7 +66,7 @@ export class NebularRagClient {
   /// </summary>
   /// <returns>Index statistics including document and chunk counts.</returns>
   async getStats(): Promise<IndexStats> {
-    const response = await this.api.get<IndexStats>('/api/stats');
+    const response = await this.api.get<IndexStats>('api/stats');
     return response.data;
   }
 
@@ -76,7 +76,7 @@ export class NebularRagClient {
   /// <param name="limit">Maximum number of sources to return (default 100).</param>
   /// <returns>Array of source information objects.</returns>
   async listSources(limit = 100): Promise<SourceInfo[]> {
-    const response = await this.api.get<SourceInfo[]>('/api/sources', {
+    const response = await this.api.get<SourceInfo[]>('api/sources', {
       params: { limit }
     });
     return response.data;
@@ -89,7 +89,7 @@ export class NebularRagClient {
   /// <param name="limit">Maximum number of results to return.</param>
   /// <returns>Query results with matching documents and snippets.</returns>
   async query(text: string, limit = 5): Promise<QueryResult> {
-    const response = await this.api.post<QueryResult>('/api/query', {
+    const response = await this.api.post<QueryResult>('api/query', {
       text,
       limit
     });
@@ -103,7 +103,7 @@ export class NebularRagClient {
   /// <param name="sourcePath">File path or directory to index.</param>
   /// <returns>Index summary with document and chunk counts.</returns>
   async indexSource(sourcePath: string): Promise<any> {
-    const response = await this.api.post('/api/index', {
+    const response = await this.api.post('api/index', {
       sourcePath
     });
     this.addActivity('index', `Indexed: ${sourcePath}`);
@@ -116,7 +116,7 @@ export class NebularRagClient {
   /// <param name="sourcePath">Source path to delete.</param>
   /// <returns>Success status.</returns>
   async deleteSource(sourcePath: string): Promise<{ deleted: boolean }> {
-    const response = await this.api.post<{ deleted: boolean }>('/api/source/delete', {
+    const response = await this.api.post<{ deleted: boolean }>('api/source/delete', {
       sourcePath
     });
     this.addActivity('delete', `Deleted source: ${sourcePath}`);

@@ -4,7 +4,10 @@ All notable changes to the Nebula RAG Home Assistant add-on are documented in th
 
 The format is inspired by Keep a Changelog and follows semantic versioning.
 
-## [0.2.3] - 2026-02-23
+## [0.2.5] - 2026-02-23
+
+- Fixed dashboard API routing under ingress/path-base hosting by switching frontend API calls to relative routes (`api/...`) so computed base prefixes are preserved.
+- Prevents calls from bypassing ingress/path-base when hosted under routes like `/api/hassio_ingress/<token>/...` or `/<path_base>/...`.
 
 ## [0.2.4] - 2026-02-23
 
@@ -12,6 +15,7 @@ The format is inspired by Keep a Changelog and follows semantic versioning.
 - Exposed host port mapping for `8099/tcp` by default in the add-on manifest so the web UI and MCP endpoint can be reached without ingress when desired.
 - Backend: add-on now surfaces index storage size via API (`indexSizeBytes`) for dashboard health views.
 
+## [0.2.3] - 2026-02-23
 
 - Added optional `path_base` add-on setting to host Nebula RAG behind a route prefix (for example `/nebula`).
 - Added AddonHost path-base support so endpoints can be exposed as `/nebula/dashboard/`, `/nebula/api/...`, and `/nebula/mcp`.
