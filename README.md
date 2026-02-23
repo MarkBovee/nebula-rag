@@ -27,6 +27,13 @@ For containerized MCP usage, prefer `.nebula.env` from `.env.example`:
 Copy-Item .env.example .nebula.env
 ```
 
+## Documentation
+
+Deep-dive documentation is in `docs/`:
+
+- `docs/ARCHITECTURE.md`
+- `docs/PRODUCTION_READINESS_PLAN.md`
+
 ## CLI usage
 
 From project root:
@@ -162,6 +169,18 @@ Single setup script (global + project):
 pwsh -File .\scripts\setup-nebula-rag.ps1 -Mode Both -TargetPath C:\path\to\your-project -Channel Auto -CreateEnvTemplate
 ```
 
+`setup-nebula-rag.ps1` now asks which install target you want:
+
+- `HomeAssistantAddon` (default/recommended)
+- `LocalContainer` (legacy Podman MCP path)
+
+You can also set it explicitly:
+
+```powershell
+pwsh -File .\scripts\setup-nebula-rag.ps1 -InstallTarget HomeAssistantAddon -Mode Project -TargetPath C:\path\to\your-project
+pwsh -File .\scripts\setup-nebula-rag.ps1 -InstallTarget LocalContainer -Mode Both -CreateEnvTemplate
+```
+
 Common options:
 
 ```powershell
@@ -239,3 +258,82 @@ Required GitHub secrets:
 - `RAG_DB_NAME`
 - `RAG_DB_USER`
 - `RAG_DB_PASSWORD`
+
+## Home Assistant add-on
+
+This repository now includes a Home Assistant add-on package at:
+
+- `repository.json`
+- `nebula-rag/config.json`
+- `nebula-rag/Dockerfile`
+- `nebula-rag/run.sh`
+
+`nebula-rag/Dockerfile` builds the add-on by cloning this repository at build time (defaults from `nebula-rag/build.yaml`).
+
+The add-on is built as a one-shot job (`startup: once`) so you can run NebulaRAG operations from Home Assistant on demand.
+
+### Add-on settings and old env mapping
+
+The old local env settings are available in add-on options for the core runtime values:
+
+- `database.host` -> `NEBULARAG_Database__Host`
+- `database.port` -> `NEBULARAG_Database__Port`
+- `database.name` -> `NEBULARAG_Database__Database`
+- `database.username` -> `NEBULARAG_Database__Username`
+- `database.password` -> `NEBULARAG_Database__Password`
+- `database.ssl_mode` -> `NEBULARAG_Database__SslMode`
+
+Related add-on options:
+
+- `config_path` (passes `--config` to CLI)
+- `source_path` (for `index` operation)
+
+`NEBULARAG_PathMappings` is MCP-specific and not used by the Home Assistant add-on CLI workflow.
+
+Supported `operation` values in add-on options:
+
+- `init`
+- `index`
+- `query`
+- `stats`
+- `list-sources`
+- `health-check`
+
+Typical flow in Home Assistant:
+
+1. Add your custom add-on repository: `https://github.com/MarkBovee/NebulaRAG`.
+2. Install `Nebula RAG` add-on.
+3. Configure PostgreSQL settings in add-on options.
+4. Run with `operation=init` once.
+5. Run with `operation=index` and `source_path=/share` (or another mounted path).
+6. Use `query`/`stats`/`list-sources` as needed.
+
+### Bumping add-on version
+
+When you change add-on behavior, bump `nebula-rag/config.json` version before publishing updates.
+
+Patch bump:
+
+```powershell
+pwsh -File .\scripts\bump-ha-addon-version.ps1 -Part Patch
+```
+
+Minor bump:
+
+```powershell
+pwsh -File .\scripts\bump-ha-addon-version.ps1 -Part Minor
+```
+
+Explicit version:
+
+```powershell
+pwsh -File .\scripts\bump-ha-addon-version.ps1 -Version 0.2.0
+```
+
+After bumping, commit and push. Home Assistant will then detect the updated add-on version.
+
+Add-on release notes live in `nebula-rag/CHANGELOG.md`.
+
+### Add-on CI validation
+
+GitHub Actions workflow `.github/workflows/ha-addon-validate.yml` validates add-on manifests and runs the Home Assistant builder in `--test` mode for `amd64` when add-on files change.

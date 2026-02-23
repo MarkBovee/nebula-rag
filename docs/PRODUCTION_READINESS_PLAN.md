@@ -242,7 +242,7 @@ ALTER TABLE rag_chunks ADD FOREIGN KEY (topic_id) REFERENCES rag_topics(id);
 - Create `compose.prod.yaml` for production overrides
 
 #### 4.2 Comprehensive Documentation
-- [ ] **Architecture.md**: System design, component interactions
+- [ ] **docs/ARCHITECTURE.md**: System design, component interactions
 - [ ] **DEPLOYMENT.md**: Production deployment checklist
 - [ ] **API.md**: REST API documentation (OpenAPI spec)
 - [ ] **ADMIN_GUIDE.md**: Admin panel usage

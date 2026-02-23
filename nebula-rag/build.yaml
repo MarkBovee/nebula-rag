@@ -1,0 +1,3 @@
+args:
+  NEBULARAG_REPO_URL: https://github.com/MarkBovee/NebulaRAG.git
+  NEBULARAG_REPO_REF: main

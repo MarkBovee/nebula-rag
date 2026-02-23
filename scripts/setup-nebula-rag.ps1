@@ -17,6 +17,9 @@ param(
     [string]$EnvFileName = ".nebula.env",
     [string]$EnvFilePath,
 
+    [ValidateSet("Ask", "LocalContainer", "HomeAssistantAddon")]
+    [string]$InstallTarget = "Ask",
+
     [switch]$CreateEnvTemplate,
     [switch]$SkipSkill,
     [switch]$NoBackup,
@@ -84,7 +87,7 @@ function New-ServerDefinition {
         [string]$WorkspaceFolderScope
     )
 
-    $args = @(
+    $containerArgs = @(
         "run",
         "--rm",
         "-i",
@@ -97,7 +100,7 @@ function New-ServerDefinition {
 
     if (-not [string]::IsNullOrWhiteSpace($WorkspaceFolderScope)) {
         $envMap["NEBULARAG_PathMappings"] = "${workspaceFolder:$WorkspaceFolderScope}=/workspace"
-        $args += @(
+        $containerArgs += @(
             "--mount",
             "type=bind,source=${workspaceFolder:$WorkspaceFolderScope},target=/workspace",
             "--workdir",
@@ -105,7 +108,7 @@ function New-ServerDefinition {
         )
     }
 
-    $args += @(
+    $containerArgs += @(
         "--env-file",
         $ConfiguredEnvFile,
         $ConfiguredImage,
@@ -115,7 +118,7 @@ function New-ServerDefinition {
     $server = [ordered]@{
         type = "stdio"
         command = "podman"
-        args = $args
+        args = $containerArgs
     }
 
     if ($envMap.Count -gt 0) {
@@ -334,6 +337,37 @@ function Ensure-EnvTemplate {
     Write-Host "Wrote env file from $sourceEnvPath to: $ConfiguredEnvPath"
 }
 
+function Resolve-InstallTarget {
+    param([string]$SelectedInstallTarget)
+
+    if ($SelectedInstallTarget -ne "Ask") {
+        return $SelectedInstallTarget
+    }
+
+    if ($null -eq $Host -or $null -eq $Host.UI) {
+        Write-Host "No interactive host available; defaulting to HomeAssistantAddon."
+        return "HomeAssistantAddon"
+    }
+
+    Write-Host ""
+    Write-Host "Select NebulaRAG install target:"
+    Write-Host "  1) Home Assistant add-on (recommended)"
+    Write-Host "  2) Local container MCP (Podman env-file workflow)"
+
+    while ($true) {
+        $selection = Read-Host "Enter 1 or 2 (default 1)"
+        if ([string]::IsNullOrWhiteSpace($selection) -or $selection -eq "1") {
+            return "HomeAssistantAddon"
+        }
+
+        if ($selection -eq "2") {
+            return "LocalContainer"
+        }
+
+        Write-Host "Invalid selection. Enter 1 or 2."
+    }
+}
+
 function Setup-Project {
     param(
         [string]$ProjectPath,
@@ -413,13 +447,20 @@ function Setup-User {
 }
 
 $templateRoot = Split-Path -Parent $PSScriptRoot
+$resolvedInstallTarget = Resolve-InstallTarget -SelectedInstallTarget $InstallTarget
 
 if ([string]::IsNullOrWhiteSpace($EnvFilePath)) {
     $EnvFilePath = Join-Path $HOME ".nebula-rag/.nebula.env"
 }
 
 if ($Mode -in @("Both", "User")) {
-    Setup-User -SelectedChannel $Channel -ExplicitUserConfigPath $UserConfigPath -ConfiguredServerName $ServerName -ConfiguredImageName $ImageName -ConfiguredEnvFilePath $EnvFilePath -WriteEnvTemplate:$CreateEnvTemplate -ForceWrite:$Force -SkipBackup:$NoBackup -TemplateRoot $templateRoot
+    if ($resolvedInstallTarget -eq "LocalContainer") {
+        Setup-User -SelectedChannel $Channel -ExplicitUserConfigPath $UserConfigPath -ConfiguredServerName $ServerName -ConfiguredImageName $ImageName -ConfiguredEnvFilePath $EnvFilePath -WriteEnvTemplate:$CreateEnvTemplate -ForceWrite:$Force -SkipBackup:$NoBackup -TemplateRoot $templateRoot
+    }
+    else {
+        Write-Host ""
+        Write-Host "Skipping user MCP config because install target is Home Assistant add-on."
+    }
 }
 
 if ($Mode -in @("Both", "Project")) {
@@ -437,5 +478,6 @@ if ($Mode -in @("Both", "Project")) {
 
 Write-Host ""
 Write-Host "NebulaRAG setup finished."
+Write-Host "Install target: $resolvedInstallTarget"
 Write-Host "Server: $ServerName"
 Write-Host "Image:  $ImageName"

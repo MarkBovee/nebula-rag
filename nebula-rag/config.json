@@ -1,0 +1,43 @@
+{
+  "name": "Nebula RAG",
+  "version": "0.1.1",
+  "slug": "nebula_rag",
+  "description": "Run NebulaRAG CLI jobs from Home Assistant against PostgreSQL/pgvector.",
+  "url": "https://github.com/MarkBovee/NebulaRAG/tree/main/nebula-rag",
+  "stage": "stable",
+  "startup": "once",
+  "boot": "manual",
+  "init": false,
+  "arch": ["amd64", "aarch64"],
+  "map": ["share:rw", "addon_config:rw"],
+  "options": {
+    "operation": "init",
+    "source_path": "/share",
+    "query_text": "",
+    "query_limit": 5,
+    "config_path": "",
+    "database": {
+      "host": "homeassistant.local",
+      "port": 5432,
+      "name": "nebularag",
+      "username": "postgres",
+      "password": "",
+      "ssl_mode": "Prefer"
+    }
+  },
+  "schema": {
+    "operation": "list(init|index|query|stats|list-sources|health-check)",
+    "source_path": "str?",
+    "query_text": "str?",
+    "query_limit": "int(1,100)?",
+    "config_path": "str?",
+    "database": {
+      "host": "str",
+      "port": "int(1,65535)",
+      "name": "str",
+      "username": "str",
+      "password": "password",
+      "ssl_mode": "list(Disable|Allow|Prefer|Require)"
+    }
+  }
+}
