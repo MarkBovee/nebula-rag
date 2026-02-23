@@ -349,6 +349,28 @@ function Ensure-EnvTemplate {
     Write-Host "Wrote env file from $sourceEnvPath to: $ConfiguredEnvPath"
 }
 
+function Ensure-GlobalAgentsGuide {
+    param(
+        [string]$TemplateRoot,
+        [switch]$ForceWrite
+    )
+
+    $sourceAgentsPath = Join-Path $TemplateRoot "AGENTS.md"
+    if (-not (Test-Path -LiteralPath $sourceAgentsPath)) {
+        Write-Host "Skip global AGENTS setup: source file not found at $sourceAgentsPath"
+        return
+    }
+
+    $homeDirectory = $HOME
+    if ([string]::IsNullOrWhiteSpace($homeDirectory)) {
+        Write-Host "Skip global AGENTS setup: HOME is not set."
+        return
+    }
+
+    $globalAgentsPath = Join-Path $homeDirectory "AGENTS.md"
+    Copy-FileSafe -Source $sourceAgentsPath -Destination $globalAgentsPath -ForceWrite:$ForceWrite
+}
+
 function Resolve-InstallTarget {
     param([string]$SelectedInstallTarget)
 
@@ -403,6 +425,7 @@ function Setup-Project {
 
     Copy-FileSafe -Source (Join-Path $TemplateRoot ".github/copilot-instructions.md") -Destination (Join-Path $targetRoot ".github/copilot-instructions.md") -ForceWrite:$ForceWrite
     Copy-FileSafe -Source (Join-Path $TemplateRoot ".github/instructions/rag.instructions.md") -Destination (Join-Path $targetRoot ".github/instructions/rag.instructions.md") -ForceWrite:$ForceWrite
+    Copy-FileSafe -Source (Join-Path $TemplateRoot "AGENTS.md") -Destination (Join-Path $targetRoot "AGENTS.md") -ForceWrite:$ForceWrite
 
     if (-not $SkipSkillFile) {
         Copy-FileSafe -Source (Join-Path $TemplateRoot ".github/skills/nebularag/SKILL.md") -Destination (Join-Path $targetRoot ".github/skills/nebularag/SKILL.md") -ForceWrite:$ForceWrite
@@ -469,6 +492,7 @@ if ([string]::IsNullOrWhiteSpace($EnvFilePath)) {
 
 if ($Mode -in @("Both", "User")) {
     Setup-User -SelectedChannel $Channel -ExplicitUserConfigPath $UserConfigPath -ConfiguredServerName $ServerName -ConfiguredImageName $ImageName -ConfiguredEnvFilePath $EnvFilePath -SelectedInstallTarget $resolvedInstallTarget -ConfiguredHomeAssistantMcpUrl $HomeAssistantMcpUrl -WriteEnvTemplate:($CreateEnvTemplate -and $resolvedInstallTarget -eq "LocalContainer") -ForceWrite:$Force -SkipBackup:$NoBackup -TemplateRoot $templateRoot
+    Ensure-GlobalAgentsGuide -TemplateRoot $templateRoot -ForceWrite:$Force
 }
 
 if ($Mode -in @("Both", "Project")) {

@@ -15,5 +15,5 @@ For implementation tasks:
 
 Agent setup baseline:
 
-- Keep `.github/copilot-instructions.md`, `.github/instructions/rag.instructions.md`, and `.github/skills/nebularag/SKILL.md` in target projects.
+- Keep `AGENTS.md`, `.github/copilot-instructions.md`, `.github/instructions/rag.instructions.md`, and `.github/skills/nebularag/SKILL.md` in target projects.
 - Prompt files are optional convenience helpers and are not required for RAG-first behavior.

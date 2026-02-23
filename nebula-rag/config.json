@@ -23,7 +23,7 @@
   "map": ["share:rw", "addon_config:rw"],
   "options": {
     "default_index_path": "/share",
-    "path_base": "",
+    "path_base": "/nebula",
     "database": {
       "host": "homeassistant.local",
       "port": 5432,

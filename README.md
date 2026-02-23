@@ -58,9 +58,19 @@ Primary MCP tools:
 - `rag_recent_sources`
 - `rag_list_sources`
 - `rag_index_path`
+- `rag_index_text`
+- `rag_index_url`
+- `rag_reindex_source`
+- `rag_get_chunk`
+- `rag_search_similar`
 - `rag_upsert_source`
 - `rag_delete_source`
 - `rag_purge_all`
+- `memory_store`
+- `memory_recall`
+- `memory_list`
+- `memory_update`
+- `memory_delete`
 
 ## Quick Start (Home Assistant Add-on)
 
@@ -133,6 +143,8 @@ Configure user MCP for Home Assistant-hosted MCP endpoint:
 ```powershell
 pwsh -File .\scripts\setup-nebula-rag.ps1 -Mode User -InstallTarget HomeAssistantAddon -HomeAssistantMcpUrl http://homeassistant.local:8099/mcp -Force
 ```
+
+This setup also writes a global agent baseline to `~/AGENTS.md` and project baseline files (including `AGENTS.md`) when project mode is used.
 
 Configure user MCP for local container transport instead:
 
