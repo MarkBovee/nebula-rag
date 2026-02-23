@@ -1,28 +1,26 @@
 # Home Assistant Add-on: Nebula RAG
 
-This folder contains a complete Home Assistant add-on package for running NebulaRAG CLI operations against PostgreSQL/pgvector.
+This directory contains the full Home Assistant add-on package used to run NebulaRAG CLI jobs against PostgreSQL/pgvector.
 
-## Folder layout
+## Package Contents
 
-- `../repository.json`: Custom add-on repository metadata.
-- `config.json`: Add-on manifest and option schema.
-- `DOCS.md`: Home Assistant add-on documentation page.
-- `Dockerfile`: Add-on image build.
-- `run.sh`: Runtime entry script that maps add-on options to `NEBULARAG_*` environment variables.
-- `build.yaml`: Optional build args for source repo URL/ref.
+- `../repository.json`: Add-on repository metadata.
+- `config.json`: Add-on manifest, options, and schema.
+- `DOCS.md`: Home Assistant-facing usage guide.
+- `Dockerfile`: Multi-stage add-on image build.
+- `run.sh`: Runtime option-to-env mapping and command dispatcher.
+- `build.yaml`: Build arguments for repository URL and ref pinning.
 
-## Build source
+## Build Source and Pinning
 
-The add-on Dockerfile clones NebulaRAG source during image build.
-
-Default values:
+The image build clones this repository by default:
 
 - `NEBULARAG_REPO_URL=https://github.com/MarkBovee/NebulaRAG.git`
 - `NEBULARAG_REPO_REF=main`
 
-You can change these in `build.yaml` to pin a tag, branch, or fork.
+Change `build.yaml` to pin a release tag, branch, or fork.
 
-## Supported operations
+## Supported Operations
 
 Set `operation` in add-on options to one of:
 
@@ -33,39 +31,49 @@ Set `operation` in add-on options to one of:
 - `list-sources`
 - `health-check`
 
-## Recommended option defaults
+## Required Configuration
 
-- `source_path`: `/share`
-- `database.host`: your PostgreSQL host or IP
-- `database.port`: `5432`
-- `database.name`: your database name
-- `database.username`: your database user
-- `database.password`: your database password
-- `database.ssl_mode`: `Prefer` or `Disable` (for trusted LAN)
+- `database.host`
+- `database.port`
+- `database.name`
+- `database.username`
+- `database.password`
+- `database.ssl_mode`
 
-## Versioning
+Recommended defaults:
 
-When you change the add-on behavior, bump the version in `nebula-rag/config.json` and add notes to `CHANGELOG.md`.
+- `source_path=/share`
+- `database.port=5432`
+- `database.ssl_mode=Prefer` (or `Disable` on trusted LAN setups)
 
-Use the helper script from repo root:
+## Runtime Dependency Note
+
+The runtime image installs `libgssapi-krb5-2` to satisfy .NET database client native dependency loading and avoid `libgssapi_krb5.so.2` warnings in logs.
+
+## Release Process
+
+When add-on behavior changes:
+
+1. Bump `nebula-rag/config.json` version.
+2. Update `nebula-rag/CHANGELOG.md`.
+3. Commit and push.
+
+Patch bump:
 
 ```powershell
 pwsh -File .\scripts\bump-ha-addon-version.ps1 -Part Patch
 ```
 
-Or set an explicit version:
+Explicit version:
 
 ```powershell
 pwsh -File .\scripts\bump-ha-addon-version.ps1 -Version 0.2.0
 ```
 
-After bumping, commit and push. In Home Assistant, update the add-on from your repository.
-
 ## Validation
 
-Official Home Assistant testing/validation docs:
+Validation is automated in `.github/workflows/ha-addon-validate.yml` and includes:
 
-- https://developers.home-assistant.io/docs/apps/testing/
-- https://developers.home-assistant.io/docs/apps/configuration/
-
-Recommended local add-on build validation uses the Home Assistant builder image (`--test`) from the add-on docs.
+- JSON manifest validation.
+- Required file checks.
+- Home Assistant builder `--test` image build for `amd64`.

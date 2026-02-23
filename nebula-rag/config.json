@@ -1,6 +1,6 @@
 {
   "name": "Nebula RAG",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "slug": "nebula_rag",
   "description": "Run NebulaRAG CLI jobs from Home Assistant against PostgreSQL/pgvector.",
   "url": "https://github.com/MarkBovee/NebulaRAG/tree/main/nebula-rag",

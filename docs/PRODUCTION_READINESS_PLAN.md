@@ -1,5 +1,17 @@
 # NebulaRAG Production Readiness Plan
 
+## Status Update (2026-02-23)
+
+Completed hardening and reliability items:
+
+- Added `SECURITY.md` for vulnerability disclosure workflow.
+- Added `.github/CODEOWNERS` for protected review ownership.
+- Added `.github/dependabot.yml` for automated dependency updates.
+- Added `.github/workflows/security.yml` for CodeQL and dependency vulnerability audit.
+- Updated Home Assistant add-on runtime image to install `libgssapi-krb5-2` to prevent `libgssapi_krb5.so.2` load warnings.
+
+Remaining items in this document still apply and should be prioritized by impact.
+
 ## Executive Summary
 NebulaRAG is a lightweight PostgreSQL-backed RAG system designed for local AI projects. Currently in development phase with core functionality working but lacking production-grade features like management interfaces, observability, and comprehensive error handling. This plan outlines the path to production readiness across 4 phases over 6-8 weeks.
 

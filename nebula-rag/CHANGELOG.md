@@ -4,6 +4,12 @@ All notable changes to the Nebula RAG Home Assistant add-on are documented in th
 
 The format is inspired by Keep a Changelog and follows semantic versioning.
 
+## [0.1.2] - 2026-02-23
+
+- Added add-on runtime dependency `libgssapi-krb5-2` to avoid `libgssapi_krb5.so.2` load warnings.
+- Public repository hardening update: added security policy, dependency automation, and security CI workflow.
+- Documentation refresh for clearer setup, operations, troubleshooting, and release process.
+
 ## [0.1.1] - 2026-02-23
 
 - Add-on install readiness update.

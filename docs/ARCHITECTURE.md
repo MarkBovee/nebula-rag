@@ -1,5 +1,19 @@
 # NebulaRAG Architecture & Vision
 
+This document describes the current architecture, the target production model, and the operational guardrails used as the project matures.
+
+## Public Repository Baseline (Current)
+
+The project is now public and includes repository-level hardening controls:
+
+- `SECURITY.md` for private vulnerability reporting guidance.
+- `.github/CODEOWNERS` for maintainer ownership on sensitive paths.
+- `.github/dependabot.yml` for automated dependency update PRs.
+- `.github/workflows/security.yml` for CodeQL and NuGet vulnerability audit.
+- `.github/workflows/ha-addon-validate.yml` for add-on package validation.
+
+These controls are part of the deployment architecture because they gate code flow and reduce supply-chain risk.
+
 ## Current Architecture (Development)
 
 ```
