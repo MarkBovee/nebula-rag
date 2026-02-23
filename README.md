@@ -21,10 +21,10 @@ Settings are in:
 
 Set your database password in `ragsettings.local.json`.
 
-For containerized MCP usage, prefer `.env` from `.env.example`:
+For containerized MCP usage, prefer `.nebula.env` from `.env.example`:
 
 ```powershell
-Copy-Item .env.example .env
+Copy-Item .env.example .nebula.env
 ```
 
 ## CLI usage
@@ -59,13 +59,14 @@ These tasks are defined in `.vscode\tasks.json`.
 
 Nebula RAG includes an MCP server in `src\NebulaRAG.Mcp` that exposes tool:
 
+- `rag_init_schema`
 - `query_project_rag` (supports `text`, optional `limit`, optional `sourcePathContains`, optional `minScore`)
 - `rag_health_check`
 - `rag_server_info`
 - `rag_index_stats`
 - `rag_recent_sources`
 - `rag_list_sources`
-- `rag_index_path` (indexes a server-visible directory path)
+- `rag_index_path` (indexes a server-visible directory path, use `/workspace/...` in container mode)
 - `rag_upsert_source` (indexes provided `sourcePath` + `content` text directly)
 - `rag_delete_source` (requires `sourcePath` + `confirm=true`)
 - `rag_purge_all` (requires `confirmPhrase="PURGE ALL"`)
@@ -102,6 +103,8 @@ Build the MCP image directly with the Dockerfile:
 podman build -t localhost/nebula-rag-mcp:latest -f Dockerfile .
 ```
 
+After MCP tool changes, rebuild the image and restart MCP clients so `tools/list` reflects the latest server surface.
+
 Pass through MCP arguments to the containerized server:
 
 ```powershell
@@ -119,11 +122,11 @@ npx @modelcontextprotocol/inspector --config .vscode/mcp.json --server "nebula-r
 CLI-only smoke tests with Inspector:
 
 ```powershell
-npx -y @modelcontextprotocol/inspector --cli podman run --rm -i --pull=never --env-file .env localhost/nebula-rag-mcp:latest --skip-self-test --method tools/list
-npx -y @modelcontextprotocol/inspector --cli podman run --rm -i --pull=never --env-file .env localhost/nebula-rag-mcp:latest --skip-self-test --method tools/call --tool-name rag_server_info
+npx -y @modelcontextprotocol/inspector --cli podman run --rm -i --pull=never --env-file .nebula.env localhost/nebula-rag-mcp:latest --skip-self-test --method tools/list
+npx -y @modelcontextprotocol/inspector --cli podman run --rm -i --pull=never --env-file .nebula.env localhost/nebula-rag-mcp:latest --skip-self-test --method tools/call --tool-name rag_server_info
 ```
 
-`.env` should contain runtime variables like:
+`.nebula.env` should contain runtime variables like:
 
 ```dotenv
 NEBULARAG_Database__Host=192.168.1.135
@@ -163,7 +166,7 @@ Common options:
 ```powershell
 pwsh -File .\scripts\setup-nebula-rag.ps1 -Mode User -Channel Both -Force
 pwsh -File .\scripts\setup-nebula-rag.ps1 -Mode Project -TargetPath C:\path\to\your-project
-pwsh -File .\scripts\setup-nebula-rag.ps1 -Mode User -UserConfigPath C:\Users\you\AppData\Roaming\Code\User\mcp.json -EnvFilePath C:\Users\you\.nebula-rag\.env
+pwsh -File .\scripts\setup-nebula-rag.ps1 -Mode User -UserConfigPath C:\Users\you\AppData\Roaming\Code\User\mcp.json -EnvFilePath C:\Users\you\.nebula-rag\.nebula.env
 ```
 
 What it does:
@@ -179,7 +182,7 @@ What it does:
 - `.github/instructions/rag.instructions.md`
 - `.github/skills/nebularag/SKILL.md` (unless `-SkipSkill`)
 - `.env.example` (if available)
-- `.gitignore` entry for `.env`
+- `.gitignore` entry for `.nebula.env`
 - Optionally writes an env template at `-EnvFilePath` when `-CreateEnvTemplate` is used.
 
 1. Build the image once (or publish it to your own registry):
@@ -188,8 +191,8 @@ What it does:
 podman build -t localhost/nebula-rag-mcp:latest -f Dockerfile .
 ```
 
-2. In each target project, place a project-local `.env` (copy from `NebulaRAG/.env.example`).
-3. Add an MCP entry that uses that project-local `.env`:
+2. In each target project, place a project-local `.nebula.env` (copy from `NebulaRAG/.env.example`).
+3. Add an MCP entry that uses that project-local `.nebula.env`:
 
 ```json
 {
@@ -204,7 +207,7 @@ podman build -t localhost/nebula-rag-mcp:latest -f Dockerfile .
         "--pull=never",
         "--memory=2g",
         "--cpus=1.0",
-        "--env-file", ".env",
+        "--env-file", ".nebula.env",
         "localhost/nebula-rag-mcp:latest",
         "--skip-self-test"
       ]

@@ -2,3 +2,4 @@ bin/
 obj/
 src/NebulaRAG.Cli/ragsettings.local.json
 .env
+.nebula.env

@@ -10,8 +10,12 @@
         "--pull=never",
         "--memory=2g",
         "--cpus=1.0",
+        "--mount",
+        "type=bind,source=${workspaceFolder:NebulaRAG},target=/workspace",
+        "--workdir",
+        "/workspace",
         "--env-file",
-        ".env",
+        ".nebula.env",
         "localhost/nebula-rag-mcp:latest",
         "--skip-self-test"
       ]
@@ -28,8 +32,12 @@
         "--pull=never",
         "--memory=2g",
         "--cpus=1.0",
+        "--mount",
+        "type=bind,source=${workspaceFolder:NebulaRAG},target=/workspace",
+        "--workdir",
+        "/workspace",
         "--env-file",
-        ".env",
+        ".nebula.env",
         "localhost/nebula-rag-mcp:latest",
         "--skip-self-test"
       ]

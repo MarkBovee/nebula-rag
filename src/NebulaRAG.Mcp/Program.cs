@@ -15,6 +15,7 @@ using NebulaRAG.Core.Services;
 using NebulaRAG.Core.Storage;
 
 const string QueryProjectRagToolName = "query_project_rag";
+const string RagInitSchemaToolName = "rag_init_schema";
 const string RagHealthCheckToolName = "rag_health_check";
 const string RagServerInfoToolName = "rag_server_info";
 const string RagIndexStatsToolName = "rag_index_stats";
@@ -25,6 +26,7 @@ const string RagUpsertSourceToolName = "rag_upsert_source";
 const string RagDeleteSourceToolName = "rag_delete_source";
 const string RagPurgeAllToolName = "rag_purge_all";
 const int DefaultToolTimeoutMs = 30000;
+const int InitSchemaToolTimeoutMs = 30000;
 const int QueryToolTimeoutMs = 30000;
 const int HealthToolTimeoutMs = 10000;
 const int ServerInfoToolTimeoutMs = 5000;
@@ -174,6 +176,7 @@ static void ValidateToolCatalog()
     }
 
     if (!toolNames.Contains(QueryProjectRagToolName) ||
+        !toolNames.Contains(RagInitSchemaToolName) ||
         !toolNames.Contains(RagHealthCheckToolName) ||
         !toolNames.Contains(RagServerInfoToolName) ||
         !toolNames.Contains(RagIndexStatsToolName) ||
@@ -302,6 +305,7 @@ static JsonObject BuildToolsList()
     {
         ["tools"] = new JsonArray
         {
+            BuildRagInitSchemaToolDefinition(),
             BuildQueryProjectRagToolDefinition(),
             BuildRagHealthCheckToolDefinition(),
             BuildRagServerInfoToolDefinition(),
@@ -312,6 +316,30 @@ static JsonObject BuildToolsList()
             BuildRagUpsertSourceToolDefinition(),
             BuildRagDeleteSourceToolDefinition(),
             BuildRagPurgeAllToolDefinition()
+        }
+    };
+}
+
+static JsonObject BuildRagInitSchemaToolDefinition()
+{
+    return new JsonObject
+    {
+        ["name"] = RagInitSchemaToolName,
+        ["title"] = "RAG Init Schema",
+        ["description"] = "Initialize Nebula RAG database schema and vector extension.",
+        ["inputSchema"] = new JsonObject
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject()
+        },
+        ["outputSchema"] = new JsonObject
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                ["vectorDimensions"] = new JsonObject { ["type"] = "integer" }
+            },
+            ["required"] = new JsonArray("vectorDimensions")
         }
     };
 }
@@ -780,6 +808,12 @@ static async Task DispatchToolCallAsync(
     McpMessageFraming framing,
     CancellationToken cancellationToken)
 {
+    if (string.Equals(toolName, RagInitSchemaToolName, StringComparison.Ordinal))
+    {
+        await HandleRagInitSchemaToolAsync(output, id, store, settings, jsonOptions, framing, cancellationToken);
+        return;
+    }
+
     if (string.Equals(toolName, QueryProjectRagToolName, StringComparison.Ordinal))
     {
         await HandleQueryProjectRagToolAsync(output, id, arguments, queryService, settings, jsonOptions, framing, cancellationToken);
@@ -845,6 +879,11 @@ static async Task DispatchToolCallAsync(
 
 static int ResolveToolTimeoutMs(string toolName)
 {
+    if (string.Equals(toolName, RagInitSchemaToolName, StringComparison.Ordinal))
+    {
+        return InitSchemaToolTimeoutMs;
+    }
+
     if (string.Equals(toolName, QueryProjectRagToolName, StringComparison.Ordinal))
     {
         return QueryToolTimeoutMs;
@@ -950,6 +989,35 @@ static async Task HandleQueryProjectRagToolAsync(
     catch (Exception ex)
     {
         await WriteResponseAsync(output, id, BuildToolResult($"RAG query failed: {ex.Message}", isError: true), jsonOptions, framing);
+    }
+}
+
+static async Task HandleRagInitSchemaToolAsync(
+    Stream output,
+    JsonNode? id,
+    PostgresRagStore store,
+    RagSettings settings,
+    JsonSerializerOptions jsonOptions,
+    McpMessageFraming framing,
+    CancellationToken cancellationToken)
+{
+    try
+    {
+        await store.InitializeSchemaAsync(settings.Ingestion.VectorDimensions, cancellationToken);
+        var structuredResult = new JsonObject
+        {
+            ["vectorDimensions"] = settings.Ingestion.VectorDimensions
+        };
+
+        await WriteResponseAsync(output, id, BuildToolResult("Nebula RAG schema initialized.", structuredResult), jsonOptions, framing);
+    }
+    catch (OperationCanceledException)
+    {
+        throw;
+    }
+    catch (Exception ex)
+    {
+        await WriteResponseAsync(output, id, BuildToolResult($"Failed to initialize schema: {ex.Message}", isError: true), jsonOptions, framing);
     }
 }
 

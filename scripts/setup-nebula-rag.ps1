@@ -14,7 +14,7 @@ param(
     [string]$ServerName = "nebula-rag",
     [string]$ImageName = "localhost/nebula-rag-mcp:latest",
 
-    [string]$EnvFileName = ".env",
+    [string]$EnvFileName = ".nebula.env",
     [string]$EnvFilePath,
 
     [switch]$CreateEnvTemplate,
@@ -80,24 +80,39 @@ function Copy-FileSafe {
 function New-ServerDefinition {
     param(
         [string]$ConfiguredImage,
-        [string]$ConfiguredEnvFile
+        [string]$ConfiguredEnvFile,
+        [string]$WorkspaceFolderScope
+    )
+
+    $args = @(
+        "run",
+        "--rm",
+        "-i",
+        "--pull=never",
+        "--memory=2g",
+        "--cpus=1.0"
+    )
+
+    if (-not [string]::IsNullOrWhiteSpace($WorkspaceFolderScope)) {
+        $args += @(
+            "--mount",
+            "type=bind,source=${workspaceFolder:$WorkspaceFolderScope},target=/workspace",
+            "--workdir",
+            "/workspace"
+        )
+    }
+
+    $args += @(
+        "--env-file",
+        $ConfiguredEnvFile,
+        $ConfiguredImage,
+        "--skip-self-test"
     )
 
     return [ordered]@{
         type = "stdio"
         command = "podman"
-        args = @(
-            "run",
-            "--rm",
-            "-i",
-            "--pull=never",
-            "--memory=2g",
-            "--cpus=1.0",
-            "--env-file",
-            $ConfiguredEnvFile,
-            $ConfiguredImage,
-            "--skip-self-test"
-        )
+        args = $args
     }
 }
 
@@ -105,10 +120,11 @@ function Build-McpConfigJson {
     param(
         [string]$ConfiguredServerName,
         [string]$ConfiguredImageName,
-        [string]$ConfiguredEnvFileName
+        [string]$ConfiguredEnvFileName,
+        [string]$WorkspaceFolderScope
     )
 
-    $server = New-ServerDefinition -ConfiguredImage $ConfiguredImageName -ConfiguredEnvFile $ConfiguredEnvFileName
+    $server = New-ServerDefinition -ConfiguredImage $ConfiguredImageName -ConfiguredEnvFile $ConfiguredEnvFileName -WorkspaceFolderScope $WorkspaceFolderScope
     $root = [ordered]@{
         mcpServers = [ordered]@{ $ConfiguredServerName = $server }
         servers = [ordered]@{ $ConfiguredServerName = $server }
@@ -120,20 +136,22 @@ function Build-McpConfigJson {
 function Ensure-GitignoreEnv {
     param([string]$GitignorePath)
 
+    $envFileName = ".nebula.env"
+
     if (-not (Test-Path -LiteralPath $GitignorePath)) {
-        Set-Content -LiteralPath $GitignorePath -Value ".env" -Encoding utf8
+        Set-Content -LiteralPath $GitignorePath -Value $envFileName -Encoding utf8
         Write-Host "Wrote file: $GitignorePath"
         return
     }
 
     $entries = Get-Content -LiteralPath $GitignorePath
-    if ($entries -contains ".env") {
-        Write-Host "Skip .env update: already present in $GitignorePath"
+    if ($entries -contains $envFileName) {
+        Write-Host "Skip $envFileName update: already present in $GitignorePath"
         return
     }
 
-    Add-Content -LiteralPath $GitignorePath -Value ".env"
-    Write-Host "Updated .gitignore with .env"
+    Add-Content -LiteralPath $GitignorePath -Value $envFileName
+    Write-Host "Updated .gitignore with $envFileName"
 }
 
 function Get-DefaultUserConfigPath {
@@ -176,11 +194,44 @@ function Get-OrCreateRootObject {
         }
     }
 
-    try {
-        $parsed = $raw | ConvertFrom-Json -AsHashtable
+    function New-EmptyRoot {
+        return [ordered]@{
+            mcpServers = [ordered]@{}
+            servers = [ordered]@{}
+        }
     }
-    catch {
-        throw "Invalid JSON in user MCP config: $Path"
+
+    function Try-ParseJsonLike {
+        param([string]$JsonText)
+
+        try {
+            return $JsonText | ConvertFrom-Json -AsHashtable
+        }
+        catch {
+            # Best-effort JSONC cleanup: strip block/line comments and trailing commas.
+            $sanitized = $JsonText -replace '(?s)/\*.*?\*/', ''
+            $sanitized = $sanitized -replace '(?m)^\s*//.*$', ''
+            $sanitized = $sanitized -replace '(?m)([^:])//.*$', '$1'
+            $sanitized = $sanitized -replace ',(\s*[}\]])', '$1'
+
+            try {
+                return $sanitized | ConvertFrom-Json -AsHashtable
+            }
+            catch {
+                return $null
+            }
+        }
+    }
+
+    $parsed = Try-ParseJsonLike -JsonText $raw
+    if ($null -eq $parsed) {
+        $timestamp = Get-Date -Format "yyyyMMddHHmmss"
+        $backupPath = "$Path.invalid.$timestamp.bak"
+        Copy-Item -LiteralPath $Path -Destination $backupPath -Force
+        Write-Warning "Invalid JSON in user MCP config: $Path"
+        Write-Warning "Backed up invalid file to: $backupPath"
+        Write-Warning "Continuing with a fresh MCP config root for this path."
+        return New-EmptyRoot
     }
 
     if (-not ($parsed -is [System.Collections.IDictionary])) {
@@ -279,7 +330,15 @@ function Setup-Project {
     }
 
     $targetRoot = $resolvedTargetPath.Path
-    $mcpConfig = Build-McpConfigJson -ConfiguredServerName $ConfiguredServerName -ConfiguredImageName $ConfiguredImageName -ConfiguredEnvFileName $ConfiguredEnvFileName
+    $scriptDirectory = [System.IO.Path]::GetFullPath($PSScriptRoot)
+    $targetFullPath = [System.IO.Path]::GetFullPath($targetRoot)
+    $workspaceFolderScope = Split-Path -Leaf $targetRoot
+
+    if ([System.StringComparer]::OrdinalIgnoreCase.Equals($targetFullPath, $scriptDirectory)) {
+        throw "Refusing to scaffold into the scripts directory. Use -TargetPath to point at your project root."
+    }
+
+    $mcpConfig = Build-McpConfigJson -ConfiguredServerName $ConfiguredServerName -ConfiguredImageName $ConfiguredImageName -ConfiguredEnvFileName $ConfiguredEnvFileName -WorkspaceFolderScope $workspaceFolderScope
 
     Write-TextFile -Path (Join-Path $targetRoot ".vscode/mcp.json") -Content $mcpConfig -ForceWrite:$ForceWrite
     Write-TextFile -Path (Join-Path $targetRoot "copilot.mcp.json") -Content $mcpConfig -ForceWrite:$ForceWrite
@@ -323,7 +382,8 @@ function Setup-User {
         $configPaths = Get-DefaultUserConfigPath -SelectedChannel $SelectedChannel
     }
 
-    $serverDefinition = New-ServerDefinition -ConfiguredImage $ConfiguredImageName -ConfiguredEnvFile $ConfiguredEnvFilePath
+    # User-level config is workspace-agnostic; omit workspace mount to avoid multi-root variable resolution failures.
+    $serverDefinition = New-ServerDefinition -ConfiguredImage $ConfiguredImageName -ConfiguredEnvFile $ConfiguredEnvFilePath -WorkspaceFolderScope ""
 
     foreach ($configPath in $configPaths) {
         $resolvedConfigPath = [System.IO.Path]::GetFullPath($configPath)
@@ -343,7 +403,7 @@ function Setup-User {
 $templateRoot = Split-Path -Parent $PSScriptRoot
 
 if ([string]::IsNullOrWhiteSpace($EnvFilePath)) {
-    $EnvFilePath = Join-Path $HOME ".nebula-rag/.env"
+    $EnvFilePath = Join-Path $HOME ".nebula-rag/.nebula.env"
 }
 
 if ($Mode -in @("Both", "User")) {
@@ -353,7 +413,7 @@ if ($Mode -in @("Both", "User")) {
 if ($Mode -in @("Both", "Project")) {
     if ([string]::IsNullOrWhiteSpace($TargetPath)) {
         if ($Mode -eq "Both") {
-            $TargetPath = (Get-Location).Path
+            $TargetPath = $templateRoot
         }
         else {
             throw "-TargetPath is required when -Mode Project."
