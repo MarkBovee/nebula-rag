@@ -120,11 +120,11 @@ function Build-McpConfigJson {
     param(
         [string]$ConfiguredServerName,
         [string]$ConfiguredImageName,
-        [string]$ConfiguredEnvFileName,
+        [string]$ConfiguredEnvFile,
         [string]$WorkspaceFolderScope
     )
 
-    $server = New-ServerDefinition -ConfiguredImage $ConfiguredImageName -ConfiguredEnvFile $ConfiguredEnvFileName -WorkspaceFolderScope $WorkspaceFolderScope
+    $server = New-ServerDefinition -ConfiguredImage $ConfiguredImageName -ConfiguredEnvFile $ConfiguredEnvFile -WorkspaceFolderScope $WorkspaceFolderScope
     $root = [ordered]@{
         mcpServers = [ordered]@{ $ConfiguredServerName = $server }
         servers = [ordered]@{ $ConfiguredServerName = $server }
@@ -316,9 +316,6 @@ function Ensure-EnvTemplate {
 function Setup-Project {
     param(
         [string]$ProjectPath,
-        [string]$ConfiguredServerName,
-        [string]$ConfiguredImageName,
-        [string]$ConfiguredEnvFileName,
         [switch]$ForceWrite,
         [switch]$SkipSkillFile,
         [string]$TemplateRoot
@@ -332,16 +329,10 @@ function Setup-Project {
     $targetRoot = $resolvedTargetPath.Path
     $scriptDirectory = [System.IO.Path]::GetFullPath($PSScriptRoot)
     $targetFullPath = [System.IO.Path]::GetFullPath($targetRoot)
-    $workspaceFolderScope = Split-Path -Leaf $targetRoot
 
     if ([System.StringComparer]::OrdinalIgnoreCase.Equals($targetFullPath, $scriptDirectory)) {
         throw "Refusing to scaffold into the scripts directory. Use -TargetPath to point at your project root."
     }
-
-    $mcpConfig = Build-McpConfigJson -ConfiguredServerName $ConfiguredServerName -ConfiguredImageName $ConfiguredImageName -ConfiguredEnvFileName $ConfiguredEnvFileName -WorkspaceFolderScope $workspaceFolderScope
-
-    Write-TextFile -Path (Join-Path $targetRoot ".vscode/mcp.json") -Content $mcpConfig -ForceWrite:$ForceWrite
-    Write-TextFile -Path (Join-Path $targetRoot "copilot.mcp.json") -Content $mcpConfig -ForceWrite:$ForceWrite
 
     Copy-FileSafe -Source (Join-Path $TemplateRoot ".github/copilot-instructions.md") -Destination (Join-Path $targetRoot ".github/copilot-instructions.md") -ForceWrite:$ForceWrite
     Copy-FileSafe -Source (Join-Path $TemplateRoot ".github/instructions/rag.instructions.md") -Destination (Join-Path $targetRoot ".github/instructions/rag.instructions.md") -ForceWrite:$ForceWrite
@@ -420,7 +411,7 @@ if ($Mode -in @("Both", "Project")) {
         }
     }
 
-    Setup-Project -ProjectPath $TargetPath -ConfiguredServerName $ServerName -ConfiguredImageName $ImageName -ConfiguredEnvFileName $EnvFileName -ForceWrite:$Force -SkipSkillFile:$SkipSkill -TemplateRoot $templateRoot
+    Setup-Project -ProjectPath $TargetPath -ForceWrite:$Force -SkipSkillFile:$SkipSkill -TemplateRoot $templateRoot
 }
 
 Write-Host ""

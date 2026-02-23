@@ -15,7 +15,7 @@
         "--workdir",
         "/workspace",
         "--env-file",
-        ".nebula.env",
+        "${workspaceFolder:NebulaRAG}/.nebula.env",
         "localhost/nebula-rag-mcp:latest",
         "--skip-self-test"
       ]
@@ -37,7 +37,7 @@
         "--workdir",
         "/workspace",
         "--env-file",
-        ".nebula.env",
+        "${workspaceFolder:NebulaRAG}/.nebula.env",
         "localhost/nebula-rag-mcp:latest",
         "--skip-self-test"
       ]
