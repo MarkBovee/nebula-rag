@@ -7,7 +7,7 @@ It ships with a .NET CLI, an MCP server, and a Home Assistant add-on package.
 
 - PostgreSQL-backed chunk + embedding storage.
 - Fast vector retrieval using cosine distance and IVFFlat indexing.
-- One command path for local development, container workflows, and Home Assistant jobs.
+- One command path for local development, container workflows, and Home Assistant hosting.
 - RAG-first Copilot instruction assets included under `.github/`.
 
 ## Repository Layout
@@ -15,8 +15,10 @@ It ships with a .NET CLI, an MCP server, and a Home Assistant add-on package.
 - `src/NebulaRAG.Core`: Chunking, embeddings, storage, and service logic.
 - `src/NebulaRAG.Cli`: Local and automation command-line interface.
 - `src/NebulaRAG.Mcp`: MCP server exposing `query_project_rag` and admin tools.
+- `src/NebulaRAG.AddonHost`: Long-running web host for Home Assistant UI + MCP-over-HTTP.
 - `nebula-rag/`: Home Assistant add-on package.
 - `docs/`: Architecture and production-readiness planning.
+- `AGENTS.md`: Repository-level agent behavior and coding quality guide.
 
 ## Quick Start (CLI)
 
@@ -65,8 +67,13 @@ Primary MCP tools:
 1. Add custom repository: `https://github.com/MarkBovee/NebulaRAG`
 2. Install `Nebula RAG` add-on.
 3. Configure `database.*` options.
-4. Run once with `operation=init`.
-5. Run `index` or `query` jobs as needed.
+4. Start add-on and open ingress panel.
+5. Use built-in web UI to query, index, list/delete sources, and purge.
+
+Add-on endpoints:
+
+- Web UI: Home Assistant ingress or `http://homeassistant.local:8099`
+- MCP JSON-RPC: `http://homeassistant.local:8099/mcp`
 
 Add-on package files:
 
@@ -111,6 +118,20 @@ Typical env keys:
 - `NEBULARAG_Database__SslMode`
 
 Never commit credential-bearing files.
+
+## Setup Script
+
+Configure user MCP for Home Assistant-hosted MCP endpoint:
+
+```powershell
+pwsh -File .\scripts\setup-nebula-rag.ps1 -Mode User -InstallTarget HomeAssistantAddon -HomeAssistantMcpUrl http://homeassistant.local:8099/mcp -Force
+```
+
+Configure user MCP for local container transport instead:
+
+```powershell
+pwsh -File .\scripts\setup-nebula-rag.ps1 -Mode User -InstallTarget LocalContainer -CreateEnvTemplate -Force
+```
 
 ## VS Code Tasks
 

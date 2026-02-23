@@ -1,6 +1,9 @@
 # Nebula RAG Add-on
 
-Run NebulaRAG CLI operations from Home Assistant against your PostgreSQL/pgvector database.
+Run NebulaRAG as a long-running Home Assistant service with:
+
+- Nebula-themed web UI for query/index/management
+- MCP-over-HTTP endpoint for remote MCP clients
 
 ## Installation
 
@@ -20,29 +23,44 @@ Configure database options in add-on settings:
 - `database.password`
 - `database.ssl_mode`
 
-Optional operation inputs:
+Optional:
 
-- `source_path` (used by `index`)
-- `query_text` and `query_limit` (used by `query`)
-- `config_path` (optional CLI config override)
+- `default_index_path` (default path used in web UI index form)
 
-## Operations
+## Web Interface
 
-Use `operation` to run one job per start:
+Open the add-on from Home Assistant sidebar (ingress) to access:
 
-- `init`: Initialize schema and indexes.
-- `index`: Index files from `source_path`.
-- `query`: Query indexed content using `query_text`.
-- `stats`: Show index statistics.
-- `list-sources`: List indexed source paths.
-- `health-check`: Validate DB connectivity.
+- Health check and index stats
+- Semantic query panel
+- Index path operations
+- Source listing and delete
+- Full purge with explicit confirmation phrase
 
-## Typical Flow
+## MCP Endpoint
 
-1. Set database credentials.
-2. Run `operation=init` once.
-3. Run `operation=index` with `source_path=/share`.
-4. Run `operation=query` with `query_text`.
+The add-on exposes MCP JSON-RPC at:
+
+- `http://homeassistant.local:8099/mcp`
+
+Supported methods:
+
+- `initialize`
+- `ping`
+- `tools/list`
+- `tools/call`
+
+Key tools include:
+
+- `query_project_rag`
+- `rag_init_schema`
+- `rag_health_check`
+- `rag_server_info`
+- `rag_index_stats`
+- `rag_list_sources`
+- `rag_index_path`
+- `rag_delete_source`
+- `rag_purge_all`
 
 ## Troubleshooting
 
@@ -56,8 +74,14 @@ Database connection issues:
 - Verify `database.host`, `database.port`, credentials, and SSL mode.
 - Confirm PostgreSQL accepts network connections from Home Assistant host.
 
+MCP client cannot connect:
+
+- Ensure add-on is running in Home Assistant.
+- Test MCP URL: `http://homeassistant.local:8099/mcp`.
+- If using VS Code MCP HTTP config, confirm server entry uses `type: "http"` and the correct URL.
+
 ## Notes
 
-- Add-on is `startup: once` for on-demand operations.
-- Logs show executed command output and errors.
+- Add-on is `startup: services` and runs continuously.
+- Logs include API/MCP operation details and errors.
 - Release history: `CHANGELOG.md`.

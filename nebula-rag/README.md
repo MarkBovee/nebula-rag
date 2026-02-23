@@ -1,6 +1,9 @@
 # Home Assistant Add-on: Nebula RAG
 
-This directory contains the full Home Assistant add-on package used to run NebulaRAG CLI jobs against PostgreSQL/pgvector.
+This directory contains the full Home Assistant add-on package for a long-running NebulaRAG host that serves:
+
+- a Nebula-themed browser UI
+- an MCP-over-HTTP endpoint (`/mcp`)
 
 ## Package Contents
 
@@ -8,8 +11,9 @@ This directory contains the full Home Assistant add-on package used to run Nebul
 - `config.json`: Add-on manifest, options, and schema.
 - `DOCS.md`: Home Assistant-facing usage guide.
 - `Dockerfile`: Multi-stage add-on image build.
-- `run.sh`: Runtime option-to-env mapping and command dispatcher.
+- `run.sh`: Runtime option-to-env mapping and host startup.
 - `build.yaml`: Build arguments for repository URL and ref pinning.
+- `icon.png` / `logo.png`: Add-on branding assets.
 
 ## Build Source and Pinning
 
@@ -20,16 +24,10 @@ The image build clones this repository by default:
 
 Change `build.yaml` to pin a release tag, branch, or fork.
 
-## Supported Operations
+## Runtime Surface
 
-Set `operation` in add-on options to one of:
-
-- `init`
-- `index`
-- `query`
-- `stats`
-- `list-sources`
-- `health-check`
+- Web UI (Home Assistant ingress and optional exposed port)
+- MCP endpoint: `http://homeassistant.local:8099/mcp`
 
 ## Required Configuration
 
@@ -42,13 +40,15 @@ Set `operation` in add-on options to one of:
 
 Recommended defaults:
 
-- `source_path=/share`
+- `default_index_path=/share`
 - `database.port=5432`
 - `database.ssl_mode=Prefer` (or `Disable` on trusted LAN setups)
 
-## Runtime Dependency Note
+## Runtime Notes
 
-The runtime image installs `libgssapi-krb5-2` to satisfy .NET database client native dependency loading and avoid `libgssapi_krb5.so.2` warnings in logs.
+- Runtime image installs `libgssapi-krb5-2` to satisfy .NET native dependency loading.
+- Service listens on port `8099`.
+- Home Assistant ingress is enabled in `config.json`.
 
 ## Release Process
 

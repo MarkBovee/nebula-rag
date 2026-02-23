@@ -11,8 +11,8 @@ RUN apt-get update \
 RUN git clone --depth 1 --branch "${NEBULARAG_REPO_REF}" "${NEBULARAG_REPO_URL}" /src/NebulaRAG
 WORKDIR /src/NebulaRAG
 
-RUN dotnet restore "src/NebulaRAG.Cli/NebulaRAG.Cli.csproj"
-RUN dotnet publish "src/NebulaRAG.Cli/NebulaRAG.Cli.csproj" -c Release -o /app/publish /p:UseAppHost=false
+RUN dotnet restore "src/NebulaRAG.AddonHost/NebulaRAG.AddonHost.csproj"
+RUN dotnet publish "src/NebulaRAG.AddonHost/NebulaRAG.AddonHost.csproj" -c Release -o /app/publish /p:UseAppHost=false
 
 FROM mcr.microsoft.com/dotnet/runtime:10.0 AS runtime
 WORKDIR /app
@@ -22,6 +22,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=build /app/publish ./
+COPY --from=build /src/NebulaRAG/src/NebulaRAG.Cli/ragsettings.json /app/ragsettings.json
 COPY run.sh /run.sh
 RUN chmod +x /run.sh
 

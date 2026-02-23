@@ -4,6 +4,14 @@ All notable changes to the Nebula RAG Home Assistant add-on are documented in th
 
 The format is inspired by Keep a Changelog and follows semantic versioning.
 
+## [0.2.0] - 2026-02-23
+
+- Switched add-on runtime from one-shot CLI jobs to a long-running service host.
+- Added Nebula-themed web interface for query, indexing, and source management.
+- Added MCP-over-HTTP endpoint at `/mcp` so MCP can run from Home Assistant.
+- Added Home Assistant ingress/web UI configuration and exposed TCP port `8099`.
+- Added add-on branding assets (`icon.png`, `logo.png`).
+
 ## [0.1.2] - 2026-02-23
 
 - Added add-on runtime dependency `libgssapi-krb5-2` to avoid `libgssapi_krb5.so.2` load warnings.

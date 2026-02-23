@@ -13,6 +13,7 @@ param(
 
     [string]$ServerName = "nebula-rag",
     [string]$ImageName = "localhost/nebula-rag-mcp:latest",
+    [string]$HomeAssistantMcpUrl = "http://homeassistant.local:8099/mcp",
 
     [string]$EnvFileName = ".nebula.env",
     [string]$EnvFilePath,
@@ -84,8 +85,17 @@ function New-ServerDefinition {
     param(
         [string]$ConfiguredImage,
         [string]$ConfiguredEnvFile,
-        [string]$WorkspaceFolderScope
+        [string]$WorkspaceFolderScope,
+        [string]$SelectedInstallTarget,
+        [string]$ConfiguredHomeAssistantMcpUrl
     )
+
+    if ($SelectedInstallTarget -eq "HomeAssistantAddon") {
+        return [ordered]@{
+            type = "http"
+            url = $ConfiguredHomeAssistantMcpUrl
+        }
+    }
 
     $containerArgs = @(
         "run",
@@ -133,10 +143,12 @@ function Build-McpConfigJson {
         [string]$ConfiguredServerName,
         [string]$ConfiguredImageName,
         [string]$ConfiguredEnvFile,
-        [string]$WorkspaceFolderScope
+        [string]$WorkspaceFolderScope,
+        [string]$SelectedInstallTarget,
+        [string]$ConfiguredHomeAssistantMcpUrl
     )
 
-    $server = New-ServerDefinition -ConfiguredImage $ConfiguredImageName -ConfiguredEnvFile $ConfiguredEnvFile -WorkspaceFolderScope $WorkspaceFolderScope
+    $server = New-ServerDefinition -ConfiguredImage $ConfiguredImageName -ConfiguredEnvFile $ConfiguredEnvFile -WorkspaceFolderScope $WorkspaceFolderScope -SelectedInstallTarget $SelectedInstallTarget -ConfiguredHomeAssistantMcpUrl $ConfiguredHomeAssistantMcpUrl
     $root = [ordered]@{
         mcpServers = [ordered]@{ $ConfiguredServerName = $server }
         servers = [ordered]@{ $ConfiguredServerName = $server }
@@ -414,6 +426,8 @@ function Setup-User {
         [string]$ConfiguredServerName,
         [string]$ConfiguredImageName,
         [string]$ConfiguredEnvFilePath,
+        [string]$SelectedInstallTarget,
+        [string]$ConfiguredHomeAssistantMcpUrl,
         [switch]$WriteEnvTemplate,
         [switch]$ForceWrite,
         [switch]$SkipBackup,
@@ -429,7 +443,7 @@ function Setup-User {
     }
 
     # User-level config is workspace-agnostic; omit workspace mount to avoid multi-root variable resolution failures.
-    $serverDefinition = New-ServerDefinition -ConfiguredImage $ConfiguredImageName -ConfiguredEnvFile $ConfiguredEnvFilePath -WorkspaceFolderScope ""
+    $serverDefinition = New-ServerDefinition -ConfiguredImage $ConfiguredImageName -ConfiguredEnvFile $ConfiguredEnvFilePath -WorkspaceFolderScope "" -SelectedInstallTarget $SelectedInstallTarget -ConfiguredHomeAssistantMcpUrl $ConfiguredHomeAssistantMcpUrl
 
     foreach ($configPath in $configPaths) {
         $resolvedConfigPath = [System.IO.Path]::GetFullPath($configPath)
@@ -454,13 +468,7 @@ if ([string]::IsNullOrWhiteSpace($EnvFilePath)) {
 }
 
 if ($Mode -in @("Both", "User")) {
-    if ($resolvedInstallTarget -eq "LocalContainer") {
-        Setup-User -SelectedChannel $Channel -ExplicitUserConfigPath $UserConfigPath -ConfiguredServerName $ServerName -ConfiguredImageName $ImageName -ConfiguredEnvFilePath $EnvFilePath -WriteEnvTemplate:$CreateEnvTemplate -ForceWrite:$Force -SkipBackup:$NoBackup -TemplateRoot $templateRoot
-    }
-    else {
-        Write-Host ""
-        Write-Host "Skipping user MCP config because install target is Home Assistant add-on."
-    }
+    Setup-User -SelectedChannel $Channel -ExplicitUserConfigPath $UserConfigPath -ConfiguredServerName $ServerName -ConfiguredImageName $ImageName -ConfiguredEnvFilePath $EnvFilePath -SelectedInstallTarget $resolvedInstallTarget -ConfiguredHomeAssistantMcpUrl $HomeAssistantMcpUrl -WriteEnvTemplate:($CreateEnvTemplate -and $resolvedInstallTarget -eq "LocalContainer") -ForceWrite:$Force -SkipBackup:$NoBackup -TemplateRoot $templateRoot
 }
 
 if ($Mode -in @("Both", "Project")) {
@@ -481,3 +489,6 @@ Write-Host "NebulaRAG setup finished."
 Write-Host "Install target: $resolvedInstallTarget"
 Write-Host "Server: $ServerName"
 Write-Host "Image:  $ImageName"
+if ($resolvedInstallTarget -eq "HomeAssistantAddon") {
+    Write-Host "MCP URL: $HomeAssistantMcpUrl"
+}
