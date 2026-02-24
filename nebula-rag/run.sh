@@ -16,6 +16,7 @@ db_password="$(jq -r '.database.password // ""' "${OPTIONS_FILE}")"
 db_ssl_mode="$(jq -r '.database.ssl_mode // "Prefer"' "${OPTIONS_FILE}")"
 default_index_path="$(jq -r '.default_index_path // "/share"' "${OPTIONS_FILE}")"
 path_base="$(jq -r '.path_base // ""' "${OPTIONS_FILE}")"
+otlp_endpoint="$(jq -r '.telemetry.otlp_endpoint // ""' "${OPTIONS_FILE}")"
 
 if [ -z "${db_password}" ]; then
   echo "[nebula-rag] database.password is required."
@@ -31,6 +32,11 @@ export NEBULARAG_Database__SslMode="${db_ssl_mode}"
 export NEBULARAG_DefaultIndexPath="${default_index_path}"
 export NEBULARAG_PathBase="${path_base}"
 export ASPNETCORE_URLS="http://0.0.0.0:8099"
+
+if [ -n "${otlp_endpoint}" ]; then
+  export OTEL_EXPORTER_OTLP_ENDPOINT="${otlp_endpoint}"
+  echo "[nebula-rag] OpenTelemetry OTLP export enabled: ${OTEL_EXPORTER_OTLP_ENDPOINT}"
+fi
 
 if [ -f "/app/nebularag_commit.txt" ]; then
   echo "[nebula-rag] Image source commit: $(cat /app/nebularag_commit.txt)"

@@ -22,6 +22,12 @@ applyTo: '**'
 - **Pure functions**: Prefer functions without side effects when possible.
 - **Meaningful names**: Use descriptive, intention-revealing names for all identifiers.
 
+## Dependency Management
+
+- Prefer the **latest stable package versions** when adding or updating dependencies.
+- Avoid pinning outdated versions unless there is a documented compatibility or security constraint.
+- After dependency updates, run restore/build/tests and resolve warnings caused by stale or incompatible package versions.
+
 ## C# Specific Rules
 
 ### No Fully Qualified Type Names
@@ -74,6 +80,12 @@ When adding properties that touch many files, prefer optional parameters with de
 - Document the function's role in the larger workflow and any preconditions or side effects.
 - For multi-parameter helpers, clarify relationships between parameters and their intended usage patterns.
 - Include inline comments that explain non-obvious algorithms, protocols, or business logic.
+
+### Control Flow and Method Structure
+- Prefer `switch`/pattern matching over long `if/else if` chains for command dispatch, protocol handlers, and status routing.
+- Keep methods focused and short; split orchestration methods into small private helper methods with clear names.
+- Minimize deep nesting: use guard clauses and early returns to keep logic flat and readable.
+- For methods that can grow over time (for example `Execute*`, `Handle*`, endpoint dispatch), design for extensibility with per-case helpers.
 
 ## EF Core Best Practices
 

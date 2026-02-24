@@ -149,9 +149,12 @@ Preferred tags: `architecture`, `preference`, `bug`, `convention`, `decision`, `
 
 - Follow DRY and SOLID.
 - Prefer small focused methods.
+- Prefer the latest stable package versions unless compatibility constraints require a documented exception.
 - Use descriptive names over short generic names.
 - Avoid `dynamic`.
 - Keep parameter lists concise; introduce request models when argument lists grow.
+- Prefer `switch`/pattern matching for dispatch-heavy logic instead of long `if/else if` chains.
+- Keep large orchestration methods split into small helper methods and avoid deep nesting with guard clauses.
 - Add XML documentation comments for classes and methods.
 - Add comments only where intent is not obvious from code.
 - Add brief intent comments for non-obvious handlers/functions so protocol or orchestration behavior is clear at a glance.

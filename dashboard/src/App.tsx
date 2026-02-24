@@ -183,6 +183,7 @@ const App: React.FC = () => {
         health: snapshot.health,
         stats: snapshot.stats,
         sources: snapshot.sources,
+        performanceMetrics: snapshot.performanceMetrics,
         recentActivity: activity,
         loading: false,
       });
@@ -222,7 +223,7 @@ const App: React.FC = () => {
     };
   }, []);
 
-  const { health, stats, sources, recentActivity, loading, error } = dashboard;
+  const { health, stats, sources, recentActivity, performanceMetrics, loading, error } = dashboard;
 
   return (
     <div style={styles.container} className="nb-app">
@@ -308,7 +309,7 @@ const App: React.FC = () => {
                 </div>
               )}
               <div style={styles.fullWidth} className="nb-card-shell nb-fade-up">
-                <PerfTimeline />
+                <PerfTimeline metrics={performanceMetrics} />
               </div>
             </div>
           )}
@@ -344,7 +345,7 @@ const App: React.FC = () => {
           {activeTab === 'performance' && (
             <div style={styles.gridContainer}>
               <div style={styles.fullWidth} className="nb-card-shell nb-fade-up">
-                <PerfTimeline />
+                <PerfTimeline metrics={performanceMetrics} />
               </div>
             </div>
           )}

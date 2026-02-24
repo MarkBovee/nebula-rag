@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using NebulaRAG.Core.Models;
 using NebulaRAG.Core.Services;
 
@@ -8,10 +9,18 @@ namespace NebulaRAG.AddonHost.Services;
 /// </summary>
 public sealed class DashboardSnapshotService
 {
+    private const int MaxQueryLatencySamples = 240;
+    private const int MaxPerformanceSamples = 2880;
     private readonly RagManagementService _managementService;
     private readonly TimedCache<HealthCheckResult> _healthCache;
     private readonly TimedCache<IndexStats> _statsCache;
     private readonly TimedCache<IndexStats> _statsWithSizeCache;
+    private readonly object _performanceSync = new();
+    private readonly Queue<double> _queryLatenciesMs;
+    private readonly Queue<PerformanceMetricPoint> _performanceHistory;
+    private DateTime _lastSampleAtUtc;
+    private TimeSpan _lastProcessCpuTime;
+    private int _lastDocumentCount;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="DashboardSnapshotService"/> class.
@@ -23,6 +32,32 @@ public sealed class DashboardSnapshotService
         _healthCache = new TimedCache<HealthCheckResult>(TimeSpan.FromSeconds(30));
         _statsCache = new TimedCache<IndexStats>(TimeSpan.FromSeconds(30));
         _statsWithSizeCache = new TimedCache<IndexStats>(TimeSpan.FromMinutes(2));
+        _queryLatenciesMs = new Queue<double>();
+        _performanceHistory = new Queue<PerformanceMetricPoint>();
+        _lastSampleAtUtc = DateTime.MinValue;
+        _lastProcessCpuTime = TimeSpan.Zero;
+        _lastDocumentCount = 0;
+    }
+
+    /// <summary>
+    /// Records one semantic query latency sample for rolling dashboard averages.
+    /// </summary>
+    /// <param name="elapsedMilliseconds">Observed query latency in milliseconds.</param>
+    public void RecordQueryLatency(double elapsedMilliseconds)
+    {
+        if (elapsedMilliseconds <= 0)
+        {
+            return;
+        }
+
+        lock (_performanceSync)
+        {
+            _queryLatenciesMs.Enqueue(elapsedMilliseconds);
+            while (_queryLatenciesMs.Count > MaxQueryLatencySamples)
+            {
+                _queryLatenciesMs.Dequeue();
+            }
+        }
     }
 
     /// <summary>
@@ -83,9 +118,71 @@ public sealed class DashboardSnapshotService
         var normalizedLimit = Math.Clamp(limit, 1, 500);
         var health = await GetHealthAsync(cancellationToken);
         var stats = await GetStatsAsync(includeIndexSize: true, cancellationToken);
+        var performanceMetrics = CapturePerformanceSample(stats);
         var sources = await _managementService.ListSourcesAsync(normalizedLimit, cancellationToken);
 
-        return new DashboardSnapshotResponse(health, stats, sources, DateTime.UtcNow);
+        return new DashboardSnapshotResponse(health, stats, sources, performanceMetrics, DateTime.UtcNow);
+    }
+
+    /// <summary>
+    /// Captures one performance sample from current index stats and process telemetry.
+    /// </summary>
+    /// <param name="stats">Current index statistics snapshot.</param>
+    /// <returns>Recent performance history list ordered by time.</returns>
+    private IReadOnlyList<PerformanceMetricPoint> CapturePerformanceSample(IndexStats stats)
+    {
+        lock (_performanceSync)
+        {
+            var sampleAtUtc = DateTime.UtcNow;
+            var processCpuTime = Process.GetCurrentProcess().TotalProcessorTime;
+            var queryLatencyAverageMs = _queryLatenciesMs.Count == 0 ? 0 : _queryLatenciesMs.Average();
+
+            var indexingRateDocsPerSec = 0d;
+            var cpuUsagePercent = 0d;
+
+            if (_lastSampleAtUtc != DateTime.MinValue)
+            {
+                var elapsedSeconds = (sampleAtUtc - _lastSampleAtUtc).TotalSeconds;
+                if (elapsedSeconds > 0)
+                {
+                    var documentDelta = stats.DocumentCount - _lastDocumentCount;
+                    indexingRateDocsPerSec = Math.Max(0, documentDelta / elapsedSeconds);
+
+                    var cpuDeltaSeconds = (processCpuTime - _lastProcessCpuTime).TotalSeconds;
+                    var cpuCapacitySeconds = elapsedSeconds * Environment.ProcessorCount;
+                    if (cpuCapacitySeconds > 0)
+                    {
+                        cpuUsagePercent = Math.Clamp((cpuDeltaSeconds / cpuCapacitySeconds) * 100d, 0d, 100d);
+                    }
+                }
+            }
+
+            var sample = new PerformanceMetricPoint(sampleAtUtc, queryLatencyAverageMs, indexingRateDocsPerSec, cpuUsagePercent);
+            _performanceHistory.Enqueue(sample);
+            _lastSampleAtUtc = sampleAtUtc;
+            _lastProcessCpuTime = processCpuTime;
+            _lastDocumentCount = stats.DocumentCount;
+
+            TrimPerformanceHistory(sampleAtUtc);
+            return _performanceHistory.ToList().AsReadOnly();
+        }
+    }
+
+    /// <summary>
+    /// Trims performance history to 24 hours and bounded sample size.
+    /// </summary>
+    /// <param name="nowUtc">Current UTC timestamp.</param>
+    private void TrimPerformanceHistory(DateTime nowUtc)
+    {
+        while (_performanceHistory.Count > 0 && (nowUtc - _performanceHistory.Peek().TimestampUtc) > TimeSpan.FromHours(24))
+        {
+            _performanceHistory.Dequeue();
+        }
+
+        while (_performanceHistory.Count > MaxPerformanceSamples)
+        {
+            _performanceHistory.Dequeue();
+        }
     }
 }
 
@@ -95,8 +192,18 @@ public sealed class DashboardSnapshotService
 /// <param name="Health">Health status data.</param>
 /// <param name="Stats">Index statistics data.</param>
 /// <param name="Sources">Recent indexed sources.</param>
+/// <param name="PerformanceMetrics">Recent sampled performance metrics.</param>
 /// <param name="GeneratedAtUtc">UTC timestamp when this payload was generated.</param>
-public sealed record DashboardSnapshotResponse(HealthCheckResult Health, IndexStats Stats, IReadOnlyList<SourceInfo> Sources, DateTime GeneratedAtUtc);
+public sealed record DashboardSnapshotResponse(HealthCheckResult Health, IndexStats Stats, IReadOnlyList<SourceInfo> Sources, IReadOnlyList<PerformanceMetricPoint> PerformanceMetrics, DateTime GeneratedAtUtc);
+
+/// <summary>
+/// One sampled runtime point displayed in dashboard performance timeline.
+/// </summary>
+/// <param name="TimestampUtc">UTC timestamp when this sample was captured.</param>
+/// <param name="QueryLatencyMs">Rolling average query latency in milliseconds.</param>
+/// <param name="IndexingRateDocsPerSec">Observed indexing throughput in documents per second.</param>
+/// <param name="CpuUsagePercent">Observed process CPU utilization percentage across available cores.</param>
+public sealed record PerformanceMetricPoint(DateTime TimestampUtc, double QueryLatencyMs, double IndexingRateDocsPerSec, double CpuUsagePercent);
 
 /// <summary>
 /// Thread-safe in-memory cache with fixed TTL.

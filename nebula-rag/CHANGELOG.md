@@ -4,6 +4,18 @@ All notable changes to the Nebula RAG Home Assistant add-on are documented in th
 
 The format is inspired by Keep a Changelog and follows semantic versioning.
 
+## [0.2.22] - 2026-02-24
+
+- Updated repository coding instructions to explicitly require latest stable dependency versions (unless documented constraints apply) and to enforce switch/pattern-matching plus small-helper decomposition for large dispatch methods.
+- Refactored MCP `ExecuteToolAsync` into a switch-based dispatcher with focused helper methods per tool, reducing method complexity and deep `if/else` nesting.
+
+## [0.2.21] - 2026-02-24
+
+- Fixed source-path normalization for containerized MCP text indexing so generic runtime roots (for example `/app`) are no longer used as project prefixes.
+- Added MCP tool `rag_normalize_source_paths` to migrate existing stored source keys and remove duplicates after normalization changes.
+- Replaced dashboard `Performance Timeline` mock values with sampled backend metrics (query latency rolling average, indexing docs/sec delta, and process CPU usage), and rounded chart values to integers for readability.
+- Added OpenTelemetry tracing/metrics instrumentation to Add-on Host with optional OTLP export via add-on setting `telemetry.otlp_endpoint`.
+
 ## [0.2.20] - 2026-02-24
 
 - Added backend `projectCount` to index stats, derived from distinct project keys in indexed source paths (file and URL sources).

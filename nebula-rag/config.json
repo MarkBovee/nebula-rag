@@ -1,6 +1,6 @@
 {
   "name": "Nebula RAG",
-  "version": "0.2.20",
+  "version": "0.2.22",
   "slug": "nebula_rag",
   "description": "NebulaRAG long-running add-on with Nebula web UI and MCP endpoint.",
   "url": "https://github.com/MarkBovee/NebulaRAG/tree/main/nebula-rag",
@@ -37,6 +37,9 @@
       "username": "postgres",
       "password": "",
       "ssl_mode": "Prefer"
+    },
+    "telemetry": {
+      "otlp_endpoint": ""
     }
   },
   "schema": {
@@ -49,6 +52,9 @@
       "username": "str",
       "password": "password",
       "ssl_mode": "list(Disable|Allow|Prefer|Require)"
+    },
+    "telemetry": {
+      "otlp_endpoint": "str?"
     }
   }
 }

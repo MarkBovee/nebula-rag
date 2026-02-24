@@ -25,6 +25,7 @@ public sealed partial class McpTransportHandler
     private const string RagReindexSourceToolName = "rag_reindex_source";
     private const string RagGetChunkToolName = "rag_get_chunk";
     private const string RagSearchSimilarToolName = "rag_search_similar";
+    private const string RagNormalizeSourcePathsToolName = "rag_normalize_source_paths";
     private const string RagDeleteSourceToolName = "rag_delete_source";
     private const string RagPurgeAllToolName = "rag_purge_all";
     private const string MemoryStoreToolName = "memory_store";
@@ -151,6 +152,7 @@ public sealed partial class McpTransportHandler
                 BuildToolDefinition(RagReindexSourceToolName, "Reindex an existing source path from disk."),
                 BuildToolDefinition(RagGetChunkToolName, "Get one indexed chunk by chunk id."),
                 BuildToolDefinition(RagSearchSimilarToolName, "Run similarity search without project path filtering."),
+                BuildToolDefinition(RagNormalizeSourcePathsToolName, "Normalize stored source paths and remove duplicates after key changes."),
                 BuildToolDefinition(RagDeleteSourceToolName, "Delete one indexed source path."),
                 BuildToolDefinition(RagPurgeAllToolName, "Purge all indexed content."),
                 BuildToolDefinition(MemoryStoreToolName, "Store one memory observation with tags and type."),

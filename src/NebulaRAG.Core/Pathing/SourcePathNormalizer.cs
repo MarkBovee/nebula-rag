@@ -5,6 +5,18 @@ namespace NebulaRAG.Core.Pathing;
 /// </summary>
 public static class SourcePathNormalizer
 {
+    private static readonly HashSet<string> GenericProjectFolderNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "app",
+        "workspace",
+        "work",
+        "src",
+        "repo",
+        "project",
+        "projects",
+        "code"
+    };
+
     /// <summary>
     /// Normalizes a source path to a stable storage key.
     /// </summary>
@@ -140,6 +152,12 @@ public static class SourcePathNormalizer
     private static string PrefixWithProjectFolder(string normalizedRelativePath, string? projectFolderName)
     {
         if (string.IsNullOrWhiteSpace(projectFolderName) || string.IsNullOrWhiteSpace(normalizedRelativePath))
+        {
+            return normalizedRelativePath;
+        }
+
+        // Avoid generic runtime working-directory prefixes (for example /app in containers).
+        if (GenericProjectFolderNames.Contains(projectFolderName))
         {
             return normalizedRelativePath;
         }

@@ -94,6 +94,7 @@ export interface DashboardSnapshot {
   health: HealthResponse;
   stats: IndexStats;
   sources: SourceInfo[];
+  performanceMetrics: PerformanceMetric[];
   generatedAtUtc: string;
 }
 
@@ -101,10 +102,10 @@ export interface DashboardSnapshot {
 /// Performance metrics over a time range.
 /// </summary>
 export interface PerformanceMetric {
-  timestamp: string;
+  timestampUtc: string;
   queryLatencyMs: number;
   indexingRateDocsPerSec: number;
-  cpuPercent?: number;
+  cpuUsagePercent: number;
   memoryUsageMb?: number;
 }
 

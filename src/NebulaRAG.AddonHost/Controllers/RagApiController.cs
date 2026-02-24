@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
 using NebulaRAG.AddonHost.Services;
 using NebulaRAG.Core.Configuration;
@@ -104,8 +105,11 @@ public sealed class RagApiController : ControllerBase
             return BadRequest(new { error = "text is required" });
         }
 
+        var stopwatch = Stopwatch.StartNew();
         var topK = Math.Clamp(request.Limit ?? _settings.Retrieval.DefaultTopK, 1, 20);
         var results = await _queryService.QueryAsync(request.Text, topK, cancellationToken);
+        stopwatch.Stop();
+        _dashboardSnapshotService.RecordQueryLatency(stopwatch.Elapsed.TotalMilliseconds);
         return Ok(new QueryResponse(request.Text, topK, results));
     }
 

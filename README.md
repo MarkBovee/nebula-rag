@@ -86,6 +86,7 @@ Key tools include:
 - `rag_reindex_source`
 - `rag_get_chunk`
 - `rag_search_similar`
+- `rag_normalize_source_paths`
 - `rag_delete_source`
 - `rag_purge_all`
 - `memory_store`

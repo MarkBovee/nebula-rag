@@ -3,6 +3,9 @@ using Microsoft.AspNetCore.Http.Json;
 using Microsoft.AspNetCore.StaticFiles;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using OpenTelemetry.Metrics;
+using OpenTelemetry.Resources;
+using OpenTelemetry.Trace;
 using NebulaRAG.Core.Mcp;
 using NebulaRAG.AddonHost.Services;
 using NebulaRAG.Core.Chunking;
@@ -24,6 +27,7 @@ Log.Logger = new LoggerConfiguration()
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Host.UseSerilog();
+ConfigureOpenTelemetry(builder.Services);
 builder.Services.AddControllers();
 builder.Services.AddSingleton<HttpClient>();
 
@@ -177,4 +181,43 @@ static RagSettings LoadSettings()
     configBuilder.AddJsonFile("/app/ragsettings.json", optional: true, reloadOnChange: false);
     configBuilder.AddEnvironmentVariables(prefix: "NEBULARAG_");
     return configBuilder.Build().Get<RagSettings>() ?? new RagSettings();
+}
+
+/// <summary>
+/// Configures OpenTelemetry tracing and metrics with optional OTLP export.
+/// </summary>
+/// <param name="services">Service collection used by the web host.</param>
+static void ConfigureOpenTelemetry(IServiceCollection services)
+{
+    var otlpEndpoint = Environment.GetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT");
+    var hasOtlpEndpoint = !string.IsNullOrWhiteSpace(otlpEndpoint);
+
+    services.AddOpenTelemetry()
+        .ConfigureResource(resourceBuilder =>
+        {
+            resourceBuilder.AddService(serviceName: "NebulaRAG.AddonHost", serviceVersion: "0.2.22");
+        })
+        .WithTracing(traceBuilder =>
+        {
+            traceBuilder
+                .AddAspNetCoreInstrumentation()
+                .AddHttpClientInstrumentation();
+
+            if (hasOtlpEndpoint)
+            {
+                traceBuilder.AddOtlpExporter();
+            }
+        })
+        .WithMetrics(metricBuilder =>
+        {
+            metricBuilder
+                .AddAspNetCoreInstrumentation()
+                .AddHttpClientInstrumentation()
+                .AddRuntimeInstrumentation();
+
+            if (hasOtlpEndpoint)
+            {
+                metricBuilder.AddOtlpExporter();
+            }
+        });
 }

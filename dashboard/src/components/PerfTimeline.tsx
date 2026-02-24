@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { nebulaTheme, chartTheme } from '@/styles/theme';
+import type { PerformanceMetric } from '@/types';
 
 const styles = {
   card: {
@@ -25,29 +26,39 @@ const styles = {
 
 /// <summary>
 /// PerfTimeline component displays performance metrics over the last 24 hours.
-/// Shows query latency and indexing rates as trends over time.
+/// Shows sampled backend query latency, indexing throughput, and CPU usage.
 /// </summary>
-const PerfTimeline: React.FC = () => {
-  // Generate mock performance data for demonstration
+interface PerfTimelineProps {
+  metrics?: PerformanceMetric[];
+}
+
+const PerfTimeline: React.FC<PerfTimelineProps> = ({ metrics }) => {
   const data = useMemo(() => {
-    const now = new Date();
-    const data = [];
-    for (let i = 23; i >= 0; i--) {
-      const time = new Date(now);
-      time.setHours(time.getHours() - i);
-      data.push({
-        time: time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        queryLatency: 45 + Math.random() * 30, // 45-75ms
-        indexingRate: 10 + Math.random() * 40, // 10-50 docs/sec
-        cpuUsage: 20 + Math.random() * 30, // 20-50%
-      });
+    if (!metrics || metrics.length === 0) {
+      return [];
     }
-    return data;
-  }, []);
+
+    const orderedMetrics = [...metrics]
+      .sort((left, right) => left.timestampUtc.localeCompare(right.timestampUtc))
+      .slice(-96);
+
+    return orderedMetrics.map((metric) => ({
+      time: new Date(metric.timestampUtc).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      queryLatency: Math.round(metric.queryLatencyMs),
+      indexingRate: Math.round(metric.indexingRateDocsPerSec),
+      cpuUsage: Math.round(metric.cpuUsagePercent),
+    }));
+  }, [metrics]);
 
   return (
     <div style={styles.card}>
       <h2 style={styles.title}>Performance Timeline (24h)</h2>
+
+      {data.length === 0 && (
+        <p style={{ color: nebulaTheme.colors.textMuted, marginBottom: nebulaTheme.spacing.md }}>
+          Collecting live telemetry samples. Trigger queries and indexing activity to populate this chart.
+        </p>
+      )}
       
       <ResponsiveContainer width="100%" height={350}>
         <LineChart data={data} margin={{ top: 5, right: 30, left: 0, bottom: 5 }}>
@@ -74,6 +85,7 @@ const PerfTimeline: React.FC = () => {
             label={{ value: 'Docs/sec', angle: 90, position: 'insideRight' }}
           />
           <Tooltip
+            formatter={(value: number) => Math.round(value)}
             contentStyle={{
               background: nebulaTheme.colors.surfaceLight,
               border: `1px solid ${nebulaTheme.colors.surfaceBorder}`,

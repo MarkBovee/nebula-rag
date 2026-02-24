@@ -54,6 +54,10 @@ Optional route prefix:
 
 - `path_base=/nebula` to expose UI/API/MCP under `/nebula/...`
 
+Optional telemetry export:
+
+- `telemetry.otlp_endpoint=http://collector:4317` to export OpenTelemetry traces/metrics to an OTLP collector.
+
 ## Runtime Notes
 
 - Runtime image installs `libgssapi-krb5-2` to satisfy .NET native dependency loading.
