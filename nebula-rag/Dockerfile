@@ -7,12 +7,15 @@ ENV DOTNET_CLI_TELEMETRY_OPTOUT=1 \
 
 ARG NEBULARAG_REPO_URL=https://github.com/MarkBovee/NebulaRAG.git
 ARG NEBULARAG_REPO_REF=main
+ARG BUILD_VERSION=dev
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends git ca-certificates nodejs npm \
     && rm -rf /var/lib/apt/lists/*
 
-RUN git clone --depth 1 --branch "${NEBULARAG_REPO_REF}" "${NEBULARAG_REPO_URL}" /src/NebulaRAG
+RUN echo "nebula-rag build version: ${BUILD_VERSION}" \
+    && git clone --depth 1 --branch "${NEBULARAG_REPO_REF}" "${NEBULARAG_REPO_URL}" /src/NebulaRAG \
+    && git -C /src/NebulaRAG rev-parse HEAD > /tmp/nebularag_commit.txt
 WORKDIR /src/NebulaRAG
 
 RUN test -f "src/NebulaRAG.AddonHost/NebulaRAG.AddonHost.csproj"
@@ -43,6 +46,7 @@ RUN apt-get update \
 
 COPY --from=build /app/publish ./
 COPY --from=build /src/NebulaRAG/src/NebulaRAG.Cli/ragsettings.json /app/ragsettings.json
+COPY --from=build /tmp/nebularag_commit.txt /app/nebularag_commit.txt
 COPY run.sh /run.sh
 RUN chmod +x /run.sh
 

@@ -4,6 +4,12 @@ All notable changes to the Nebula RAG Home Assistant add-on are documented in th
 
 The format is inspired by Keep a Changelog and follows semantic versioning.
 
+## [0.2.16] - 2026-02-24
+
+- Fixed a persistent stale-image risk in add-on builds: the repository clone layer now incorporates Home Assistant `BUILD_VERSION`, so version bumps invalidate Docker cache and refresh `main` instead of reusing an older clone layer.
+- Added `/app/nebularag_commit.txt` to runtime images so deployed containers can be traced to the exact cloned commit during diagnostics.
+- Startup logs now print the baked source commit hash, making stale-deployment detection visible directly in Home Assistant add-on logs.
+
 ## [0.2.15] - 2026-02-24
 
 - Add-on host now sets `no-store/no-cache` headers for dashboard `index.html` responses so updated deployments always load the latest hashed JS/CSS bundles instead of stale cached shells.

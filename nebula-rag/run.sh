@@ -32,5 +32,9 @@ export NEBULARAG_DefaultIndexPath="${default_index_path}"
 export NEBULARAG_PathBase="${path_base}"
 export ASPNETCORE_URLS="http://0.0.0.0:8099"
 
+if [ -f "/app/nebularag_commit.txt" ]; then
+  echo "[nebula-rag] Image source commit: $(cat /app/nebularag_commit.txt)"
+fi
+
 echo "[nebula-rag] Starting Nebula RAG Add-on Host (Web UI + MCP endpoint)..."
 exec dotnet NebulaRAG.AddonHost.dll
