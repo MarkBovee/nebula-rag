@@ -4,6 +4,11 @@ All notable changes to the Nebula RAG Home Assistant add-on are documented in th
 
 The format is inspired by Keep a Changelog and follows semantic versioning.
 
+## [0.2.17] - 2026-02-24
+
+- Expanded the overview `Source Breakdown` panel width with a dedicated two-column dashboard grid so the chart uses available screen space instead of leaving an empty right-side column on wide layouts.
+- Added responsive fallback so the overview stacks to a single column on smaller screens.
+
 ## [0.2.16] - 2026-02-24
 
 - Fixed a persistent stale-image risk in add-on builds: the repository clone layer now incorporates Home Assistant `BUILD_VERSION`, so version bumps invalidate Docker cache and refresh `main` instead of reusing an older clone layer.

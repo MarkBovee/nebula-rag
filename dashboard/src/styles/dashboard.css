@@ -81,6 +81,10 @@ body {
   min-width: 0;
 }
 
+.nb-overview-grid {
+  grid-template-columns: minmax(320px, 1fr) minmax(0, 1.9fr);
+}
+
 .nb-card-shell {
   border-radius: 14px;
   box-shadow: var(--nb-shadow);
@@ -101,6 +105,10 @@ body {
 
 @media (max-width: 960px) {
   .nb-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .nb-overview-grid {
     grid-template-columns: 1fr;
   }
 

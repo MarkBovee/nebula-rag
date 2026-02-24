@@ -111,6 +111,11 @@ const styles = {
     gap: nebulaTheme.spacing.lg,
     marginBottom: nebulaTheme.spacing['2xl'],
   } as React.CSSProperties,
+  overviewGridContainer: {
+    display: 'grid',
+    gap: nebulaTheme.spacing.lg,
+    marginBottom: nebulaTheme.spacing['2xl'],
+  } as React.CSSProperties,
   fullWidth: {
     gridColumn: '1 / -1',
   } as React.CSSProperties,
@@ -287,7 +292,7 @@ const App: React.FC = () => {
           )}
 
           {activeTab === 'overview' && (
-            <div style={styles.gridContainer}>
+            <div style={styles.overviewGridContainer} className="nb-overview-grid">
               {stats && (
                 <div className="nb-card-shell nb-fade-up" style={{ animationDelay: '60ms' }}>
                   <IndexHealth stats={stats} />
