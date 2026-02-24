@@ -63,6 +63,7 @@ builder.Services.AddSingleton(chunker);
 builder.Services.AddSingleton<IEmbeddingGenerator>(embeddingGenerator);
 builder.Services.AddSingleton(indexer);
 builder.Services.AddSingleton<DashboardSnapshotService>();
+builder.Services.AddSingleton<IRuntimeTelemetrySink>(serviceProvider => serviceProvider.GetRequiredService<DashboardSnapshotService>());
 builder.Services.AddSingleton<McpTransportHandler>();
 
 await store.InitializeSchemaAsync(settings.Ingestion.VectorDimensions);

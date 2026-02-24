@@ -94,7 +94,17 @@ interface MemoryInsightsProps {
 /// <param name="stats">Memory analytics payload from the backend dashboard snapshot.</param>
 const MemoryInsights: React.FC<MemoryInsightsProps> = ({ stats }) => {
   const typeData = useMemo(() => stats?.typeCounts ?? [], [stats]);
-  const tagData = useMemo(() => stats?.topTags ?? [], [stats]);
+  const tagData = useMemo(() => {
+    const normalizeTagLabel = (tag: string): string => {
+      const normalizedTag = tag.includes(':') ? tag.split(':')[1] : tag;
+      return normalizedTag.length > 22 ? `${normalizedTag.slice(0, 22)}...` : normalizedTag;
+    };
+
+    return (stats?.topTags ?? []).map((entry) => ({
+      ...entry,
+      displayTag: normalizeTagLabel(entry.tag),
+    }));
+  }, [stats]);
   const dailyData = useMemo(() => {
     return (stats?.dailyCounts ?? []).map((entry) => ({
       date: new Date(entry.dateUtc).toLocaleDateString([], { month: 'short', day: '2-digit' }),
@@ -158,18 +168,19 @@ const MemoryInsights: React.FC<MemoryInsightsProps> = ({ stats }) => {
         <div style={styles.chartPanel}>
           <p style={styles.panelTitle}>Top Tags</p>
           <ResponsiveContainer width="100%" height={260}>
-            <BarChart data={tagData} margin={{ top: 8, right: 12, left: 0, bottom: 36 }}>
+            <BarChart data={tagData} layout="vertical" margin={{ top: 8, right: 12, left: 8, bottom: 8 }}>
               <CartesianGrid strokeDasharray="3 3" stroke={chartTheme.grid.stroke} />
-              <XAxis dataKey="tag" angle={-25} textAnchor="end" interval={0} height={64} tick={{ fill: chartTheme.axis.tick.fill, fontSize: 11 }} />
-              <YAxis tick={{ fill: chartTheme.axis.tick.fill, fontSize: 11 }} allowDecimals={false} />
+              <XAxis type="number" tick={{ fill: chartTheme.axis.tick.fill, fontSize: 11 }} allowDecimals={false} />
+              <YAxis type="category" dataKey="displayTag" width={150} tick={{ fill: chartTheme.axis.tick.fill, fontSize: 11 }} />
               <Tooltip
+                formatter={(value: number, _: string, payload: any) => [value, payload?.payload?.tag ?? 'tag']}
                 contentStyle={{
                   background: nebulaTheme.colors.surfaceLight,
                   border: `1px solid ${nebulaTheme.colors.surfaceBorder}`,
                   borderRadius: nebulaTheme.borderRadius.md,
                 }}
               />
-              <Bar dataKey="count" fill={nebulaTheme.colors.accentSecondary} radius={[6, 6, 0, 0]} />
+              <Bar dataKey="count" fill={nebulaTheme.colors.accentSecondary} radius={[0, 6, 6, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>

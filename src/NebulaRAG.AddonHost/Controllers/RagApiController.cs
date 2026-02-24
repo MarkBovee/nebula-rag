@@ -19,6 +19,7 @@ public sealed class RagApiController : ControllerBase
     private readonly RagIndexer _indexer;
     private readonly RagSettings _settings;
     private readonly DashboardSnapshotService _dashboardSnapshotService;
+    private readonly IRuntimeTelemetrySink _telemetrySink;
     private readonly ILogger<RagApiController> _logger;
 
     /// <summary>
@@ -30,13 +31,14 @@ public sealed class RagApiController : ControllerBase
     /// <param name="settings">Runtime settings.</param>
     /// <param name="dashboardSnapshotService">Dashboard snapshot orchestration service.</param>
     /// <param name="logger">Controller logger.</param>
-    public RagApiController(RagQueryService queryService, RagManagementService managementService, RagIndexer indexer, RagSettings settings, DashboardSnapshotService dashboardSnapshotService, ILogger<RagApiController> logger)
+    public RagApiController(RagQueryService queryService, RagManagementService managementService, RagIndexer indexer, RagSettings settings, DashboardSnapshotService dashboardSnapshotService, IRuntimeTelemetrySink telemetrySink, ILogger<RagApiController> logger)
     {
         _queryService = queryService ?? throw new ArgumentNullException(nameof(queryService));
         _managementService = managementService ?? throw new ArgumentNullException(nameof(managementService));
         _indexer = indexer ?? throw new ArgumentNullException(nameof(indexer));
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
         _dashboardSnapshotService = dashboardSnapshotService ?? throw new ArgumentNullException(nameof(dashboardSnapshotService));
+        _telemetrySink = telemetrySink ?? throw new ArgumentNullException(nameof(telemetrySink));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -121,7 +123,12 @@ public sealed class RagApiController : ControllerBase
         var topK = Math.Clamp(request.Limit ?? _settings.Retrieval.DefaultTopK, 1, 20);
         var results = await _queryService.QueryAsync(request.Text, topK, cancellationToken);
         stopwatch.Stop();
-        _dashboardSnapshotService.RecordQueryLatency(stopwatch.Elapsed.TotalMilliseconds);
+        _telemetrySink.RecordQueryLatency(stopwatch.Elapsed.TotalMilliseconds);
+        _telemetrySink.RecordActivity("query", $"API query: '{request.Text}' ({results.Count} matches)", new Dictionary<string, string?>
+        {
+            ["topK"] = topK.ToString(),
+            ["durationMs"] = stopwatch.Elapsed.TotalMilliseconds.ToString("F1")
+        });
         return Ok(new QueryResponse(request.Text, topK, results));
     }
 
@@ -139,7 +146,22 @@ public sealed class RagApiController : ControllerBase
             return BadRequest(new { error = "sourcePath is required" });
         }
 
+        var stopwatch = Stopwatch.StartNew();
         var summary = await _indexer.IndexDirectoryAsync(request.SourcePath, cancellationToken);
+        stopwatch.Stop();
+
+        if (summary.DocumentsIndexed > 0 && stopwatch.Elapsed.TotalSeconds > 0)
+        {
+            _telemetrySink.RecordIndexingRate(summary.DocumentsIndexed / stopwatch.Elapsed.TotalSeconds);
+        }
+
+        _telemetrySink.RecordActivity("index", $"API index: {request.SourcePath}", new Dictionary<string, string?>
+        {
+            ["documentsIndexed"] = summary.DocumentsIndexed.ToString(),
+            ["chunksIndexed"] = summary.ChunksIndexed.ToString(),
+            ["durationMs"] = stopwatch.Elapsed.TotalMilliseconds.ToString("F1")
+        });
+
         return Ok(summary);
     }
 
@@ -158,6 +180,10 @@ public sealed class RagApiController : ControllerBase
         }
 
         var deleted = await _managementService.DeleteSourceAsync(request.SourcePath, cancellationToken);
+        _telemetrySink.RecordActivity("delete", $"API delete: {request.SourcePath}", new Dictionary<string, string?>
+        {
+            ["deleted"] = deleted.ToString()
+        });
         return Ok(new { deleted });
     }
 
@@ -176,6 +202,7 @@ public sealed class RagApiController : ControllerBase
         }
 
         await _managementService.PurgeAllAsync(cancellationToken);
+        _telemetrySink.RecordActivity("delete", "API purge all indexed content");
         return Ok(new { purged = true });
     }
 

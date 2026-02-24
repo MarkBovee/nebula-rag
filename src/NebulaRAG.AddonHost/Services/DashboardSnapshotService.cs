@@ -7,10 +7,12 @@ namespace NebulaRAG.AddonHost.Services;
 /// <summary>
 /// Provides cached dashboard snapshots to reduce repetitive database load from polling clients.
 /// </summary>
-public sealed class DashboardSnapshotService
+public sealed class DashboardSnapshotService : IRuntimeTelemetrySink
 {
     private const int MaxQueryLatencySamples = 240;
+    private const int MaxIndexingRateSamples = 240;
     private const int MaxPerformanceSamples = 2880;
+    private const int MaxActivityEntries = 500;
     private readonly RagManagementService _managementService;
     private readonly TimedCache<HealthCheckResult> _healthCache;
     private readonly TimedCache<IndexStats> _statsCache;
@@ -18,7 +20,9 @@ public sealed class DashboardSnapshotService
     private readonly TimedCache<MemoryDashboardStats> _memoryStatsCache;
     private readonly object _performanceSync = new();
     private readonly Queue<double> _queryLatenciesMs;
+    private readonly Queue<double> _indexingRatesDocsPerSec;
     private readonly Queue<PerformanceMetricPoint> _performanceHistory;
+    private readonly Queue<DashboardActivityEvent> _activityHistory;
     private DateTime _lastSampleAtUtc;
     private TimeSpan _lastProcessCpuTime;
     private int _lastDocumentCount;
@@ -35,7 +39,9 @@ public sealed class DashboardSnapshotService
         _statsWithSizeCache = new TimedCache<IndexStats>(TimeSpan.FromMinutes(2));
         _memoryStatsCache = new TimedCache<MemoryDashboardStats>(TimeSpan.FromSeconds(30));
         _queryLatenciesMs = new Queue<double>();
+        _indexingRatesDocsPerSec = new Queue<double>();
         _performanceHistory = new Queue<PerformanceMetricPoint>();
+        _activityHistory = new Queue<DashboardActivityEvent>();
         _lastSampleAtUtc = DateTime.MinValue;
         _lastProcessCpuTime = TimeSpan.Zero;
         _lastDocumentCount = 0;
@@ -58,6 +64,50 @@ public sealed class DashboardSnapshotService
             while (_queryLatenciesMs.Count > MaxQueryLatencySamples)
             {
                 _queryLatenciesMs.Dequeue();
+            }
+        }
+    }
+
+    /// <summary>
+    /// Records one indexing throughput sample in documents per second.
+    /// </summary>
+    /// <param name="documentsPerSecond">Observed indexing throughput.</param>
+    public void RecordIndexingRate(double documentsPerSecond)
+    {
+        if (documentsPerSecond <= 0)
+        {
+            return;
+        }
+
+        lock (_performanceSync)
+        {
+            _indexingRatesDocsPerSec.Enqueue(documentsPerSecond);
+            while (_indexingRatesDocsPerSec.Count > MaxIndexingRateSamples)
+            {
+                _indexingRatesDocsPerSec.Dequeue();
+            }
+        }
+    }
+
+    /// <summary>
+    /// Records one dashboard activity entry.
+    /// </summary>
+    /// <param name="eventType">Activity category.</param>
+    /// <param name="description">Short activity description.</param>
+    /// <param name="metadata">Optional metadata values.</param>
+    public void RecordActivity(string eventType, string description, IReadOnlyDictionary<string, string?>? metadata = null)
+    {
+        if (string.IsNullOrWhiteSpace(eventType) || string.IsNullOrWhiteSpace(description))
+        {
+            return;
+        }
+
+        lock (_performanceSync)
+        {
+            _activityHistory.Enqueue(new DashboardActivityEvent(DateTime.UtcNow, eventType, description, metadata));
+            while (_activityHistory.Count > MaxActivityEntries)
+            {
+                _activityHistory.Dequeue();
             }
         }
     }
@@ -139,9 +189,28 @@ public sealed class DashboardSnapshotService
         var stats = await GetStatsAsync(includeIndexSize: true, cancellationToken);
         var memoryStats = await GetMemoryStatsAsync(cancellationToken);
         var performanceMetrics = CapturePerformanceSample(stats);
+        var activity = GetRecentActivity(limit: 200);
         var sources = await _managementService.ListSourcesAsync(normalizedLimit, cancellationToken);
 
-        return new DashboardSnapshotResponse(health, stats, sources, memoryStats, performanceMetrics, DateTime.UtcNow);
+        return new DashboardSnapshotResponse(health, stats, sources, memoryStats, activity, performanceMetrics, DateTime.UtcNow);
+    }
+
+    /// <summary>
+    /// Returns recent activity entries ordered newest-first.
+    /// </summary>
+    /// <param name="limit">Maximum number of entries to return.</param>
+    /// <returns>Recent dashboard activity entries.</returns>
+    public IReadOnlyList<DashboardActivityEvent> GetRecentActivity(int limit = 100)
+    {
+        var normalizedLimit = Math.Clamp(limit, 1, 500);
+        lock (_performanceSync)
+        {
+            return _activityHistory
+                .TakeLast(normalizedLimit)
+                .Reverse()
+                .ToList()
+                .AsReadOnly();
+        }
     }
 
     /// <summary>
@@ -167,6 +236,14 @@ public sealed class DashboardSnapshotService
                 {
                     var documentDelta = stats.DocumentCount - _lastDocumentCount;
                     indexingRateDocsPerSec = Math.Max(0, documentDelta / elapsedSeconds);
+                    if (indexingRateDocsPerSec > 0)
+                    {
+                        _indexingRatesDocsPerSec.Enqueue(indexingRateDocsPerSec);
+                        while (_indexingRatesDocsPerSec.Count > MaxIndexingRateSamples)
+                        {
+                            _indexingRatesDocsPerSec.Dequeue();
+                        }
+                    }
 
                     var cpuDeltaSeconds = (processCpuTime - _lastProcessCpuTime).TotalSeconds;
                     var cpuCapacitySeconds = elapsedSeconds * Environment.ProcessorCount;
@@ -175,6 +252,12 @@ public sealed class DashboardSnapshotService
                         cpuUsagePercent = Math.Clamp((cpuDeltaSeconds / cpuCapacitySeconds) * 100d, 0d, 100d);
                     }
                 }
+            }
+
+            // Prefer event-driven throughput when available so short indexing bursts remain visible.
+            if (_indexingRatesDocsPerSec.Count > 0)
+            {
+                indexingRateDocsPerSec = _indexingRatesDocsPerSec.Average();
             }
 
             var sample = new PerformanceMetricPoint(sampleAtUtc, queryLatencyAverageMs, indexingRateDocsPerSec, cpuUsagePercent);
@@ -213,9 +296,19 @@ public sealed class DashboardSnapshotService
 /// <param name="Stats">Index statistics data.</param>
 /// <param name="Sources">Recent indexed sources.</param>
 /// <param name="MemoryStats">Aggregated memory analytics.</param>
+/// <param name="Activity">Recent activity entries.</param>
 /// <param name="PerformanceMetrics">Recent sampled performance metrics.</param>
 /// <param name="GeneratedAtUtc">UTC timestamp when this payload was generated.</param>
-public sealed record DashboardSnapshotResponse(HealthCheckResult Health, IndexStats Stats, IReadOnlyList<SourceInfo> Sources, MemoryDashboardStats MemoryStats, IReadOnlyList<PerformanceMetricPoint> PerformanceMetrics, DateTime GeneratedAtUtc);
+public sealed record DashboardSnapshotResponse(HealthCheckResult Health, IndexStats Stats, IReadOnlyList<SourceInfo> Sources, MemoryDashboardStats MemoryStats, IReadOnlyList<DashboardActivityEvent> Activity, IReadOnlyList<PerformanceMetricPoint> PerformanceMetrics, DateTime GeneratedAtUtc);
+
+/// <summary>
+/// One activity timeline entry displayed in the dashboard.
+/// </summary>
+/// <param name="Timestamp">UTC timestamp when this event was captured.</param>
+/// <param name="EventType">Activity category.</param>
+/// <param name="Description">Short activity description.</param>
+/// <param name="Metadata">Optional metadata values.</param>
+public sealed record DashboardActivityEvent(DateTime Timestamp, string EventType, string Description, IReadOnlyDictionary<string, string?>? Metadata = null);
 
 /// <summary>
 /// One sampled runtime point displayed in dashboard performance timeline.

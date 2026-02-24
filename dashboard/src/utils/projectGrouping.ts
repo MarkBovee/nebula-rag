@@ -1,5 +1,8 @@
 import type { SourceInfo } from '@/types';
 
+const secondaryProjectSegments = new Set(['workspace-notes', 'notes', 'docs']);
+const genericRootSegments = new Set(['app', 'workspace', 'work', 'src', 'repo', 'project', 'projects', 'code']);
+
 export interface ProjectSourceSummary {
   projectName: string;
   sourceCount: number;
@@ -33,6 +36,14 @@ export const extractProjectName = (sourcePath: string): string => {
 
   if (/^[A-Za-z]:$/.test(pathSegments[0])) {
     return pathSegments[1] || pathSegments[0];
+  }
+
+  if (pathSegments.length >= 2 && secondaryProjectSegments.has(pathSegments[0].toLowerCase())) {
+    return pathSegments[1];
+  }
+
+  if (pathSegments.length >= 2 && genericRootSegments.has(pathSegments[0].toLowerCase())) {
+    return pathSegments[1];
   }
 
   return pathSegments[0];

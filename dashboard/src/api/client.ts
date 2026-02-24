@@ -118,7 +118,7 @@ export class NebularRagClient {
       text,
       limit
     });
-    this.addActivity('query', `Searched: "${text}" (${response.data.results.length} results)`);
+    this.addActivity('query', `Searched: "${text}" (${response.data.matches.length} results)`);
     return response.data;
   }
 

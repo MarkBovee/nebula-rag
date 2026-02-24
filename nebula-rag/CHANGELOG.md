@@ -4,6 +4,18 @@ All notable changes to the Nebula RAG Home Assistant add-on are documented in th
 
 The format is inspired by Keep a Changelog and follows semantic versioning.
 
+## [0.2.26] - 2026-02-24
+
+- Added backend runtime telemetry plumbing so MCP tool calls are captured as dashboard activity events and surfaced in the Activity feed.
+- Fixed dashboard semantic search wiring by aligning the UI with the API query response contract (`matches`, `chunkText`, `chunkIndex`), restoring visible search results.
+- Improved performance timeline signal quality by recording query latency and indexing throughput samples from API and MCP execution paths and preserving decimal precision in chart rendering.
+- Improved Memory Top Tags visualization readability with normalized tag labels and a vertical bar layout.
+
+## [0.2.25] - 2026-02-24
+
+- Removed Memory widgets from the `Overview` dashboard page so memory analytics are shown only in the dedicated `Memory` tab.
+- Improved dashboard project grouping for multi-project workspaces by mapping paths like `workspace-notes/<project>/...` (and other generic root folders) to the nested project folder instead of collapsing them into one project bucket.
+
 ## [0.2.24] - 2026-02-24
 
 - Added full memory analytics to backend storage/services with aggregated totals, 24h activity, distinct sessions, average tags, type distribution, top tags, daily growth series, and recent-session summaries.

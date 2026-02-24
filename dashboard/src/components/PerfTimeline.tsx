@@ -44,9 +44,9 @@ const PerfTimeline: React.FC<PerfTimelineProps> = ({ metrics }) => {
 
     return orderedMetrics.map((metric) => ({
       time: new Date(metric.timestampUtc).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      queryLatency: Math.round(metric.queryLatencyMs),
-      indexingRate: Math.round(metric.indexingRateDocsPerSec),
-      cpuUsage: Math.round(metric.cpuUsagePercent),
+      queryLatency: Number(metric.queryLatencyMs.toFixed(1)),
+      indexingRate: Number(metric.indexingRateDocsPerSec.toFixed(2)),
+      cpuUsage: Number(metric.cpuUsagePercent.toFixed(1)),
     }));
   }, [metrics]);
 
@@ -85,7 +85,17 @@ const PerfTimeline: React.FC<PerfTimelineProps> = ({ metrics }) => {
             label={{ value: 'Docs/sec', angle: 90, position: 'insideRight' }}
           />
           <Tooltip
-            formatter={(value: number) => Math.round(value)}
+            formatter={(value: number, name: string) => {
+              if (name.includes('Indexing')) {
+                return [value.toFixed(2), name];
+              }
+
+              if (name.includes('Latency')) {
+                return [value.toFixed(1), name];
+              }
+
+              return [value.toFixed(1), name];
+            }}
             contentStyle={{
               background: nebulaTheme.colors.surfaceLight,
               border: `1px solid ${nebulaTheme.colors.surfaceBorder}`,

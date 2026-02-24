@@ -43,6 +43,7 @@ public sealed partial class McpTransportHandler
     private readonly RagIndexer _indexer;
     private readonly RagSettings _settings;
     private readonly HttpClient _httpClient;
+    private readonly IRuntimeTelemetrySink _telemetrySink;
     private readonly ILogger<McpTransportHandler> _logger;
 
     /// <summary>
@@ -58,7 +59,7 @@ public sealed partial class McpTransportHandler
     /// <param name="settings">Runtime settings.</param>
     /// <param name="httpClient">HTTP client for URL ingestion.</param>
     /// <param name="logger">Handler logger.</param>
-    public McpTransportHandler(RagQueryService queryService, RagManagementService managementService, RagSourcesManifestService sourcesManifestService, PostgresRagStore store, TextChunker chunker, IEmbeddingGenerator embeddingGenerator, RagIndexer indexer, RagSettings settings, HttpClient httpClient, ILogger<McpTransportHandler> logger)
+    public McpTransportHandler(RagQueryService queryService, RagManagementService managementService, RagSourcesManifestService sourcesManifestService, PostgresRagStore store, TextChunker chunker, IEmbeddingGenerator embeddingGenerator, RagIndexer indexer, RagSettings settings, HttpClient httpClient, ILogger<McpTransportHandler> logger, IRuntimeTelemetrySink? telemetrySink = null)
     {
         _queryService = queryService;
         _managementService = managementService;
@@ -69,6 +70,7 @@ public sealed partial class McpTransportHandler
         _indexer = indexer;
         _settings = settings;
         _httpClient = httpClient;
+        _telemetrySink = telemetrySink ?? new NullRuntimeTelemetrySink();
         _logger = logger;
     }
 

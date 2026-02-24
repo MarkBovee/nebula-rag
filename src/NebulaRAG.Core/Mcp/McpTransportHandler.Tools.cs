@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -20,9 +21,11 @@ public sealed partial class McpTransportHandler
     /// <returns>MCP tool result payload.</returns>
     private async Task<JsonObject> ExecuteToolAsync(string toolName, JsonObject? arguments, CancellationToken cancellationToken)
     {
+        var stopwatch = Stopwatch.StartNew();
+        JsonObject? result = null;
         try
         {
-            return toolName switch
+            result = toolName switch
             {
                 RagInitSchemaToolName => await ExecuteInitSchemaToolAsync(cancellationToken),
                 QueryProjectRagToolName => await ExecuteQueryProjectRagToolAsync(arguments, cancellationToken),
@@ -46,11 +49,84 @@ public sealed partial class McpTransportHandler
                 MemoryUpdateToolName => await ExecuteMemoryUpdateToolAsync(arguments, cancellationToken),
                 _ => BuildToolResult($"Unknown tool: {toolName}", isError: true)
             };
+
+            return result;
         }
         catch (Exception ex)
         {
-            return BuildToolResult($"Tool execution failed: {ex.Message}", isError: true);
+            result = BuildToolResult($"Tool execution failed: {ex.Message}", isError: true);
+            return result;
         }
+        finally
+        {
+            stopwatch.Stop();
+            RecordToolTelemetry(toolName, result, stopwatch.Elapsed.TotalMilliseconds);
+        }
+    }
+
+    /// <summary>
+    /// Records activity and performance telemetry for one executed MCP tool call.
+    /// </summary>
+    /// <param name="toolName">Executed tool name.</param>
+    /// <param name="result">Tool result payload.</param>
+    /// <param name="elapsedMilliseconds">Execution duration in milliseconds.</param>
+    private void RecordToolTelemetry(string toolName, JsonObject? result, double elapsedMilliseconds)
+    {
+        var isError = result?["isError"]?.GetValue<bool?>() == true;
+        var status = isError ? "failed" : "ok";
+
+        _telemetrySink.RecordActivity("mcp", $"MCP {toolName} ({status})", new Dictionary<string, string?>
+        {
+            ["durationMs"] = elapsedMilliseconds.ToString("F1")
+        });
+
+        if (!isError && (toolName == QueryProjectRagToolName || toolName == RagSearchSimilarToolName))
+        {
+            _telemetrySink.RecordQueryLatency(elapsedMilliseconds);
+        }
+
+        if (!isError)
+        {
+            var docsPerSecond = TryReadIndexedDocsPerSecond(toolName, result, elapsedMilliseconds);
+            if (docsPerSecond > 0)
+            {
+                _telemetrySink.RecordIndexingRate(docsPerSecond);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Extracts indexed-doc throughput from a successful MCP result payload.
+    /// </summary>
+    /// <param name="toolName">Executed tool name.</param>
+    /// <param name="result">Tool result payload.</param>
+    /// <param name="elapsedMilliseconds">Execution duration in milliseconds.</param>
+    /// <returns>Calculated documents-per-second throughput or zero when unavailable.</returns>
+    private static double TryReadIndexedDocsPerSecond(string toolName, JsonObject? result, double elapsedMilliseconds)
+    {
+        if (elapsedMilliseconds <= 0)
+        {
+            return 0;
+        }
+
+        var structuredContent = result?["structuredContent"] as JsonObject;
+        if (structuredContent is null)
+        {
+            return 0;
+        }
+
+        double indexedDocuments = 0;
+        if (toolName == RagIndexPathToolName)
+        {
+            indexedDocuments = structuredContent["documentsIndexed"]?.GetValue<int?>() ?? 0;
+        }
+        else if (toolName is RagIndexTextToolName or RagIndexUrlToolName or RagReindexSourceToolName)
+        {
+            var updated = structuredContent["updated"]?.GetValue<bool?>() == true;
+            indexedDocuments = updated ? 1 : 0;
+        }
+
+        return indexedDocuments <= 0 ? 0 : indexedDocuments / (elapsedMilliseconds / 1000d);
     }
 
     /// <summary>

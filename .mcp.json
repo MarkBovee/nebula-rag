@@ -1,8 +1,8 @@
 ﻿{
-    "mcpServers":  {
-                       "nebula-rag":  {
-                                          "type":  "http",
-                                          "url":  "http://homeassistant.local:8099/nebula/mcp"
-                                      }
-                   }
+    "mcpServers": {
+        "nebula-rag": {
+            "type": "http",
+            "url": "http://homeassistant.local:8099/nebula/mcp"
+        }
+    }
 }

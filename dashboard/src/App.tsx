@@ -179,15 +179,13 @@ const App: React.FC = () => {
     try {
       const snapshot = await apiClient.getDashboard(50);
 
-      const activity = apiClient.getActivityLog();
-
       setDashboard({
         health: snapshot.health,
         stats: snapshot.stats,
         sources: snapshot.sources,
         memoryStats: snapshot.memoryStats,
         performanceMetrics: snapshot.performanceMetrics,
-        recentActivity: activity,
+        recentActivity: snapshot.activity ?? apiClient.getActivityLog(),
         loading: false,
       });
     } catch (error: any) {
@@ -294,10 +292,6 @@ const App: React.FC = () => {
                     <p style={styles.statusLabel}>Projects</p>
                     <p style={styles.statusValue}>{(stats.projectCount ?? 0).toLocaleString()}</p>
                   </div>
-                  <div style={styles.statusItem}>
-                    <p style={styles.statusLabel}>Memories</p>
-                    <p style={styles.statusValue}>{(memoryStats?.totalMemories ?? 0).toLocaleString()}</p>
-                  </div>
                 </>
               )}
             </div>
@@ -315,9 +309,6 @@ const App: React.FC = () => {
                   <SourceBreakdown sources={sources} />
                 </div>
               )}
-              <div className="nb-card-shell nb-fade-up nb-overview-source-wide" style={{ animationDelay: '160ms' }}>
-                <MemoryInsights stats={memoryStats} />
-              </div>
               <div style={styles.fullWidth} className="nb-card-shell nb-fade-up">
                 <PerfTimeline metrics={performanceMetrics} />
               </div>

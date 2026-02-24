@@ -61,17 +61,20 @@ const SearchAnalytics: React.FC = () => {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+  const [hasSearched, setHasSearched] = useState(false);
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!query.trim()) return;
 
     setLoading(true);
+    setHasSearched(true);
     try {
       const result = await apiClient.query(query, 8);
-      setResults(result.results);
+      setResults(result.matches);
     } catch (error) {
       console.error('Search error:', error);
+      setResults([]);
     }
     setLoading(false);
   };
@@ -105,18 +108,18 @@ const SearchAnalytics: React.FC = () => {
                   {result.sourcePath}
                 </p>
                 <p style={{ color: nebulaTheme.colors.textSecondary, fontSize: nebulaTheme.typography.fontSize.sm }}>
-                  Score: {(result.score * 100).toFixed(1)}%
+                  Score: {(result.score * 100).toFixed(1)}% | Chunk #{result.chunkIndex}
                 </p>
               </div>
               <p style={{ fontSize: nebulaTheme.typography.fontSize.sm, color: nebulaTheme.colors.textSecondary }}>
-                {result.snippet.substring(0, 200)}...
+                {result.chunkText.substring(0, 260)}...
               </p>
             </div>
           ))}
         </div>
       )}
 
-      {results.length === 0 && !loading && query && (
+      {results.length === 0 && !loading && hasSearched && (
         <div style={styles.resultItem}>
           <p style={{ color: nebulaTheme.colors.textMuted }}>No results found for "{query}"</p>
         </div>

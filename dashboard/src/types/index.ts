@@ -50,7 +50,7 @@ export interface SourceInfo {
 export interface QueryResult {
   query: string;
   limit: number;
-  results: RagSearchResult[];
+  matches: RagSearchResult[];
   elapsedMilliseconds?: number;
 }
 
@@ -59,17 +59,18 @@ export interface QueryResult {
 /// </summary>
 export interface RagSearchResult {
   sourcePath: string;
-  snippet: string;
+  chunkIndex: number;
+  chunkText: string;
   score: number;
-  lineNumber?: number;
 }
 
 /// <summary>
 /// Activity log entry for real-time event monitoring.
 /// </summary>
 export interface ActivityEvent {
+  timestampUtc?: string;
   timestamp: string;
-  eventType: 'index' | 'query' | 'delete' | 'error';
+  eventType: 'index' | 'query' | 'delete' | 'error' | 'mcp' | 'system';
   description: string;
   metadata?: Record<string, any>;
 }
@@ -95,6 +96,7 @@ export interface DashboardSnapshot {
   stats: IndexStats;
   sources: SourceInfo[];
   memoryStats: MemoryDashboardStats;
+  activity: ActivityEvent[];
   performanceMetrics: PerformanceMetric[];
   generatedAtUtc: string;
 }

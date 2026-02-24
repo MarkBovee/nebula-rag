@@ -59,6 +59,10 @@ const getEventIcon = (eventType: string): string => {
       return '🗑️';
     case 'error':
       return '⚠️';
+    case 'mcp':
+      return '🔌';
+    case 'system':
+      return '🛰️';
     default:
       return '•';
   }
@@ -74,6 +78,10 @@ const getEventColor = (eventType: string): string => {
       return nebulaTheme.colors.warning;
     case 'error':
       return nebulaTheme.colors.error;
+    case 'mcp':
+      return nebulaTheme.colors.neonPurple;
+    case 'system':
+      return nebulaTheme.colors.textSecondary;
     default:
       return nebulaTheme.colors.textSecondary;
   }
@@ -108,7 +116,7 @@ const ActivityFeed: React.FC<ActivityFeedProps> = ({ activities }) => {
               <div style={{ flex: 1 }}>
                 <p style={styles.description}>{activity.description}</p>
                 <p style={styles.timestamp}>
-                  {new Date(activity.timestamp).toLocaleTimeString()}
+                  {new Date(activity.timestampUtc ?? activity.timestamp).toLocaleTimeString()}
                 </p>
               </div>
             </div>
