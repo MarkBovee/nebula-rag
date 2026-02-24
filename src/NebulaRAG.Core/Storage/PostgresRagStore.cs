@@ -716,9 +716,10 @@ public sealed class PostgresRagStore
     /// <param name="limit">Maximum number of rows to return.</param>
     /// <param name="type">Optional memory type filter.</param>
     /// <param name="tag">Optional tag filter.</param>
+    /// <param name="sessionId">Optional session-id filter.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Recent memory rows sorted by creation date descending.</returns>
-    public async Task<IReadOnlyList<MemoryRecord>> ListMemoriesAsync(int limit, string? type = null, string? tag = null, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<MemoryRecord>> ListMemoriesAsync(int limit, string? type = null, string? tag = null, string? sessionId = null, CancellationToken cancellationToken = default)
     {
         if (limit <= 0)
         {
@@ -730,6 +731,7 @@ public sealed class PostgresRagStore
             FROM memories
                         WHERE (@type::text IS NULL OR type = @type::text)
                             AND (@tag::text IS NULL OR @tag::text = ANY(tags))
+                            AND (@sessionId::text IS NULL OR session_id = @sessionId::text)
             ORDER BY created_at DESC
             LIMIT @limit
             """;
@@ -739,6 +741,7 @@ public sealed class PostgresRagStore
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.Add(CreateNullableTextParameter("type", type));
         command.Parameters.Add(CreateNullableTextParameter("tag", tag));
+        command.Parameters.Add(CreateNullableTextParameter("sessionId", sessionId));
         command.Parameters.AddWithValue("limit", limit);
 
         var rows = new List<MemoryRecord>();
@@ -764,9 +767,10 @@ public sealed class PostgresRagStore
     /// <param name="limit">Maximum number of rows to return.</param>
     /// <param name="type">Optional memory type filter.</param>
     /// <param name="tag">Optional tag filter.</param>
+    /// <param name="sessionId">Optional session-id filter.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Semantically ranked memory rows.</returns>
-    public async Task<IReadOnlyList<MemorySearchResult>> SearchMemoriesAsync(float[] queryEmbedding, int limit, string? type = null, string? tag = null, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<MemorySearchResult>> SearchMemoriesAsync(float[] queryEmbedding, int limit, string? type = null, string? tag = null, string? sessionId = null, CancellationToken cancellationToken = default)
     {
         if (queryEmbedding.Length == 0)
         {
@@ -789,6 +793,7 @@ public sealed class PostgresRagStore
             FROM memories
                         WHERE (@type::text IS NULL OR type = @type::text)
                             AND (@tag::text IS NULL OR @tag::text = ANY(tags))
+                            AND (@sessionId::text IS NULL OR session_id = @sessionId::text)
             ORDER BY embedding <=> CAST(@embedding AS vector)
             LIMIT @limit
             """;
@@ -799,6 +804,7 @@ public sealed class PostgresRagStore
         command.Parameters.AddWithValue("embedding", ToVectorLiteral(queryEmbedding));
         command.Parameters.Add(CreateNullableTextParameter("type", type));
         command.Parameters.Add(CreateNullableTextParameter("tag", tag));
+        command.Parameters.Add(CreateNullableTextParameter("sessionId", sessionId));
         command.Parameters.AddWithValue("limit", limit);
 
         var rows = new List<MemorySearchResult>();

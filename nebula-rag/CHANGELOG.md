@@ -4,6 +4,12 @@ All notable changes to the Nebula RAG Home Assistant add-on are documented in th
 
 The format is inspired by Keep a Changelog and follows semantic versioning.
 
+## [0.2.30] - 2026-02-24
+
+- Improved MCP memory retrieval reliability: `memory_recall` now falls back to recent-memory listing when semantic recall returns zero matches, so stored entries remain discoverable.
+- Added optional `sessionId` filtering to both `memory_recall` and `memory_list` flows, while preserving global read behavior when `sessionId` is not supplied.
+- Updated MCP `tools/list` input schemas for memory tools to document `sessionId`, `type`, `tag`, and `limit` arguments.
+
 ## [0.2.29] - 2026-02-24
 
 - Added optional `projectName` input support to MCP indexing tools (`rag_index_path`, `rag_index_text`, `rag_index_url`, and `rag_reindex_source`) so clients can provide explicit project grouping without relying only on path inference.

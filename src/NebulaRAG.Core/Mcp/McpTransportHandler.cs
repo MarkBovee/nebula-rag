@@ -222,6 +222,24 @@ public sealed partial class McpTransportHandler
                     ["projectName"] = BuildStringSchema("Optional project name used as the source-key prefix.")
                 },
                 "sourcePath"),
+            MemoryRecallToolName => BuildObjectSchema(
+                new JsonObject
+                {
+                    ["text"] = BuildStringSchema("Semantic probe text for memory recall."),
+                    ["limit"] = BuildIntegerSchema("Optional max number of memories to return.", minimum: 1, maximum: 50),
+                    ["type"] = BuildStringSchema("Optional memory type filter."),
+                    ["tag"] = BuildStringSchema("Optional memory tag filter."),
+                    ["sessionId"] = BuildStringSchema("Optional session-id filter.")
+                },
+                "text"),
+            MemoryListToolName => BuildObjectSchema(
+                new JsonObject
+                {
+                    ["limit"] = BuildIntegerSchema("Optional max number of memories to list.", minimum: 1, maximum: 100),
+                    ["type"] = BuildStringSchema("Optional memory type filter."),
+                    ["tag"] = BuildStringSchema("Optional memory tag filter."),
+                    ["sessionId"] = BuildStringSchema("Optional session-id filter.")
+                }),
             _ => BuildObjectSchema(new JsonObject())
         };
     }
@@ -266,5 +284,33 @@ public sealed partial class McpTransportHandler
             ["type"] = "string",
             ["description"] = description
         };
+    }
+
+    /// <summary>
+    /// Builds an integer-property schema node with description and optional bounds.
+    /// </summary>
+    /// <param name="description">Property description.</param>
+    /// <param name="minimum">Optional inclusive minimum.</param>
+    /// <param name="maximum">Optional inclusive maximum.</param>
+    /// <returns>Integer schema node.</returns>
+    private static JsonObject BuildIntegerSchema(string description, int? minimum = null, int? maximum = null)
+    {
+        var schema = new JsonObject
+        {
+            ["type"] = "integer",
+            ["description"] = description
+        };
+
+        if (minimum.HasValue)
+        {
+            schema["minimum"] = minimum.Value;
+        }
+
+        if (maximum.HasValue)
+        {
+            schema["maximum"] = maximum.Value;
+        }
+
+        return schema;
     }
 }

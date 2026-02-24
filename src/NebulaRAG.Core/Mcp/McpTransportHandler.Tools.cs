@@ -558,8 +558,20 @@ public sealed partial class McpTransportHandler
         var limit = Math.Clamp(arguments?["limit"]?.GetValue<int?>() ?? 10, 1, 50);
         var type = arguments?["type"]?.GetValue<string>();
         var tag = arguments?["tag"]?.GetValue<string>();
+        var sessionId = arguments?["sessionId"]?.GetValue<string>();
         var queryEmbedding = _embeddingGenerator.GenerateEmbedding(text, _settings.Ingestion.VectorDimensions);
-        var memories = await _store.SearchMemoriesAsync(queryEmbedding, limit, type, tag, cancellationToken);
+        var memories = await _store.SearchMemoriesAsync(queryEmbedding, limit, type, tag, sessionId, cancellationToken);
+        var usedFallback = false;
+        if (memories.Count == 0)
+        {
+            // Fallback to recent-memory listing so recall remains useful when semantic ranking returns no hits.
+            var listedMemories = await _store.ListMemoriesAsync(limit, type, tag, sessionId, cancellationToken);
+            memories = listedMemories
+                .Select(memory => new MemorySearchResult(memory.Id, memory.SessionId, memory.Type, memory.Content, memory.Tags, memory.CreatedAtUtc, 0d))
+                .ToList();
+            usedFallback = memories.Count > 0;
+        }
+
         var items = new JsonArray();
         foreach (var memory in memories)
         {
@@ -575,7 +587,12 @@ public sealed partial class McpTransportHandler
             });
         }
 
-        return BuildToolResult($"Recalled {memories.Count} memories.", new JsonObject { ["items"] = items });
+        return BuildToolResult($"Recalled {memories.Count} memories.", new JsonObject
+        {
+            ["items"] = items,
+            ["sessionId"] = sessionId,
+            ["fallbackUsed"] = usedFallback
+        });
     }
 
     /// <summary>
@@ -589,7 +606,8 @@ public sealed partial class McpTransportHandler
         var limit = Math.Clamp(arguments?["limit"]?.GetValue<int?>() ?? 20, 1, 100);
         var type = arguments?["type"]?.GetValue<string>();
         var tag = arguments?["tag"]?.GetValue<string>();
-        var memories = await _store.ListMemoriesAsync(limit, type, tag, cancellationToken);
+        var sessionId = arguments?["sessionId"]?.GetValue<string>();
+        var memories = await _store.ListMemoriesAsync(limit, type, tag, sessionId, cancellationToken);
         var items = new JsonArray();
         foreach (var memory in memories)
         {
@@ -604,7 +622,11 @@ public sealed partial class McpTransportHandler
             });
         }
 
-        return BuildToolResult($"Listed {memories.Count} memories.", new JsonObject { ["items"] = items });
+        return BuildToolResult($"Listed {memories.Count} memories.", new JsonObject
+        {
+            ["items"] = items,
+            ["sessionId"] = sessionId
+        });
     }
 
     /// <summary>
