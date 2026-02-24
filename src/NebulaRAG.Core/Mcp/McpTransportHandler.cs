@@ -222,6 +222,21 @@ public sealed partial class McpTransportHandler
                     ["projectName"] = BuildStringSchema("Optional project name used as the source-key prefix.")
                 },
                 "sourcePath"),
+            MemoryStoreToolName => BuildObjectSchema(
+                new JsonObject
+                {
+                    ["sessionId"] = BuildStringSchema("Optional session-id for grouping related memories."),
+                    ["type"] = BuildStringSchema("Memory type: episodic, semantic, or procedural."),
+                    ["content"] = BuildStringSchema("Natural-language memory content to store."),
+                    ["tags"] = new JsonObject
+                    {
+                        ["type"] = "array",
+                        ["description"] = "Optional list of tags for filtering.",
+                        ["items"] = BuildStringSchema("Memory tag.")
+                    }
+                },
+                "type",
+                "content"),
             MemoryRecallToolName => BuildObjectSchema(
                 new JsonObject
                 {

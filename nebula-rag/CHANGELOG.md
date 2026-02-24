@@ -4,6 +4,26 @@ All notable changes to the Nebula RAG Home Assistant add-on are documented in th
 
 The format is inspired by Keep a Changelog and follows semantic versioning.
 
+## [0.2.35] - 2026-02-24
+
+- Updated MCP `memory_store` behavior so `sessionId` is optional; when omitted, NebulaRAG now generates a session identifier automatically.
+- Removed store-level hard validation that rejected empty `sessionId` during memory creation, while preserving required `type` and `content` validation.
+- Added explicit `memory_store` input schema in MCP `tools/list` so clients can discover required fields (`type`, `content`) and optional fields (`sessionId`, `tags`).
+
+## [0.2.34] - 2026-02-24
+
+- Updated the README one-line PowerShell installer to run `setup-nebula-rag.ps1` without hardcoded setup arguments, so the script uses its own defaults/prompts.
+
+## [0.2.32] - 2026-02-24
+
+- Simplified the README one-line PowerShell installer flow to only download `setup-nebula-rag.ps1` and execute it.
+- Kept the quoting-safe `-Command` pattern so the command works reliably when launched from an existing PowerShell session.
+
+## [0.2.31] - 2026-02-24
+
+- Fixed the README remote one-line installer command for PowerShell sessions by switching to quoting-safe `-Command` usage that prevents parent-session `$variable` expansion.
+- Hardened the one-line installer flow with download retry behavior and `try/finally` cleanup of the temporary script file.
+
 ## [0.2.30] - 2026-02-24
 
 - Improved MCP memory retrieval reliability: `memory_recall` now falls back to recent-memory listing when semantic recall returns zero matches, so stored entries remain discoverable.

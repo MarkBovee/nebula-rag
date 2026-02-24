@@ -680,16 +680,17 @@ public sealed class PostgresRagStore
     /// <summary>
     /// Stores a memory entry and returns its newly assigned identifier.
     /// </summary>
-    /// <param name="sessionId">Logical session identifier for grouping related memories.</param>
+    /// <param name="sessionId">Optional logical session identifier for grouping related memories.</param>
     /// <param name="type">Memory type: episodic, semantic, or procedural.</param>
     /// <param name="content">Natural language memory content.</param>
     /// <param name="tags">Tag collection for memory filtering.</param>
     /// <param name="embedding">Memory embedding vector.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Identifier of the inserted memory row.</returns>
-    public async Task<long> CreateMemoryAsync(string sessionId, string type, string content, IReadOnlyList<string> tags, IReadOnlyList<float> embedding, CancellationToken cancellationToken = default)
+    public async Task<long> CreateMemoryAsync(string? sessionId, string type, string content, IReadOnlyList<string> tags, IReadOnlyList<float> embedding, CancellationToken cancellationToken = default)
     {
-        ValidateMemoryArguments(sessionId, type, content, embedding);
+        ValidateMemoryArguments(type, content, embedding);
+        var resolvedSessionId = NormalizeSessionId(sessionId);
 
         const string sql = """
             INSERT INTO memories (session_id, type, content, embedding, tags)
@@ -700,7 +701,7 @@ public sealed class PostgresRagStore
         await using var connection = new NpgsqlConnection(_connectionString);
         await connection.OpenAsync(cancellationToken);
         await using var command = new NpgsqlCommand(sql, connection);
-        command.Parameters.AddWithValue("sessionId", sessionId);
+        command.Parameters.AddWithValue("sessionId", resolvedSessionId);
         command.Parameters.AddWithValue("type", type);
         command.Parameters.AddWithValue("content", content);
         command.Parameters.AddWithValue("embedding", ToVectorLiteral(embedding));
@@ -1139,17 +1140,11 @@ public sealed class PostgresRagStore
     /// <summary>
     /// Validates common memory insertion arguments.
     /// </summary>
-    /// <param name="sessionId">Session identifier value.</param>
     /// <param name="type">Memory type value.</param>
     /// <param name="content">Content value.</param>
     /// <param name="embedding">Embedding value.</param>
-    private static void ValidateMemoryArguments(string sessionId, string type, string content, IReadOnlyList<float> embedding)
+    private static void ValidateMemoryArguments(string type, string content, IReadOnlyList<float> embedding)
     {
-        if (string.IsNullOrWhiteSpace(sessionId))
-        {
-            throw new ArgumentException("Session id cannot be empty.", nameof(sessionId));
-        }
-
         if (string.IsNullOrWhiteSpace(type))
         {
             throw new ArgumentException("Memory type cannot be empty.", nameof(type));
@@ -1171,6 +1166,18 @@ public sealed class PostgresRagStore
         {
             throw new ArgumentException("Memory embedding cannot be empty.", nameof(embedding));
         }
+    }
+
+    /// <summary>
+    /// Resolves an optional session identifier into a non-empty persisted value.
+    /// </summary>
+    /// <param name="sessionId">Optional caller-provided session identifier.</param>
+    /// <returns>Trimmed provided identifier, or a generated fallback identifier.</returns>
+    private static string NormalizeSessionId(string? sessionId)
+    {
+        return string.IsNullOrWhiteSpace(sessionId)
+            ? $"session-{Guid.NewGuid():N}"
+            : sessionId.Trim();
     }
 
     /// <summary>

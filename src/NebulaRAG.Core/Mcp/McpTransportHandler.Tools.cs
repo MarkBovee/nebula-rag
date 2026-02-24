@@ -524,18 +524,22 @@ public sealed partial class McpTransportHandler
         var sessionId = arguments?["sessionId"]?.GetValue<string>();
         var type = arguments?["type"]?.GetValue<string>();
         var content = arguments?["content"]?.GetValue<string>();
-        if (string.IsNullOrWhiteSpace(sessionId) || string.IsNullOrWhiteSpace(type) || string.IsNullOrWhiteSpace(content))
+        if (string.IsNullOrWhiteSpace(type) || string.IsNullOrWhiteSpace(content))
         {
-            return BuildToolResult("sessionId, type and content are required.", isError: true);
+            return BuildToolResult("type and content are required.", isError: true);
         }
 
+        // Keep session affinity available without forcing clients to provide one.
+        var resolvedSessionId = string.IsNullOrWhiteSpace(sessionId)
+            ? $"session-{Guid.NewGuid():N}"
+            : sessionId;
         var tags = ParseTags(arguments?["tags"]);
         var embedding = _embeddingGenerator.GenerateEmbedding(content, _settings.Ingestion.VectorDimensions);
-        var memoryId = await _store.CreateMemoryAsync(sessionId, type, content, tags, embedding, cancellationToken);
+        var memoryId = await _store.CreateMemoryAsync(resolvedSessionId, type, content, tags, embedding, cancellationToken);
         return BuildToolResult("Memory stored.", new JsonObject
         {
             ["memoryId"] = memoryId,
-            ["sessionId"] = sessionId,
+            ["sessionId"] = resolvedSessionId,
             ["type"] = type,
             ["tags"] = JsonSerializer.SerializeToNode(tags)
         });

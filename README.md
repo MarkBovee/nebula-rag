@@ -12,8 +12,13 @@ It combines:
 ## One-Line Remote Install (Windows + PowerShell)
 
 ```powershell
-pwsh -NoProfile -ExecutionPolicy Bypass -Command "$u='https://raw.githubusercontent.com/MarkBovee/NebulaRAG/main/scripts/setup-nebula-rag.ps1'; $p=Join-Path $env:TEMP 'setup-nebula-rag.ps1'; Invoke-WebRequest -Uri $u -OutFile $p; & $p -Mode User -ClientTargets Both -InstallTarget HomeAssistantAddon -HomeAssistantMcpUrl 'http://homeassistant.local:8099/nebula/mcp' -Force"
+pwsh -NoProfile -ExecutionPolicy Bypass -Command '& { $scriptUrl = "https://raw.githubusercontent.com/MarkBovee/NebulaRAG/main/scripts/setup-nebula-rag.ps1"; $scriptPath = Join-Path ([System.IO.Path]::GetTempPath()) "setup-nebula-rag.ps1"; Invoke-WebRequest -Uri $scriptUrl -OutFile $scriptPath; & $scriptPath }'
 ```
+
+Why this format:
+
+- Uses single quotes around `-Command` so `$...` variables are not expanded by the parent PowerShell session.
+- Keeps the flow minimal: download the installer script, then execute it.
 
 What it does:
 
