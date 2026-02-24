@@ -28,6 +28,63 @@ Always load and follow these instruction files before implementation:
 
 If instruction files conflict, prioritize repository-local instruction files and preserve existing project conventions.
 
+## Agent Workflow
+
+Work like a professional developer: define expectations, plan, implement clean code, verify results.
+
+### Mandatory Rules
+
+1. **Branch first** — never work on `main`/`master` directly:
+   - `feature/[change-id]` — new features, breaking changes (+ OpenSpec change folder)
+   - `fix/[name]` — bug fixes
+   - `refactor/[name]` — restructuring
+   - `docs/[name]` — documentation only
+
+2. **No temporary report files** — never create `*_REPORT.md`, `*_SUMMARY.md`, `PROGRESS_*.md`, `*_COMPLETE.md`, `PHASE_*.md`. See `documentation.instructions.md` for where information belongs.
+
+3. **Update docs before final commit** — update README.md if behavior changed; update OpenSpec proposal/tasks if applicable.
+
+4. **Safety guard** — if specs are ambiguous, ask for clarification before coding.
+
+5. **Integration tests must be strongly typed** — for Aspire and legacy integration tests, response validation must use concrete client/service models. `ApiJsonRequestAsync<object>` is forbidden, and `ApiJsonRequestAsync<JsonElement>` is forbidden when a real model exists.
+
+6. **Shared package release gate (mandatory)** — when updating `Accentry.Shared` package version in MiEP, first ensure all Shared changes are committed, merged to `origin/master`, and pushed before any MiEP package reference update starts. Before the first MiEP restore/build after the version bump, clear local NuGet caches with `dotnet nuget locals all --clear` (if a file is locked, stop active `dotnet` tasks/processes and retry).
+
+### Decision Tree
+
+| Situation | Action |
+|-----------|--------|
+| New feature / breaking change | OpenSpec change + `feature/` branch (use OpenSpec skills) |
+| Bug fix | `fix/` branch, document expected vs actual behavior |
+| Refactor | `refactor/` branch |
+| Docs only | `docs/` branch |
+
+### Workflow Phases
+
+#### Phase 0: Init
+- Create branch
+- For features: create OpenSpec change folder (`openspec/changes/[number]-[change-id]/`) with `proposal.md`, `tasks.md`, and `specs/[capability]/spec.md`
+- Folder numbering: sequential (check `ls openspec/changes/` for next number)
+- Validate: `openspec validate [change-id] --strict`
+
+#### Phase 1: Plan
+- Define measurable success criteria (in `proposal.md` or commit description)
+- Identify risks and dependencies
+- Break work into concrete tasks (in `tasks.md` for OpenSpec changes)
+- Get user approval for significant changes
+
+#### Phase 2: Build
+- Write production-ready code (no placeholders), follow `coding.instructions.md`
+- Track progress: mark tasks `[x]` with timestamp, update `proposal.md` percentage
+- Build: 0 errors, 0 warnings. All tests passing.
+
+#### Phase 3: Ship
+- Update documentation (README.md, specs) — see `documentation.instructions.md`
+- Commit with conventional message: `[type]: [description]`
+  - Types: `feat`, `fix`, `refactor`, `docs`, `test`
+- For OpenSpec: archive with `openspec archive [change-id] --yes`
+- Merge to main, delete branch
+
 ## Tool Decision Logic
 
 ## Memory Routing Policy
