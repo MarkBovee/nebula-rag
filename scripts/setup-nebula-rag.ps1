@@ -13,7 +13,7 @@ param(
 
     [string]$ServerName = "nebula-rag",
     [string]$ImageName = "localhost/nebula-rag-mcp:latest",
-    [string]$HomeAssistantMcpUrl = "http://homeassistant.local:8099/mcp",
+    [string]$HomeAssistantMcpUrl = "http://homeassistant.local:8099/nebula/mcp",
 
     [string]$EnvFileName = ".nebula.env",
     [string]$EnvFilePath,

@@ -1,5 +1,5 @@
 import axios, { AxiosInstance } from 'axios';
-import type { HealthResponse, IndexStats, SourceInfo, QueryResult, ActivityEvent } from '@/types';
+import type { HealthResponse, IndexStats, SourceInfo, QueryResult, ActivityEvent, ClientErrorReport } from '@/types';
 
 /// <summary>
 /// Resolves the hosting base path from the current location.
@@ -121,6 +121,20 @@ export class NebularRagClient {
     });
     this.addActivity('delete', `Deleted source: ${sourcePath}`);
     return response.data;
+  }
+
+  /// <summary>
+  /// Reports a browser runtime error to the backend diagnostics endpoint.
+  /// </summary>
+  /// <param name="errorReport">Client-side error payload.</param>
+  /// <returns>Promise that resolves once the error has been forwarded.</returns>
+  async reportClientError(errorReport: ClientErrorReport): Promise<void> {
+    try {
+      await this.api.post('api/client-errors', errorReport);
+      this.addActivity('error', `Client error reported: ${errorReport.message}`);
+    } catch {
+      this.addActivity('error', `Client error report failed: ${errorReport.message}`);
+    }
   }
 
   /// <summary>

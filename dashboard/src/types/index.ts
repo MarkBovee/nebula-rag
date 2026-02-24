@@ -74,6 +74,19 @@ export interface ActivityEvent {
 }
 
 /// <summary>
+/// Client-side browser error payload sent to the backend for diagnostics.
+/// </summary>
+export interface ClientErrorReport {
+  message: string;
+  stack?: string;
+  source: 'window.error' | 'unhandledrejection';
+  url: string;
+  userAgent: string;
+  severity: 'error' | 'warning';
+  timestamp: string;
+}
+
+/// <summary>
 /// Performance metrics over a time range.
 /// </summary>
 export interface PerformanceMetric {

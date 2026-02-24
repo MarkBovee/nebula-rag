@@ -11,7 +11,7 @@ using NebulaRAG.Core.Models;
 using NebulaRAG.Core.Services;
 using NebulaRAG.Core.Storage;
 using Serilog;
-using Serilog.Formatting.Compact;
+using Serilog.Events;
 
 const string QueryProjectRagToolName = "query_project_rag";
 const string RagInitSchemaToolName = "rag_init_schema";
@@ -37,7 +37,11 @@ var httpClient = new HttpClient();
 
 Log.Logger = new LoggerConfiguration()
     .MinimumLevel.Information()
-    .WriteTo.Console(new CompactJsonFormatter())
+    .MinimumLevel.Override("Microsoft", LogEventLevel.Warning)
+    .MinimumLevel.Override("Microsoft.AspNetCore", LogEventLevel.Warning)
+    .MinimumLevel.Override("System", LogEventLevel.Warning)
+    .Enrich.FromLogContext()
+    .WriteTo.Console(outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj}{NewLine}{Exception}")
     .CreateLogger();
 
 var builder = WebApplication.CreateBuilder(args);
@@ -70,11 +74,22 @@ var indexer = new RagIndexer(store, chunker, embeddingGenerator, settings, logge
 await store.InitializeSchemaAsync(settings.Ingestion.VectorDimensions);
 
 var app = builder.Build();
+Log.Information("NebulaRAG add-on ignition sequence started.");
+
 if (!string.IsNullOrEmpty(pathBase))
 {
-    Log.Information("Using path base {PathBase}", pathBase);
+    Log.Information("Navigation corridor locked to path base {PathBase}", pathBase);
     app.UsePathBase(pathBase);
 }
+
+app.UseSerilogRequestLogging(options =>
+{
+    options.MessageTemplate = "Orbit {RequestMethod} {RequestPath} => {StatusCode} in {Elapsed:0.0000} ms";
+    options.GetLevel = (httpContext, elapsed, exception) =>
+        exception is not null || httpContext.Response.StatusCode >= 500
+            ? LogEventLevel.Error
+            : LogEventLevel.Information;
+});
 
 app.UseDefaultFiles();
 app.UseStaticFiles();
@@ -144,6 +159,28 @@ app.MapPost("/api/purge", async (PurgeRequest request, CancellationToken cancell
     return Results.Json(new { purged = true });
 });
 
+app.MapPost("/api/client-errors", (ClientErrorRequest request) =>
+{
+    if (string.IsNullOrWhiteSpace(request.Message))
+    {
+        return Results.BadRequest(new { error = "message is required" });
+    }
+
+    var severity = string.IsNullOrWhiteSpace(request.Severity) ? "error" : request.Severity;
+    var message = TruncateForLogs(request.Message, 400);
+    var source = TruncateForLogs(request.Source, 200);
+    var url = TruncateForLogs(request.Url, 400);
+    var stack = TruncateForLogs(request.Stack, 1500);
+
+    Log.Warning("Client-side nebula flare [{Severity}] {Message} | source={Source} | url={Url} | ts={ClientTimestamp}", severity, message, source, url, request.Timestamp);
+    if (!string.IsNullOrWhiteSpace(stack))
+    {
+        Log.Warning("Client stack trace: {ClientStack}", stack);
+    }
+
+    return Results.Accepted();
+});
+
 // Handle MCP JSON-RPC transport for initialize, ping, tool listing, and tool execution.
 app.MapPost("/mcp", async (JsonObject request, CancellationToken cancellationToken) =>
 {
@@ -192,7 +229,49 @@ app.MapPost("/mcp", async (JsonObject request, CancellationToken cancellationTok
     return Results.Json(BuildResult(id, result));
 });
 
+Log.Information(
+    "NebulaRAG flight deck online. Dashboard: {DashboardPath} | MCP: {McpPath}",
+    PrefixPath(pathBase, "/dashboard/"),
+    PrefixPath(pathBase, "/mcp"));
+
 app.Run();
+
+/// <summary>
+/// Prefixes an application route with the configured path base.
+/// </summary>
+/// <param name="pathBase">Configured ASP.NET path base.</param>
+/// <param name="route">Route path starting with '/'.</param>
+/// <returns>Combined route including path base when configured.</returns>
+static string PrefixPath(string pathBase, string route)
+{
+    if (string.IsNullOrWhiteSpace(pathBase))
+    {
+        return route;
+    }
+
+    return $"{pathBase}{route}";
+}
+
+/// <summary>
+/// Truncates a string for compact human-readable logs.
+/// </summary>
+/// <param name="value">Input value to truncate.</param>
+/// <param name="maxLength">Maximum number of characters to keep.</param>
+/// <returns>Original text when short enough; otherwise truncated text with ellipsis.</returns>
+static string TruncateForLogs(string? value, int maxLength)
+{
+    if (string.IsNullOrWhiteSpace(value))
+    {
+        return string.Empty;
+    }
+
+    if (value.Length <= maxLength)
+    {
+        return value;
+    }
+
+    return $"{value[..maxLength]}...";
+}
 
 /// <summary>
 /// Normalizes a path base value from environment configuration.
@@ -889,3 +968,15 @@ internal sealed record DeleteRequest(string SourcePath);
 /// </summary>
 /// <param name="ConfirmPhrase">Must be exactly "PURGE ALL" to execute (safety gate).</param>
 internal sealed record PurgeRequest(string ConfirmPhrase);
+
+/// <summary>
+/// Browser error report payload sent by the dashboard.
+/// </summary>
+/// <param name="Message">Error message captured in the browser runtime.</param>
+/// <param name="Stack">Optional JavaScript stack trace.</param>
+/// <param name="Source">Source event type (window.error or unhandledrejection).</param>
+/// <param name="Url">Current browser URL where the error occurred.</param>
+/// <param name="UserAgent">Browser user agent string.</param>
+/// <param name="Severity">Client-reported severity classification.</param>
+/// <param name="Timestamp">Client timestamp (ISO-8601) for the event.</param>
+internal sealed record ClientErrorRequest(string Message, string? Stack, string? Source, string? Url, string? UserAgent, string? Severity, string? Timestamp);
