@@ -12,7 +12,10 @@
     "ChunkSize": 1200,
     "ChunkOverlap": 200,
     "MaxFileSizeBytes": 1000000,
-    "IncludeExtensions": [".md", ".txt", ".cs", ".json", ".ts", ".tsx", ".js", ".py"]
+    "IncludeExtensions": [".md", ".txt", ".cs", ".json", ".ts", ".tsx", ".js", ".py"],
+    "ExcludeDirectories": ["bin", "obj", ".git", "node_modules", ".next", "dist", "build", "wwwroot", "test-results", "coverage", ".cache", ".turbo", ".parcel-cache", ".svelte-kit", ".vite"],
+    "ExcludeFileNames": ["package-lock.json", "pnpm-lock.yaml", "yarn.lock"],
+    "ExcludeFileSuffixes": [".min.js", ".min.css", ".map"]
   },
   "Retrieval": {
     "DefaultTopK": 5

@@ -78,7 +78,7 @@ const SearchAnalytics: React.FC = () => {
 
   return (
     <div style={styles.card}>
-      <h2 style={styles.title}>🔍 Search & Query</h2>
+      <h2 style={styles.title}>Search and Query</h2>
       
       <form onSubmit={handleSearch} style={styles.searchBox}>
         <input
@@ -102,7 +102,7 @@ const SearchAnalytics: React.FC = () => {
             <div key={idx} style={styles.resultItem}>
               <div style={{ marginBottom: nebulaTheme.spacing.sm }}>
                 <p style={{ color: nebulaTheme.colors.neonCyan, fontWeight: 'bold' }}>
-                  📄 {result.sourcePath}
+                  {result.sourcePath}
                 </p>
                 <p style={{ color: nebulaTheme.colors.textSecondary, fontSize: nebulaTheme.typography.fontSize.sm }}>
                   Score: {(result.score * 100).toFixed(1)}%

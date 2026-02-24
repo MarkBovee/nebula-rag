@@ -5,6 +5,7 @@ using NebulaRAG.Core.Chunking;
 using NebulaRAG.Core.Configuration;
 using NebulaRAG.Core.Embeddings;
 using NebulaRAG.Core.Models;
+using NebulaRAG.Core.Pathing;
 using NebulaRAG.Core.Services;
 using NebulaRAG.Core.Storage;
 
@@ -299,6 +300,7 @@ public sealed class McpTransportHandler
             if (toolName == RagIndexTextToolName)
             {
                 var sourcePath = arguments?["sourcePath"]?.GetValue<string>();
+                var projectRootPath = Directory.GetCurrentDirectory();
                 var content = arguments?["content"]?.GetValue<string>();
                 if (string.IsNullOrWhiteSpace(sourcePath) || string.IsNullOrWhiteSpace(content))
                 {
@@ -313,12 +315,13 @@ public sealed class McpTransportHandler
 
                 var chunkEmbeddings = chunks.Select(chunk => new ChunkEmbedding(chunk.Index, chunk.Text, chunk.TokenCount, _embeddingGenerator.GenerateEmbedding(chunk.Text, _settings.Ingestion.VectorDimensions))).ToList();
                 var contentHash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(content)));
-                var updated = await _store.UpsertDocumentAsync(sourcePath, contentHash, chunkEmbeddings, cancellationToken);
-                var manifestSyncResult = await TrySyncRagSourcesManifestAsync(sourcePath, cancellationToken);
+                var normalizedSourcePath = SourcePathNormalizer.NormalizeForStorage(sourcePath, projectRootPath);
+                var updated = await _store.UpsertDocumentAsync(normalizedSourcePath, contentHash, chunkEmbeddings, cancellationToken);
+                var manifestSyncResult = await TrySyncRagSourcesManifestAsync(normalizedSourcePath, cancellationToken);
 
                 return BuildToolResult(updated ? "Source text indexed." : "Source text unchanged.", new JsonObject
                 {
-                    ["sourcePath"] = sourcePath,
+                    ["sourcePath"] = normalizedSourcePath,
                     ["updated"] = updated,
                     ["chunkCount"] = chunkEmbeddings.Count,
                     ["contentHash"] = contentHash,
@@ -423,16 +426,19 @@ public sealed class McpTransportHandler
             if (toolName == RagDeleteSourceToolName)
             {
                 var sourcePath = arguments?["sourcePath"]?.GetValue<string>();
+                var projectRootPath = Directory.GetCurrentDirectory();
                 var confirm = arguments?["confirm"]?.GetValue<bool>() == true;
                 if (string.IsNullOrWhiteSpace(sourcePath) || !confirm)
                 {
                     return BuildToolResult("sourcePath and confirm=true are required.", isError: true);
                 }
 
-                var deleted = await _managementService.DeleteSourceAsync(sourcePath, cancellationToken);
-                var manifestSyncResult = await TrySyncRagSourcesManifestAsync(sourcePath, cancellationToken);
+                var normalizedSourcePath = SourcePathNormalizer.NormalizeForStorage(sourcePath, projectRootPath);
+                var deleted = await _managementService.DeleteSourceAsync(normalizedSourcePath, cancellationToken);
+                var manifestSyncResult = await TrySyncRagSourcesManifestAsync(normalizedSourcePath, cancellationToken);
                 return BuildToolResult($"Deleted {deleted} items.", new JsonObject
                 {
+                    ["sourcePath"] = normalizedSourcePath,
                     ["deleted"] = deleted,
                     ["sourcesManifestPath"] = manifestSyncResult?.ManifestPath,
                     ["sourcesManifestSourceCount"] = manifestSyncResult?.SourceCount

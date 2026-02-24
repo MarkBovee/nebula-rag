@@ -112,7 +112,17 @@ public sealed class IngestionSettings
 
     public List<string> ExcludeDirectories { get; init; } =
     [
-        "bin", "obj", ".git", "node_modules", ".next", "dist", "build"
+        "bin", "obj", ".git", "node_modules", ".next", "dist", "build", "wwwroot", "test-results", "coverage", ".cache", ".turbo", ".parcel-cache", ".svelte-kit", ".vite"
+    ];
+
+    public List<string> ExcludeFileNames { get; init; } =
+    [
+        "package-lock.json", "pnpm-lock.yaml", "yarn.lock"
+    ];
+
+    public List<string> ExcludeFileSuffixes { get; init; } =
+    [
+        ".min.js", ".min.css", ".map"
     ];
 
     internal void Validate(List<string> errors)
@@ -131,6 +141,10 @@ public sealed class IngestionSettings
             errors.Add("Ingestion.IncludeExtensions must have at least one extension.");
         if (ExcludeDirectories == null)
             errors.Add("Ingestion.ExcludeDirectories must not be null.");
+        if (ExcludeFileNames == null)
+            errors.Add("Ingestion.ExcludeFileNames must not be null.");
+        if (ExcludeFileSuffixes == null)
+            errors.Add("Ingestion.ExcludeFileSuffixes must not be null.");
     }
 }
 

@@ -72,7 +72,7 @@ const IndexHealth: React.FC<IndexHealthProps> = ({ stats }) => {
 
   return (
     <div style={styles.card}>
-      <h2 style={styles.title}>📊 Index Health</h2>
+      <h2 style={styles.title}>Index Health</h2>
       
       <div style={styles.metric}>
         <p style={styles.metricLabel}>Total Documents</p>

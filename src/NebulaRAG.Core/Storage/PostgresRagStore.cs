@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text;
 using NebulaRAG.Core.Models;
+using NebulaRAG.Core.Pathing;
 using Npgsql;
 
 namespace NebulaRAG.Core.Storage;
@@ -423,6 +424,94 @@ public sealed class PostgresRagStore
         }
 
         return sources.AsReadOnly();
+    }
+
+    /// <summary>
+    /// Normalizes existing source keys to project-relative paths and resolves duplicates.
+    /// </summary>
+    /// <param name="projectRootPath">Project root used to convert absolute paths into relative source keys.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Tuple containing updated source key count and duplicate rows removed.</returns>
+    public async Task<(int UpdatedCount, int DuplicatesRemoved)> NormalizeSourcePathsAsync(string projectRootPath, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(projectRootPath))
+        {
+            throw new ArgumentException("Project root path cannot be null or empty.", nameof(projectRootPath));
+        }
+
+        var sourceRows = new List<(long Id, string SourcePath, DateTime IndexedAt)>();
+
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+
+        const string readSql = "SELECT id, source_path, indexed_at FROM rag_documents";
+        await using (var readCommand = new NpgsqlCommand(readSql, connection))
+        await using (var reader = await readCommand.ExecuteReaderAsync(cancellationToken))
+        {
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                sourceRows.Add((reader.GetInt64(0), reader.GetString(1), reader.GetDateTime(2)));
+            }
+        }
+
+        var normalizedRows = sourceRows
+            .Select(row => new
+            {
+                row.Id,
+                row.SourcePath,
+                row.IndexedAt,
+                NormalizedPath = SourcePathNormalizer.NormalizeForStorage(row.SourcePath, projectRootPath)
+            })
+            .ToList();
+
+        var duplicateLoserIds = new List<long>();
+        var renamePairs = new List<(long Id, string NewSourcePath)>();
+
+        foreach (var group in normalizedRows.GroupBy(x => x.NormalizedPath, StringComparer.OrdinalIgnoreCase))
+        {
+            var ordered = group
+                .OrderByDescending(x => x.IndexedAt)
+                .ThenByDescending(x => x.Id)
+                .ToList();
+
+            var winner = ordered[0];
+            if (!string.Equals(winner.SourcePath, winner.NormalizedPath, StringComparison.Ordinal))
+            {
+                renamePairs.Add((winner.Id, winner.NormalizedPath));
+            }
+
+            if (ordered.Count > 1)
+            {
+                duplicateLoserIds.AddRange(ordered.Skip(1).Select(x => x.Id));
+            }
+        }
+
+        if (duplicateLoserIds.Count == 0 && renamePairs.Count == 0)
+        {
+            return (0, 0);
+        }
+
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+
+        var duplicatesRemoved = 0;
+        foreach (var loserId in duplicateLoserIds)
+        {
+            await using var deleteCommand = new NpgsqlCommand("DELETE FROM rag_documents WHERE id = @id", connection, transaction);
+            deleteCommand.Parameters.AddWithValue("id", loserId);
+            duplicatesRemoved += await deleteCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        var updatedCount = 0;
+        foreach (var renamePair in renamePairs)
+        {
+            await using var updateCommand = new NpgsqlCommand("UPDATE rag_documents SET source_path = @sourcePath WHERE id = @id", connection, transaction);
+            updateCommand.Parameters.AddWithValue("sourcePath", renamePair.NewSourcePath);
+            updateCommand.Parameters.AddWithValue("id", renamePair.Id);
+            updatedCount += await updateCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+        return (updatedCount, duplicatesRemoved);
     }
 
     /// <summary>

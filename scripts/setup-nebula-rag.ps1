@@ -11,6 +11,11 @@ param(
     [string]$Channel = "Auto",
     [string]$UserConfigPath,
 
+    [ValidateSet("Both", "VSCode", "ClaudeCode")]
+    [string]$ClientTargets = "Both",
+    [string]$ClaudeUserConfigPath,
+    [string]$ClaudeProjectConfigPath,
+
     [string]$ServerName = "nebula-rag",
     [string]$ImageName = "localhost/nebula-rag-mcp:latest",
     [string]$HomeAssistantMcpUrl = "http://homeassistant.local:8099/nebula/mcp",
@@ -122,6 +127,7 @@ function New-ServerDefinition {
         [string]$ConfiguredImage,
         [string]$ConfiguredEnvFile,
         [string]$WorkspaceFolderScope,
+        [string]$HostSourcePath,
         [string]$SelectedInstallTarget,
         [string]$ConfiguredHomeAssistantMcpUrl
     )
@@ -149,6 +155,15 @@ function New-ServerDefinition {
         $containerArgs += @(
             "--mount",
             "type=bind,source=${workspaceFolder:$WorkspaceFolderScope},target=/workspace",
+            "--workdir",
+            "/workspace"
+        )
+    }
+    elseif (-not [string]::IsNullOrWhiteSpace($HostSourcePath)) {
+        $envMap["NEBULARAG_PathMappings"] = "$HostSourcePath=/workspace"
+        $containerArgs += @(
+            "--mount",
+            "type=bind,source=$HostSourcePath,target=/workspace",
             "--workdir",
             "/workspace"
         )
@@ -290,6 +305,69 @@ function Get-OrCreateRootObject {
     return $parsed
 }
 
+function Get-DefaultClaudeUserConfigPath {
+    $homeDirectory = $HOME
+    if ([string]::IsNullOrWhiteSpace($homeDirectory)) {
+        throw "HOME is not set. Provide -ClaudeUserConfigPath explicitly."
+    }
+
+    return [System.IO.Path]::GetFullPath((Join-Path $homeDirectory ".claude.json"))
+}
+
+function Get-OrCreateClaudeRootObject {
+    param([string]$Path)
+
+    if (-not (Test-Path -LiteralPath $Path)) {
+        return [ordered]@{
+            mcpServers = [ordered]@{}
+        }
+    }
+
+    $raw = Get-Content -LiteralPath $Path -Raw
+    if ([string]::IsNullOrWhiteSpace($raw)) {
+        return [ordered]@{
+            mcpServers = [ordered]@{}
+        }
+    }
+
+    try {
+        $parsed = $raw | ConvertFrom-Json -AsHashtable
+    }
+    catch {
+        $sanitized = $raw -replace '(?s)/\*.*?\*/', ''
+        $sanitized = $sanitized -replace '(?m)^\s*//.*$', ''
+        $sanitized = $sanitized -replace '(?m)([^:])//.*$', '$1'
+        $sanitized = $sanitized -replace ',(\s*[}\]])', '$1'
+
+        try {
+            $parsed = $sanitized | ConvertFrom-Json -AsHashtable
+        }
+        catch {
+            $timestamp = Get-Date -Format "yyyyMMddHHmmss"
+            $backupPath = "$Path.invalid.$timestamp.bak"
+            Copy-Item -LiteralPath $Path -Destination $backupPath -Force
+            Write-Warning "Invalid JSON in Claude config: $Path"
+            Write-Warning "Backed up invalid file to: $backupPath"
+            Write-Warning "Continuing with a fresh Claude config root for this path."
+            $parsed = [ordered]@{}
+        }
+    }
+
+    if (-not ($parsed -is [System.Collections.IDictionary])) {
+        $parsed = [ordered]@{}
+    }
+
+    if (-not $parsed.Contains("mcpServers") -or $null -eq $parsed["mcpServers"]) {
+        $parsed["mcpServers"] = [ordered]@{}
+    }
+
+    if (-not ($parsed["mcpServers"] -is [System.Collections.IDictionary])) {
+        $parsed["mcpServers"] = [ordered]@{}
+    }
+
+    return $parsed
+}
+
 function Upsert-ServerConfig {
     param(
         [hashtable]$Root,
@@ -330,6 +408,25 @@ function Write-RootObject {
     $json = $Root | ConvertTo-Json -Depth 20
     Set-Content -LiteralPath $Path -Value $json -Encoding utf8
     Write-Host "Wrote user MCP config: $Path"
+}
+
+function Write-JsonObject {
+    param(
+        [string]$Path,
+        [hashtable]$Root,
+        [switch]$SkipBackup
+    )
+
+    Ensure-Directory -Path (Split-Path -Parent $Path)
+
+    if ((Test-Path -LiteralPath $Path) -and -not $SkipBackup) {
+        Copy-Item -LiteralPath $Path -Destination "$Path.bak" -Force
+        Write-Host "Backed up existing config to: $Path.bak"
+    }
+
+    $json = $Root | ConvertTo-Json -Depth 20
+    Set-Content -LiteralPath $Path -Value $json -Encoding utf8
+    Write-Host "Wrote config: $Path"
 }
 
 function Ensure-EnvTemplate {
@@ -483,7 +580,7 @@ function Setup-User {
     }
 
     # User-level config is workspace-agnostic; omit workspace mount to avoid multi-root variable resolution failures.
-    $serverDefinition = New-ServerDefinition -ConfiguredImage $ConfiguredImageName -ConfiguredEnvFile $ConfiguredEnvFilePath -WorkspaceFolderScope "" -SelectedInstallTarget $SelectedInstallTarget -ConfiguredHomeAssistantMcpUrl $ConfiguredHomeAssistantMcpUrl
+    $serverDefinition = New-ServerDefinition -ConfiguredImage $ConfiguredImageName -ConfiguredEnvFile $ConfiguredEnvFilePath -WorkspaceFolderScope "" -HostSourcePath "" -SelectedInstallTarget $SelectedInstallTarget -ConfiguredHomeAssistantMcpUrl $ConfiguredHomeAssistantMcpUrl
 
     foreach ($configPath in $configPaths) {
         $resolvedConfigPath = [System.IO.Path]::GetFullPath($configPath)
@@ -500,16 +597,92 @@ function Setup-User {
     Write-Host "User-level setup complete."
 }
 
+function Setup-ClaudeUser {
+    param(
+        [string]$ExplicitClaudeUserConfigPath,
+        [string]$ConfiguredServerName,
+        [hashtable]$ServerDefinition,
+        [switch]$ForceWrite,
+        [switch]$SkipBackup
+    )
+
+    $configPath = if ([string]::IsNullOrWhiteSpace($ExplicitClaudeUserConfigPath)) {
+        Get-DefaultClaudeUserConfigPath
+    }
+    else {
+        [System.IO.Path]::GetFullPath($ExplicitClaudeUserConfigPath)
+    }
+
+    $root = Get-OrCreateClaudeRootObject -Path $configPath
+
+    if ($root["mcpServers"].Contains($ConfiguredServerName) -and -not $ForceWrite) {
+        Write-Host "Skip existing '$ConfiguredServerName' in Claude user mcpServers (use -Force to overwrite)."
+    }
+    else {
+        $root["mcpServers"][$ConfiguredServerName] = $ServerDefinition
+        Write-Host "Configured '$ConfiguredServerName' in Claude user mcpServers."
+    }
+
+    Write-JsonObject -Path $configPath -Root $root -SkipBackup:$SkipBackup
+    Write-Host ""
+    Write-Host "Claude user-level setup complete."
+}
+
+function Setup-ClaudeProject {
+    param(
+        [string]$ProjectPath,
+        [string]$ExplicitClaudeProjectConfigPath,
+        [string]$ConfiguredServerName,
+        [hashtable]$ServerDefinition,
+        [switch]$ForceWrite,
+        [switch]$SkipBackup
+    )
+
+    $projectRoot = [System.IO.Path]::GetFullPath((Resolve-Path -LiteralPath $ProjectPath -ErrorAction Stop).Path)
+    $configPath = if ([string]::IsNullOrWhiteSpace($ExplicitClaudeProjectConfigPath)) {
+        [System.IO.Path]::GetFullPath((Join-Path $projectRoot ".mcp.json"))
+    }
+    else {
+        [System.IO.Path]::GetFullPath($ExplicitClaudeProjectConfigPath)
+    }
+
+    $root = Get-OrCreateClaudeRootObject -Path $configPath
+
+    if ($root["mcpServers"].Contains($ConfiguredServerName) -and -not $ForceWrite) {
+        Write-Host "Skip existing '$ConfiguredServerName' in Claude project mcpServers (use -Force to overwrite)."
+    }
+    else {
+        $root["mcpServers"][$ConfiguredServerName] = $ServerDefinition
+        Write-Host "Configured '$ConfiguredServerName' in Claude project mcpServers."
+    }
+
+    Write-JsonObject -Path $configPath -Root $root -SkipBackup:$SkipBackup
+    Write-Host ""
+    Write-Host "Claude project-level setup complete: $configPath"
+}
+
 $templateRoot = Split-Path -Parent $PSScriptRoot
 $resolvedInstallTarget = Resolve-InstallTarget -SelectedInstallTarget $InstallTarget
 $resolvedHomeAssistantMcpUrl = Resolve-HomeAssistantMcpUrl -LocalUrl $HomeAssistantMcpUrl -ExternalUrl $ExternalHomeAssistantMcpUrl -PreferExternalUrl:$UseExternalHomeAssistantUrl -ExternalConsent:$ForceExternal
+$resolvedClientTargets = if ($ClientTargets -eq "Both") { @("VSCode", "ClaudeCode") } else { @($ClientTargets) }
 
 if ([string]::IsNullOrWhiteSpace($EnvFilePath)) {
     $EnvFilePath = Join-Path $HOME ".nebula-rag/.nebula.env"
 }
 
 if ($Mode -in @("Both", "User")) {
-    Setup-User -SelectedChannel $Channel -ExplicitUserConfigPath $UserConfigPath -ConfiguredServerName $ServerName -ConfiguredImageName $ImageName -ConfiguredEnvFilePath $EnvFilePath -SelectedInstallTarget $resolvedInstallTarget -ConfiguredHomeAssistantMcpUrl $resolvedHomeAssistantMcpUrl -WriteEnvTemplate:($CreateEnvTemplate -and $resolvedInstallTarget -eq "LocalContainer") -ForceWrite:$Force -SkipBackup:$NoBackup -TemplateRoot $templateRoot
+    if ($resolvedClientTargets -contains "VSCode") {
+        Setup-User -SelectedChannel $Channel -ExplicitUserConfigPath $UserConfigPath -ConfiguredServerName $ServerName -ConfiguredImageName $ImageName -ConfiguredEnvFilePath $EnvFilePath -SelectedInstallTarget $resolvedInstallTarget -ConfiguredHomeAssistantMcpUrl $resolvedHomeAssistantMcpUrl -WriteEnvTemplate:($CreateEnvTemplate -and $resolvedInstallTarget -eq "LocalContainer") -ForceWrite:$Force -SkipBackup:$NoBackup -TemplateRoot $templateRoot
+    }
+
+    if ($resolvedClientTargets -contains "ClaudeCode") {
+        $userServerDefinition = New-ServerDefinition -ConfiguredImage $ImageName -ConfiguredEnvFile $EnvFilePath -WorkspaceFolderScope "" -HostSourcePath "" -SelectedInstallTarget $resolvedInstallTarget -ConfiguredHomeAssistantMcpUrl $resolvedHomeAssistantMcpUrl
+        Setup-ClaudeUser -ExplicitClaudeUserConfigPath $ClaudeUserConfigPath -ConfiguredServerName $ServerName -ServerDefinition $userServerDefinition -ForceWrite:$Force -SkipBackup:$NoBackup
+        if ($CreateEnvTemplate -and $resolvedInstallTarget -eq "LocalContainer") {
+            Ensure-EnvTemplate -ConfiguredEnvPath $EnvFilePath -TemplateRoot $templateRoot -ForceWrite:$Force
+        }
+    }
+
     if (-not $SkipGlobalAgents) {
         Ensure-GlobalAgentsGuide -TemplateRoot $templateRoot -ForceWrite:$Force
     }
@@ -529,10 +702,16 @@ if ($Mode -in @("Both", "Project")) {
     }
 
     Setup-Project -ProjectPath $TargetPath -ForceWrite:$Force -SkipSkillFile:$SkipSkill -TemplateRoot $templateRoot
+
+    if ($resolvedClientTargets -contains "ClaudeCode") {
+        $projectServerDefinition = New-ServerDefinition -ConfiguredImage $ImageName -ConfiguredEnvFile $EnvFilePath -WorkspaceFolderScope "" -HostSourcePath '${PWD}' -SelectedInstallTarget $resolvedInstallTarget -ConfiguredHomeAssistantMcpUrl $resolvedHomeAssistantMcpUrl
+        Setup-ClaudeProject -ProjectPath $TargetPath -ExplicitClaudeProjectConfigPath $ClaudeProjectConfigPath -ConfiguredServerName $ServerName -ServerDefinition $projectServerDefinition -ForceWrite:$Force -SkipBackup:$NoBackup
+    }
 }
 
 Write-Host ""
 Write-Host "NebulaRAG setup finished."
+Write-Host "Clients: $($resolvedClientTargets -join ', ')"
 Write-Host "Install target: $resolvedInstallTarget"
 Write-Host "Server: $ServerName"
 Write-Host "Image:  $ImageName"

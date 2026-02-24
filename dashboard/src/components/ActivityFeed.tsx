@@ -86,7 +86,7 @@ const getEventColor = (eventType: string): string => {
 const ActivityFeed: React.FC<ActivityFeedProps> = ({ activities }) => {
   return (
     <div style={styles.card}>
-      <h2 style={styles.title}>📡 Real-time Activity</h2>
+      <h2 style={styles.title}>Realtime Activity</h2>
       
       <div style={styles.feedContainer}>
         {activities.length > 0 ? (

@@ -11,6 +11,7 @@ using NebulaRAG.Core.Chunking;
 using NebulaRAG.Core.Configuration;
 using NebulaRAG.Core.Embeddings;
 using NebulaRAG.Core.Models;
+using NebulaRAG.Core.Pathing;
 using NebulaRAG.Core.Services;
 using NebulaRAG.Core.Storage;
 
@@ -25,6 +26,7 @@ const string RagIndexPathToolName = "rag_index_path";
 const string RagUpsertSourceToolName = "rag_upsert_source";
 const string RagDeleteSourceToolName = "rag_delete_source";
 const string RagPurgeAllToolName = "rag_purge_all";
+const string RagNormalizeSourcesToolName = "rag_normalize_sources";
 const string PathMappingsEnvironmentVariable = "NEBULARAG_PathMappings";
 const int DefaultToolTimeoutMs = 30000;
 const int InitSchemaToolTimeoutMs = 30000;
@@ -38,6 +40,7 @@ const int IndexPathToolTimeoutMs = 120000;
 const int UpsertSourceToolTimeoutMs = 60000;
 const int DeleteSourceToolTimeoutMs = 10000;
 const int PurgeAllToolTimeoutMs = 20000;
+const int NormalizeSourcesToolTimeoutMs = 60000;
 
 var supportedProtocolVersions = new[] { "2025-11-25", "2025-03-26", "2024-11-05" };
 
@@ -189,7 +192,8 @@ static void ValidateToolCatalog()
         !toolNames.Contains(RagIndexPathToolName) ||
         !toolNames.Contains(RagUpsertSourceToolName) ||
         !toolNames.Contains(RagDeleteSourceToolName) ||
-        !toolNames.Contains(RagPurgeAllToolName))
+        !toolNames.Contains(RagPurgeAllToolName) ||
+        !toolNames.Contains(RagNormalizeSourcesToolName))
     {
         throw new InvalidOperationException("Required Nebula RAG MCP tools are not fully registered.");
     }
@@ -321,7 +325,8 @@ static JsonObject BuildToolsList()
             BuildRagIndexPathToolDefinition(),
             BuildRagUpsertSourceToolDefinition(),
             BuildRagDeleteSourceToolDefinition(),
-            BuildRagPurgeAllToolDefinition()
+            BuildRagPurgeAllToolDefinition(),
+            BuildRagNormalizeSourcesToolDefinition()
         }
     };
 }
@@ -738,6 +743,31 @@ static JsonObject BuildRagPurgeAllToolDefinition()
     };
 }
 
+static JsonObject BuildRagNormalizeSourcesToolDefinition()
+{
+    return new JsonObject
+    {
+        ["name"] = RagNormalizeSourcesToolName,
+        ["title"] = "RAG Normalize Sources",
+        ["description"] = "Normalize indexed source paths to project-relative keys and remove duplicates.",
+        ["inputSchema"] = new JsonObject
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject()
+        },
+        ["outputSchema"] = new JsonObject
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                ["updatedCount"] = new JsonObject { ["type"] = "integer" },
+                ["duplicatesRemoved"] = new JsonObject { ["type"] = "integer" }
+            },
+            ["required"] = new JsonArray("updatedCount", "duplicatesRemoved")
+        }
+    };
+}
+
 static async Task HandleToolsCallAsync(
     Stream output,
     JsonNode? id,
@@ -887,6 +917,12 @@ static async Task DispatchToolCallAsync(
         return;
     }
 
+    if (string.Equals(toolName, RagNormalizeSourcesToolName, StringComparison.Ordinal))
+    {
+        await HandleRagNormalizeSourcesToolAsync(output, id, store, sourcesManifestService, jsonOptions, framing, cancellationToken);
+        return;
+    }
+
     await WriteErrorResponseAsync(output, id, -32602, "Unknown tool name.", framing);
 }
 
@@ -945,6 +981,11 @@ static int ResolveToolTimeoutMs(string toolName)
     if (string.Equals(toolName, RagPurgeAllToolName, StringComparison.Ordinal))
     {
         return PurgeAllToolTimeoutMs;
+    }
+
+    if (string.Equals(toolName, RagNormalizeSourcesToolName, StringComparison.Ordinal))
+    {
+        return NormalizeSourcesToolTimeoutMs;
     }
 
     return DefaultToolTimeoutMs;
@@ -1244,6 +1285,7 @@ static async Task HandleRagDeleteSourceToolAsync(
     CancellationToken cancellationToken)
 {
     var sourcePath = arguments?["sourcePath"]?.GetValue<string>();
+    var projectRootPath = Directory.GetCurrentDirectory();
     var confirm = arguments?["confirm"]?.GetValue<bool>() == true;
 
     if (string.IsNullOrWhiteSpace(sourcePath))
@@ -1260,17 +1302,18 @@ static async Task HandleRagDeleteSourceToolAsync(
 
     try
     {
-        var deletedCount = await managementService.DeleteSourceAsync(sourcePath, cancellationToken);
-        var manifestSyncResult = await TrySyncRagSourcesManifestAsync(sourcesManifestService, sourcePath, cancellationToken);
+        var normalizedSourcePath = SourcePathNormalizer.NormalizeForStorage(sourcePath, projectRootPath);
+        var deletedCount = await managementService.DeleteSourceAsync(normalizedSourcePath, cancellationToken);
+        var manifestSyncResult = await TrySyncRagSourcesManifestAsync(sourcesManifestService, normalizedSourcePath, cancellationToken);
         var structuredResult = new JsonObject
         {
-            ["sourcePath"] = sourcePath,
+            ["sourcePath"] = normalizedSourcePath,
             ["deletedCount"] = deletedCount,
             ["sourcesManifestPath"] = manifestSyncResult?.ManifestPath,
             ["sourcesManifestSourceCount"] = manifestSyncResult?.SourceCount
         };
 
-        await WriteResponseAsync(output, id, BuildToolResult($"Deleted {deletedCount} document rows for source '{sourcePath}'.", structuredResult), jsonOptions, framing);
+        await WriteResponseAsync(output, id, BuildToolResult($"Deleted {deletedCount} document rows for source '{normalizedSourcePath}'.", structuredResult), jsonOptions, framing);
     }
     catch (OperationCanceledException)
     {
@@ -1296,6 +1339,7 @@ static async Task HandleRagUpsertSourceToolAsync(
     CancellationToken cancellationToken)
 {
     var sourcePath = arguments?["sourcePath"]?.GetValue<string>();
+    var projectRootPath = Directory.GetCurrentDirectory();
     var content = arguments?["content"]?.GetValue<string>();
 
     if (string.IsNullOrWhiteSpace(sourcePath))
@@ -1328,12 +1372,13 @@ static async Task HandleRagUpsertSourceToolAsync(
             .ToList();
 
         var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(content)));
-        var updated = await store.UpsertDocumentAsync(sourcePath, hash, chunkEmbeddings, cancellationToken);
-        var manifestSyncResult = await TrySyncRagSourcesManifestAsync(sourcesManifestService, sourcePath, cancellationToken);
+        var normalizedSourcePath = SourcePathNormalizer.NormalizeForStorage(sourcePath, projectRootPath);
+        var updated = await store.UpsertDocumentAsync(normalizedSourcePath, hash, chunkEmbeddings, cancellationToken);
+        var manifestSyncResult = await TrySyncRagSourcesManifestAsync(sourcesManifestService, normalizedSourcePath, cancellationToken);
 
         var structuredResult = new JsonObject
         {
-            ["sourcePath"] = sourcePath,
+            ["sourcePath"] = normalizedSourcePath,
             ["updated"] = updated,
             ["chunkCount"] = chunkEmbeddings.Count,
             ["contentHash"] = hash,
@@ -1342,8 +1387,8 @@ static async Task HandleRagUpsertSourceToolAsync(
         };
 
         var text = updated
-            ? $"Indexed source '{sourcePath}' with {chunkEmbeddings.Count} chunks."
-            : $"Source '{sourcePath}' is unchanged and was not re-indexed.";
+            ? $"Indexed source '{normalizedSourcePath}' with {chunkEmbeddings.Count} chunks."
+            : $"Source '{normalizedSourcePath}' is unchanged and was not re-indexed.";
 
         await WriteResponseAsync(output, id, BuildToolResult(text, structuredResult), jsonOptions, framing);
     }
@@ -1451,6 +1496,41 @@ static async Task HandleRagPurgeAllToolAsync(
     catch (Exception ex)
     {
         await WriteResponseAsync(output, id, BuildToolResult($"Failed to purge index: {ex.Message}", isError: true), jsonOptions, framing);
+    }
+}
+
+static async Task HandleRagNormalizeSourcesToolAsync(
+    Stream output,
+    JsonNode? id,
+    PostgresRagStore store,
+    RagSourcesManifestService sourcesManifestService,
+    JsonSerializerOptions jsonOptions,
+    McpMessageFraming framing,
+    CancellationToken cancellationToken)
+{
+    try
+    {
+        var projectRootPath = Directory.GetCurrentDirectory();
+        var (updatedCount, duplicatesRemoved) = await store.NormalizeSourcePathsAsync(projectRootPath, cancellationToken);
+        var manifestSyncResult = await TrySyncRagSourcesManifestAsync(sourcesManifestService, projectRootPath, cancellationToken);
+        var structuredResult = new JsonObject
+        {
+            ["updatedCount"] = updatedCount,
+            ["duplicatesRemoved"] = duplicatesRemoved,
+            ["sourcesManifestPath"] = manifestSyncResult?.ManifestPath,
+            ["sourcesManifestSourceCount"] = manifestSyncResult?.SourceCount
+        };
+
+        var text = $"Source normalization complete: {updatedCount} source paths updated, {duplicatesRemoved} duplicates removed.";
+        await WriteResponseAsync(output, id, BuildToolResult(text, structuredResult), jsonOptions, framing);
+    }
+    catch (OperationCanceledException)
+    {
+        throw;
+    }
+    catch (Exception ex)
+    {
+        await WriteResponseAsync(output, id, BuildToolResult($"Failed to normalize sources: {ex.Message}", isError: true), jsonOptions, framing);
     }
 }
 

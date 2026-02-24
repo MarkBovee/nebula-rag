@@ -28,11 +28,14 @@ export class NebularRagClient {
   /// <summary>
   /// Initializes the API client with base configuration.
   /// </summary>
-  /// <param name="baseUrl">Base URL for the API (defaults to current origin).</param>
+  /// <param name="baseUrl">Base URL for the API (defaults to VITE_API_BASE_URL or current origin).</param>
   constructor(baseUrl = '') {
+    const explicitBaseUrl = (import.meta as any).env?.VITE_API_BASE_URL as string | undefined;
     const pathBase = resolvePathBase();
+    const resolvedBaseUrl = baseUrl || explicitBaseUrl || `${window.location.origin}${pathBase}`;
+
     this.api = axios.create({
-      baseURL: baseUrl || `${window.location.origin}${pathBase}`,
+      baseURL: resolvedBaseUrl,
       timeout: 30000,
       headers: {
         'Content-Type': 'application/json'

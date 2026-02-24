@@ -101,7 +101,7 @@ const SourceManager: React.FC<SourceManagerProps> = ({ sources, onRefresh }) => 
 
   return (
     <div style={styles.card}>
-      <h2 style={styles.title}>🗂️ Source Management</h2>
+      <h2 style={styles.title}>Source Management</h2>
       
       {sources.length > 0 ? (
         <div style={{ overflowX: 'auto' }}>

@@ -6,6 +6,7 @@ using NebulaRAG.Core.Configuration;
 using NebulaRAG.Core.Embeddings;
 using NebulaRAG.Core.Exceptions;
 using NebulaRAG.Core.Models;
+using NebulaRAG.Core.Pathing;
 using NebulaRAG.Core.Storage;
 
 namespace NebulaRAG.Core.Services;
@@ -58,8 +59,12 @@ public sealed class RagIndexer
         try
         {
             var summary = new IndexSummary();
+            var sourceRootPath = Path.GetFullPath(sourceDirectory);
+            var projectRootPath = Path.GetFullPath(Directory.GetCurrentDirectory());
             var extensions = new HashSet<string>(_settings.Ingestion.IncludeExtensions, StringComparer.OrdinalIgnoreCase);
             var excludedDirectories = new HashSet<string>(_settings.Ingestion.ExcludeDirectories, StringComparer.OrdinalIgnoreCase);
+            var excludedFileNames = new HashSet<string>(_settings.Ingestion.ExcludeFileNames, StringComparer.OrdinalIgnoreCase);
+            var excludedFileSuffixes = _settings.Ingestion.ExcludeFileSuffixes;
             var files = Directory.EnumerateFiles(sourceDirectory, "*", SearchOption.AllDirectories).ToList();
 
             _logger.LogInformation("Found {FileCount} files in directory", files.Count);
@@ -67,6 +72,12 @@ public sealed class RagIndexer
             foreach (var filePath in files)
             {
                 if (IsInExcludedDirectory(filePath, excludedDirectories))
+                {
+                    summary.DocumentsSkipped++;
+                    continue;
+                }
+
+                if (ShouldSkipGeneratedFile(filePath, excludedFileNames, excludedFileSuffixes))
                 {
                     summary.DocumentsSkipped++;
                     continue;
@@ -112,7 +123,8 @@ public sealed class RagIndexer
                         .ToList();
 
                     var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(content)));
-                    var wasUpdated = await _store.UpsertDocumentAsync(filePath, hash, chunkEmbeddings, cancellationToken);
+                    var sourcePath = BuildSourceStoragePath(projectRootPath, sourceRootPath, filePath);
+                    var wasUpdated = await _store.UpsertDocumentAsync(sourcePath, hash, chunkEmbeddings, cancellationToken);
 
                     if (!wasUpdated)
                     {
@@ -121,7 +133,7 @@ public sealed class RagIndexer
                         continue;
                     }
 
-                    _logger.LogInformation("Indexed document: {File} ({ChunkCount} chunks)", filePath, chunkEmbeddings.Count);
+                    _logger.LogInformation("Indexed document: {File} ({ChunkCount} chunks)", sourcePath, chunkEmbeddings.Count);
                     summary.DocumentsIndexed++;
                     summary.ChunksIndexed += chunkEmbeddings.Count;
                 }
@@ -155,6 +167,66 @@ public sealed class RagIndexer
     {
         var pathSegments = filePath.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
         return pathSegments.Any(excludedDirectories.Contains);
+    }
+
+    /// <summary>
+    /// Returns true when file looks like generated output (bundles, source maps, lockfiles, etc.).
+    /// </summary>
+    private static bool ShouldSkipGeneratedFile(string filePath, HashSet<string> excludedFileNames, IReadOnlyCollection<string> excludedFileSuffixes)
+    {
+        var fileName = Path.GetFileName(filePath);
+        if (excludedFileNames.Contains(fileName))
+        {
+            return true;
+        }
+
+        var normalizedFileName = fileName.ToLowerInvariant();
+        if (excludedFileSuffixes.Any(suffix => normalizedFileName.EndsWith(suffix, StringComparison.OrdinalIgnoreCase)))
+        {
+            return true;
+        }
+
+        // Common generated/bundled naming patterns from frontend build tools.
+        return normalizedFileName.Contains(".generated.", StringComparison.Ordinal)
+               || normalizedFileName.Contains(".g.", StringComparison.Ordinal)
+               || normalizedFileName.Contains("bundle", StringComparison.Ordinal)
+               || normalizedFileName.Contains("chunk", StringComparison.Ordinal)
+               || HasHashedBundleMarker(normalizedFileName);
+    }
+
+    /// <summary>
+    /// Converts a file path to a project-relative source key with forward slashes.
+    /// </summary>
+    private static string BuildSourceStoragePath(string projectRootPath, string sourceRootPath, string filePath)
+    {
+        if (SourcePathNormalizer.IsPathUnderRoot(filePath, projectRootPath))
+        {
+            return SourcePathNormalizer.NormalizeForStorage(filePath, projectRootPath);
+        }
+
+        return SourcePathNormalizer.NormalizeForStorage(filePath, sourceRootPath);
+    }
+
+    /// <summary>
+    /// Detects hashed bundle file names like app.a1b2c3d4.js.
+    /// </summary>
+    private static bool HasHashedBundleMarker(string fileName)
+    {
+        var extensionIndex = fileName.LastIndexOf('.');
+        if (extensionIndex <= 0)
+        {
+            return false;
+        }
+
+        var stem = fileName[..extensionIndex];
+        var lastDot = stem.LastIndexOf('.');
+        if (lastDot <= 0)
+        {
+            return false;
+        }
+
+        var suffix = stem[(lastDot + 1)..];
+        return suffix.Length >= 6 && suffix.All(char.IsLetterOrDigit);
     }
 }
 

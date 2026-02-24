@@ -43,7 +43,7 @@ const SourceBreakdown: React.FC<SourceBreakdownProps> = ({ sources }) => {
 
   return (
     <div style={styles.card}>
-      <h2 style={styles.title}>📦 Source Breakdown</h2>
+      <h2 style={styles.title}>Source Breakdown</h2>
       
       {data.length > 0 ? (
         <>

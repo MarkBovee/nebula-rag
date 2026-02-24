@@ -66,11 +66,18 @@ Primary MCP tools:
 - `rag_upsert_source`
 - `rag_delete_source`
 - `rag_purge_all`
+- `rag_normalize_sources`
 - `memory_store`
 - `memory_recall`
 - `memory_list`
 - `memory_update`
 - `memory_delete`
+
+Indexing behavior notes:
+
+- Source keys are stored as project-relative paths when possible (for example `src/NebulaRAG.Core/Storage/PostgresRagStore.cs`).
+- Generated/compiled outputs are excluded by default (`bin`, `obj`, `dist`, `build`, `wwwroot`, source maps, minified bundles, lockfiles).
+- Use `rag_normalize_sources` to migrate older absolute-path source keys in-place.
 
 ## Quick Start (Home Assistant Add-on)
 
@@ -138,11 +145,23 @@ Never commit credential-bearing files.
 
 ## Setup Script
 
-Configure user MCP for Home Assistant-hosted MCP endpoint:
+Configure user MCP for Home Assistant-hosted MCP endpoint in both VS Code and Claude Code:
 
 ```powershell
-pwsh -File .\scripts\setup-nebula-rag.ps1 -Mode User -InstallTarget HomeAssistantAddon -HomeAssistantMcpUrl http://homeassistant.local:8099/nebula/mcp -Force
+pwsh -File .\scripts\setup-nebula-rag.ps1 -Mode User -ClientTargets Both -InstallTarget HomeAssistantAddon -HomeAssistantMcpUrl http://homeassistant.local:8099/nebula/mcp -Force
 ```
+
+Target only one client when needed:
+
+```powershell
+# VS Code only
+pwsh -File .\scripts\setup-nebula-rag.ps1 -Mode User -ClientTargets VSCode -InstallTarget HomeAssistantAddon -Force
+
+# Claude Code only (writes ~/.claude.json mcpServers)
+pwsh -File .\scripts\setup-nebula-rag.ps1 -Mode User -ClientTargets ClaudeCode -InstallTarget HomeAssistantAddon -Force
+```
+
+When using project mode with Claude Code, the script also writes a project `.mcp.json` (or `-ClaudeProjectConfigPath` if provided).
 
 Use an external URL only when explicitly needed:
 
