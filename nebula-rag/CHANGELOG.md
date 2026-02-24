@@ -4,6 +4,12 @@ All notable changes to the Nebula RAG Home Assistant add-on are documented in th
 
 The format is inspired by Keep a Changelog and follows semantic versioning.
 
+## [0.2.50] - 2026-02-24
+
+- Added a targeted source-key remediation path to the CLI (`repair-source-prefix`) to rewrite legacy indexed source prefixes and resolve duplicate collisions safely.
+- Patched source project-id extraction heuristics so namespace-prefixed `workspace-notes` and drive-style (`c:`) source keys remain grouped under their explicit top-level project identifier.
+- Fixed memory analytics aggregation where optional session filtering in stats queries incorrectly generated a new session id, causing `/api/memory/stats` to return zero despite existing memories.
+
 ## [0.2.49] - 2026-02-24
 
 - Unified MCP project scoping terminology to `projectId` for indexing tools (`rag_index_path`, `rag_index_text`, `rag_index_url`, `rag_reindex_source`) to match memory tools.

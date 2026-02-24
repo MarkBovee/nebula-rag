@@ -227,6 +227,27 @@ internal static class ProgramMain
                         }
                     }
 
+                case "repair-source-prefix":
+                    {
+                        if (!options.TryGetValue("from", out var fromPrefix) || string.IsNullOrWhiteSpace(fromPrefix))
+                        {
+                            Console.Error.WriteLine("✗ Missing required option --from for repair-source-prefix command.");
+                            return 1;
+                        }
+
+                        if (!options.TryGetValue("to", out var toPrefix) || string.IsNullOrWhiteSpace(toPrefix))
+                        {
+                            Console.Error.WriteLine("✗ Missing required option --to for repair-source-prefix command.");
+                            return 1;
+                        }
+
+                        var rewriteResult = await store.RewriteSourcePathPrefixAsync(fromPrefix, toPrefix);
+                        await TrySyncRagSourcesManifestAsync(sourcesManifestService, null, logger);
+                        Console.WriteLine(
+                            $"✓ Source prefix repair complete: {rewriteResult.UpdatedCount} updated, {rewriteResult.DuplicatesRemoved} duplicates removed.");
+                        return 0;
+                    }
+
                 default:
                     Console.Error.WriteLine($"✗ Unknown command: {command}");
                     PrintUsage();
@@ -374,6 +395,7 @@ internal static class ProgramMain
         Console.WriteLine("  delete --source <path>                Delete documents by source path");
         Console.WriteLine("  purge-all                             Clear entire index (with confirmation)");
         Console.WriteLine("  health-check                          Verify database connectivity");
+        Console.WriteLine("  repair-source-prefix --from <p> --to <p>  Rewrite stored source-path prefixes");
         Console.WriteLine();
         Console.WriteLine("Options:");
         Console.WriteLine("  --config <path>                       Path to configuration file");

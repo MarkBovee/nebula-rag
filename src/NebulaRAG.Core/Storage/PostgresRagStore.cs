@@ -467,6 +467,16 @@ public sealed class PostgresRagStore
             return null;
         }
 
+        // Preserve explicit namespace-level grouping for workspace note buckets and drive-style source keys.
+        if (pathSegments.Length > 1 && pathSegments[0].Contains('.', StringComparison.Ordinal))
+        {
+            if (string.Equals(pathSegments[1], "workspace-notes", StringComparison.OrdinalIgnoreCase)
+                || pathSegments[1].EndsWith(":", StringComparison.Ordinal))
+            {
+                return pathSegments[0];
+            }
+        }
+
         var projectBoundarySegments = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
             ".github",
@@ -502,6 +512,141 @@ public sealed class PostgresRagStore
         }
 
         return pathSegments.Length > 2 ? pathSegments[2] : pathSegments.ElementAtOrDefault(1);
+    }
+
+    /// <summary>
+    /// Rewrites source-path prefixes for existing rows and resolves collisions by keeping the newest row per resulting source path.
+    /// </summary>
+    /// <param name="fromPrefix">Existing source-path prefix to replace.</param>
+    /// <param name="toPrefix">Replacement source-path prefix.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Tuple containing updated source count and removed duplicate count.</returns>
+    public async Task<(int UpdatedCount, int DuplicatesRemoved)> RewriteSourcePathPrefixAsync(string fromPrefix, string toPrefix, CancellationToken cancellationToken = default)
+    {
+        var normalizedFromPrefix = NormalizePrefix(fromPrefix);
+        var normalizedToPrefix = NormalizePrefix(toPrefix);
+
+        if (string.IsNullOrWhiteSpace(normalizedFromPrefix))
+        {
+            throw new ArgumentException("fromPrefix cannot be null or empty.", nameof(fromPrefix));
+        }
+
+        var sourceRows = new List<(long Id, string SourcePath, DateTime IndexedAt)>();
+
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+
+        const string readSql = "SELECT id, source_path, indexed_at FROM rag_documents";
+        await using (var readCommand = new NpgsqlCommand(readSql, connection))
+        await using (var reader = await readCommand.ExecuteReaderAsync(cancellationToken))
+        {
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                sourceRows.Add((reader.GetInt64(0), reader.GetString(1), reader.GetDateTime(2)));
+            }
+        }
+
+        var newestBySourcePath = sourceRows
+            .GroupBy(row => row.SourcePath, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(
+                group => group.Key,
+                group => group
+                    .OrderByDescending(row => row.IndexedAt)
+                    .ThenByDescending(row => row.Id)
+                    .First(),
+                StringComparer.OrdinalIgnoreCase);
+
+        var candidates = sourceRows
+            .Where(row => row.SourcePath.StartsWith(normalizedFromPrefix, StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(row => row.IndexedAt)
+            .ThenByDescending(row => row.Id)
+            .ToList();
+
+        if (candidates.Count == 0)
+        {
+            return (0, 0);
+        }
+
+        var idsToDelete = new HashSet<long>();
+        var renamePairs = new List<(long Id, string NewSourcePath)>();
+
+        foreach (var candidate in candidates)
+        {
+            if (idsToDelete.Contains(candidate.Id))
+            {
+                continue;
+            }
+
+            var sourceSuffix = candidate.SourcePath[normalizedFromPrefix.Length..];
+            var replacementSourcePath = $"{normalizedToPrefix}{sourceSuffix}";
+
+            if (string.Equals(candidate.SourcePath, replacementSourcePath, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (newestBySourcePath.TryGetValue(replacementSourcePath, out var existing) && existing.Id != candidate.Id)
+            {
+                var keepExisting = existing.IndexedAt > candidate.IndexedAt
+                    || (existing.IndexedAt == candidate.IndexedAt && existing.Id > candidate.Id);
+
+                if (keepExisting)
+                {
+                    idsToDelete.Add(candidate.Id);
+                    newestBySourcePath.Remove(candidate.SourcePath);
+                    continue;
+                }
+
+                idsToDelete.Add(existing.Id);
+            }
+
+            renamePairs.Add((candidate.Id, replacementSourcePath));
+            newestBySourcePath.Remove(candidate.SourcePath);
+            newestBySourcePath[replacementSourcePath] = (candidate.Id, replacementSourcePath, candidate.IndexedAt);
+        }
+
+        if (idsToDelete.Count == 0 && renamePairs.Count == 0)
+        {
+            return (0, 0);
+        }
+
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+
+        var duplicatesRemoved = 0;
+        foreach (var id in idsToDelete)
+        {
+            await using var deleteCommand = new NpgsqlCommand("DELETE FROM rag_documents WHERE id = @id", connection, transaction);
+            deleteCommand.Parameters.AddWithValue("id", id);
+            duplicatesRemoved += await deleteCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        var updatedCount = 0;
+        foreach (var renamePair in renamePairs)
+        {
+            await using var updateCommand = new NpgsqlCommand("UPDATE rag_documents SET source_path = @sourcePath WHERE id = @id", connection, transaction);
+            updateCommand.Parameters.AddWithValue("sourcePath", renamePair.NewSourcePath);
+            updateCommand.Parameters.AddWithValue("id", renamePair.Id);
+            updatedCount += await updateCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+        return (updatedCount, duplicatesRemoved);
+    }
+
+    /// <summary>
+    /// Normalizes a source-path prefix into forward-slash form with trailing slash.
+    /// </summary>
+    /// <param name="prefix">Raw prefix value.</param>
+    /// <returns>Normalized prefix string.</returns>
+    private static string NormalizePrefix(string prefix)
+    {
+        if (string.IsNullOrWhiteSpace(prefix))
+        {
+            return string.Empty;
+        }
+
+        var normalized = prefix.Trim().Replace('\\', '/').Trim('/');
+        return string.IsNullOrWhiteSpace(normalized) ? string.Empty : $"{normalized}/";
     }
 
     /// <summary>
@@ -944,7 +1089,7 @@ public sealed class PostgresRagStore
             throw new ArgumentOutOfRangeException(nameof(recentSessionLimit), "Recent session limit must be greater than 0.");
         }
 
-        var normalizedSessionId = NormalizeSessionId(sessionId);
+        var normalizedSessionId = NormalizeOptionalSessionId(sessionId);
         var normalizedProjectId = NormalizeProjectId(projectId);
 
         await using var connection = new NpgsqlConnection(_connectionString);
@@ -1292,6 +1437,18 @@ public sealed class PostgresRagStore
     {
         return string.IsNullOrWhiteSpace(sessionId)
             ? $"session-{Guid.NewGuid():N}"
+            : sessionId.Trim();
+    }
+
+    /// <summary>
+    /// Resolves an optional session identifier used only for query filtering.
+    /// </summary>
+    /// <param name="sessionId">Optional caller-provided session identifier.</param>
+    /// <returns>Trimmed session identifier or <c>null</c> when no filter is provided.</returns>
+    private static string? NormalizeOptionalSessionId(string? sessionId)
+    {
+        return string.IsNullOrWhiteSpace(sessionId)
+            ? null
             : sessionId.Trim();
     }
 
