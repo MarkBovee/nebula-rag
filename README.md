@@ -12,13 +12,13 @@ It combines:
 ## One-Line Remote Install (Windows + PowerShell)
 
 ```powershell
-pwsh -NoProfile -ExecutionPolicy Bypass -Command '& { $scriptUrl = "https://raw.githubusercontent.com/MarkBovee/NebulaRAG/main/scripts/setup-nebula-rag.ps1"; $scriptPath = Join-Path ([System.IO.Path]::GetTempPath()) "setup-nebula-rag.ps1"; Invoke-WebRequest -Uri $scriptUrl -OutFile $scriptPath; & $scriptPath }'
+$scriptUrl='https://raw.githubusercontent.com/MarkBovee/NebulaRAG/main/scripts/setup-nebula-rag.ps1'; $scriptPath=Join-Path ([System.IO.Path]::GetTempPath()) 'setup-nebula-rag.ps1'; Remove-Item -LiteralPath $scriptPath -Force -ErrorAction SilentlyContinue; Invoke-WebRequest -Uri $scriptUrl -OutFile $scriptPath -ErrorAction Stop; & $scriptPath
 ```
 
 Why this format:
 
-- Uses single quotes around `-Command` so `$...` variables are not expanded by the parent PowerShell session.
-- Keeps the flow minimal: download the installer script, then execute it.
+- Works directly from an existing PowerShell session without nested command-quoting issues.
+- Removes stale temp copies before download, then downloads and executes the installer script.
 
 What it does:
 

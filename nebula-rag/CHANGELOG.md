@@ -4,6 +4,11 @@ All notable changes to the Nebula RAG Home Assistant add-on are documented in th
 
 The format is inspired by Keep a Changelog and follows semantic versioning.
 
+## [0.2.40] - 2026-02-24
+
+- Updated the README one-line installer to a PowerShell-native command intended for users already running PowerShell, avoiding nested `pwsh -Command` quoting pitfalls.
+- Added stale temp-script cleanup and explicit download failure handling in the one-liner (`Remove-Item` + `Invoke-WebRequest -ErrorAction Stop`).
+
 ## [0.2.37] - 2026-02-24
 
 - Cleaned invalid indexed workspace-note sources that surfaced as separate dashboard projects (`operations` and `retrieval-probe.md`).
