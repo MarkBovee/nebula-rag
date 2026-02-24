@@ -178,11 +178,93 @@ public sealed partial class McpTransportHandler
         {
             ["name"] = name,
             ["description"] = description,
-            ["inputSchema"] = new JsonObject
+            ["inputSchema"] = BuildToolInputSchema(name)
+        };
+    }
+
+    /// <summary>
+    /// Builds an MCP input schema for a specific tool.
+    /// </summary>
+    /// <param name="toolName">Tool name.</param>
+    /// <returns>JSON schema object for tool arguments.</returns>
+    private static JsonObject BuildToolInputSchema(string toolName)
+    {
+        return toolName switch
+        {
+            RagIndexPathToolName => BuildObjectSchema(
+                new JsonObject
+                {
+                    ["sourcePath"] = BuildStringSchema("Source directory path to index."),
+                    ["projectName"] = BuildStringSchema("Optional project name used as the source-key prefix.")
+                },
+                "sourcePath"),
+            RagIndexTextToolName => BuildObjectSchema(
+                new JsonObject
+                {
+                    ["sourcePath"] = BuildStringSchema("Source key or file path for the text payload."),
+                    ["content"] = BuildStringSchema("Text content to chunk and index."),
+                    ["projectName"] = BuildStringSchema("Optional project name used as the source-key prefix.")
+                },
+                "sourcePath",
+                "content"),
+            RagIndexUrlToolName => BuildObjectSchema(
+                new JsonObject
+                {
+                    ["url"] = BuildStringSchema("HTTP(S) URL to fetch and index."),
+                    ["sourcePath"] = BuildStringSchema("Optional source key override for stored content."),
+                    ["projectName"] = BuildStringSchema("Optional project name used as the source-key prefix.")
+                },
+                "url"),
+            RagReindexSourceToolName => BuildObjectSchema(
+                new JsonObject
+                {
+                    ["sourcePath"] = BuildStringSchema("Readable local file path to reindex."),
+                    ["projectName"] = BuildStringSchema("Optional project name used as the source-key prefix.")
+                },
+                "sourcePath"),
+            _ => BuildObjectSchema(new JsonObject())
+        };
+    }
+
+    /// <summary>
+    /// Builds a JSON object schema node.
+    /// </summary>
+    /// <param name="properties">Schema properties.</param>
+    /// <param name="required">Optional required property names.</param>
+    /// <returns>Object schema node.</returns>
+    private static JsonObject BuildObjectSchema(JsonObject properties, params string[] required)
+    {
+        var schema = new JsonObject
+        {
+            ["type"] = "object",
+            ["properties"] = properties
+        };
+
+        if (required.Length > 0)
+        {
+            var requiredArray = new JsonArray();
+            foreach (var item in required)
             {
-                ["type"] = "object",
-                ["properties"] = new JsonObject()
+                requiredArray.Add(item);
             }
+
+            schema["required"] = requiredArray;
+        }
+
+        return schema;
+    }
+
+    /// <summary>
+    /// Builds a string-property schema node with description.
+    /// </summary>
+    /// <param name="description">Property description.</param>
+    /// <returns>String schema node.</returns>
+    private static JsonObject BuildStringSchema(string description)
+    {
+        return new JsonObject
+        {
+            ["type"] = "string",
+            ["description"] = description
         };
     }
 }

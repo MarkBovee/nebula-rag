@@ -114,7 +114,7 @@ const MemoryInsights: React.FC<MemoryInsightsProps> = ({ stats }) => {
 
   if (!stats) {
     return (
-      <div style={styles.card}>
+      <div style={styles.card} data-testid="memory-card">
         <h2 style={styles.title}>Memory Insights</h2>
         <p style={styles.emptyState}>Memory analytics are loading.</p>
       </div>
@@ -122,19 +122,19 @@ const MemoryInsights: React.FC<MemoryInsightsProps> = ({ stats }) => {
   }
 
   return (
-    <div style={styles.card}>
+    <div style={styles.card} data-testid="memory-card">
       <h2 style={styles.title}>Memory Insights</h2>
 
       <div style={styles.summaryGrid}>
-        <div style={styles.summaryTile}>
+        <div style={styles.summaryTile} data-testid="memory-total-memories">
           <p style={styles.summaryLabel}>Total Memories</p>
           <p style={styles.summaryValue}>{stats.totalMemories.toLocaleString()}</p>
         </div>
-        <div style={styles.summaryTile}>
+        <div style={styles.summaryTile} data-testid="memory-recent-24h">
           <p style={styles.summaryLabel}>Last 24 Hours</p>
           <p style={styles.summaryValue}>{stats.recent24HoursCount.toLocaleString()}</p>
         </div>
-        <div style={styles.summaryTile}>
+        <div style={styles.summaryTile} data-testid="memory-distinct-sessions">
           <p style={styles.summaryLabel}>Distinct Sessions</p>
           <p style={styles.summaryValue}>{stats.distinctSessionCount.toLocaleString()}</p>
         </div>

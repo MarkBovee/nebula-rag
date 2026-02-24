@@ -147,7 +147,7 @@ public sealed class RagApiController : ControllerBase
         }
 
         var stopwatch = Stopwatch.StartNew();
-        var summary = await _indexer.IndexDirectoryAsync(request.SourcePath, cancellationToken);
+        var summary = await _indexer.IndexDirectoryAsync(request.SourcePath, cancellationToken: cancellationToken);
         stopwatch.Stop();
 
         if (summary.DocumentsIndexed > 0 && stopwatch.Elapsed.TotalSeconds > 0)

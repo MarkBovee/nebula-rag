@@ -261,18 +261,20 @@ public sealed partial class McpTransportHandler
     private async Task<JsonObject> ExecuteIndexPathToolAsync(JsonObject? arguments, CancellationToken cancellationToken)
     {
         var sourcePath = arguments?["sourcePath"]?.GetValue<string>();
+        var projectName = arguments?["projectName"]?.GetValue<string>();
         if (string.IsNullOrWhiteSpace(sourcePath))
         {
             return BuildToolResult("Missing required argument: sourcePath", isError: true);
         }
 
-        var summary = await _indexer.IndexDirectoryAsync(sourcePath, cancellationToken);
+        var summary = await _indexer.IndexDirectoryAsync(sourcePath, projectName, cancellationToken);
         var manifestSyncResult = await TrySyncRagSourcesManifestAsync(sourcePath, cancellationToken);
         return BuildToolResult("Index complete.", new JsonObject
         {
             ["documentsIndexed"] = summary.DocumentsIndexed,
             ["documentsSkipped"] = summary.DocumentsSkipped,
             ["chunksIndexed"] = summary.ChunksIndexed,
+            ["projectName"] = string.IsNullOrWhiteSpace(projectName) ? null : projectName,
             ["sourcesManifestPath"] = manifestSyncResult?.ManifestPath,
             ["sourcesManifestSourceCount"] = manifestSyncResult?.SourceCount
         });
@@ -287,6 +289,7 @@ public sealed partial class McpTransportHandler
     private async Task<JsonObject> ExecuteIndexTextToolAsync(JsonObject? arguments, CancellationToken cancellationToken)
     {
         var sourcePath = arguments?["sourcePath"]?.GetValue<string>();
+        var projectName = arguments?["projectName"]?.GetValue<string>();
         var content = arguments?["content"]?.GetValue<string>();
         if (string.IsNullOrWhiteSpace(sourcePath) || string.IsNullOrWhiteSpace(content))
         {
@@ -302,12 +305,14 @@ public sealed partial class McpTransportHandler
         var chunkEmbeddings = chunks.Select(chunk => new ChunkEmbedding(chunk.Index, chunk.Text, chunk.TokenCount, _embeddingGenerator.GenerateEmbedding(chunk.Text, _settings.Ingestion.VectorDimensions))).ToList();
         var contentHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(content)));
         var normalizedSourcePath = SourcePathNormalizer.NormalizeForStorage(sourcePath, Directory.GetCurrentDirectory());
-        var updated = await _store.UpsertDocumentAsync(normalizedSourcePath, contentHash, chunkEmbeddings, cancellationToken);
-        var manifestSyncResult = await TrySyncRagSourcesManifestAsync(normalizedSourcePath, cancellationToken);
+        var prefixedSourcePath = SourcePathNormalizer.ApplyExplicitProjectPrefix(normalizedSourcePath, projectName);
+        var updated = await _store.UpsertDocumentAsync(prefixedSourcePath, contentHash, chunkEmbeddings, cancellationToken);
+        var manifestSyncResult = await TrySyncRagSourcesManifestAsync(prefixedSourcePath, cancellationToken);
 
         return BuildToolResult(updated ? "Source text indexed." : "Source text unchanged.", new JsonObject
         {
-            ["sourcePath"] = normalizedSourcePath,
+            ["sourcePath"] = prefixedSourcePath,
+            ["projectName"] = string.IsNullOrWhiteSpace(projectName) ? null : projectName,
             ["updated"] = updated,
             ["chunkCount"] = chunkEmbeddings.Count,
             ["contentHash"] = contentHash,
@@ -326,6 +331,7 @@ public sealed partial class McpTransportHandler
     {
         var url = arguments?["url"]?.GetValue<string>();
         var sourcePath = arguments?["sourcePath"]?.GetValue<string>();
+        var projectName = arguments?["projectName"]?.GetValue<string>();
         if (string.IsNullOrWhiteSpace(url))
         {
             return BuildToolResult("url is required.", isError: true);
@@ -336,7 +342,8 @@ public sealed partial class McpTransportHandler
         var indexArgs = new JsonObject
         {
             ["sourcePath"] = targetSourcePath,
-            ["content"] = fetchedContent
+            ["content"] = fetchedContent,
+            ["projectName"] = projectName
         };
 
         return await ExecuteIndexTextToolAsync(indexArgs, cancellationToken);
@@ -351,6 +358,7 @@ public sealed partial class McpTransportHandler
     private async Task<JsonObject> ExecuteReindexSourceToolAsync(JsonObject? arguments, CancellationToken cancellationToken)
     {
         var sourcePath = arguments?["sourcePath"]?.GetValue<string>();
+        var projectName = arguments?["projectName"]?.GetValue<string>();
         if (string.IsNullOrWhiteSpace(sourcePath))
         {
             return BuildToolResult("sourcePath is required.", isError: true);
@@ -362,7 +370,7 @@ public sealed partial class McpTransportHandler
         }
 
         var content = await File.ReadAllTextAsync(sourcePath, cancellationToken);
-        var reindexArgs = new JsonObject { ["sourcePath"] = sourcePath, ["content"] = content };
+        var reindexArgs = new JsonObject { ["sourcePath"] = sourcePath, ["content"] = content, ["projectName"] = projectName };
         return await ExecuteIndexTextToolAsync(reindexArgs, cancellationToken);
     }
 

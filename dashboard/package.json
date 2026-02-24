@@ -9,7 +9,9 @@
     "preview": "vite preview",
     "build:prod": "npm run build && echo 'Dashboard built to ../src/NebulaRAG.AddonHost/wwwroot'",
     "test:visual": "playwright test",
-    "test:visual:update": "playwright test --update-snapshots"
+    "test:visual:update": "playwright test --update-snapshots",
+    "test:visual:ui": "playwright test --ui",
+    "test:visual:loop": "playwright test tests/visual/dashboard.data.spec.ts --workers=1 --repeat-each=10"
   },
   "dependencies": {
     "react": "^18.3.1",

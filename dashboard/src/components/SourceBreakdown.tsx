@@ -43,7 +43,7 @@ const SourceBreakdown: React.FC<SourceBreakdownProps> = ({ sources }) => {
   const totalSources = data.reduce((sum, item) => sum + item.value, 0);
 
   return (
-    <div style={styles.card}>
+    <div style={styles.card} data-testid="source-breakdown-card">
       <h2 style={styles.title}>Source Breakdown</h2>
       
       {data.length > 0 ? (
@@ -80,10 +80,11 @@ const SourceBreakdown: React.FC<SourceBreakdownProps> = ({ sources }) => {
             </PieChart>
           </ResponsiveContainer>
 
-          <div style={{ marginTop: nebulaTheme.spacing.lg }}>
+          <div style={{ marginTop: nebulaTheme.spacing.lg }} data-testid="source-breakdown-list">
             {data.map((item, idx) => (
               <div
                 key={idx}
+                data-testid="source-breakdown-item"
                 style={{
                   display: 'flex',
                   justifyContent: 'space-between',

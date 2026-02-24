@@ -72,20 +72,20 @@ const IndexHealth: React.FC<IndexHealthProps> = ({ stats }) => {
   const oldestIndexed = oldestIndexedAt ? new Date(oldestIndexedAt).toLocaleString() : 'N/A';
 
   return (
-    <div style={styles.card}>
+    <div style={styles.card} data-testid="index-health-card">
       <h2 style={styles.title}>Index Health</h2>
       
-      <div style={styles.metric}>
+      <div style={styles.metric} data-testid="metric-total-documents">
         <p style={styles.metricLabel}>Total Documents</p>
         <p style={styles.metricValue}>{totalDocuments.toLocaleString()}</p>
       </div>
 
-      <div style={styles.metric}>
+      <div style={styles.metric} data-testid="metric-total-chunks">
         <p style={styles.metricLabel}>Total Chunks</p>
         <p style={styles.metricValue}>{totalChunks.toLocaleString()}</p>
       </div>
 
-      <div style={styles.metric}>
+      <div style={styles.metric} data-testid="metric-total-projects">
         <p style={styles.metricLabel}>Projects</p>
         <p style={styles.metricValue}>{totalProjects.toLocaleString()}</p>
       </div>
@@ -109,12 +109,12 @@ const IndexHealth: React.FC<IndexHealthProps> = ({ stats }) => {
         </p>
       </div>
 
-      <div style={styles.metric}>
+      <div style={styles.metric} data-testid="metric-index-size">
         <p style={styles.metricLabel}>Index Size</p>
         <p style={styles.metricValue}>{formatBytes(stats.indexSizeBytes)}</p>
       </div>
 
-      <div style={{ ...styles.metric, ...styles.lastRow }}>
+      <div style={{ ...styles.metric, ...styles.lastRow }} data-testid="metric-last-updated">
         <p style={styles.metricLabel}>Last Updated</p>
         <p style={{ ...styles.metricValue, fontSize: nebulaTheme.typography.fontSize.sm }}>
           {lastUpdated}

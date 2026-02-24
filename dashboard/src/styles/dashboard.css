@@ -89,6 +89,18 @@ body {
   grid-column: span 2;
 }
 
+.nb-tab-button {
+  width: 100%;
+}
+
+.nb-search-input {
+  min-width: 0;
+}
+
+.nb-source-path {
+  word-break: break-word;
+}
+
 @media (max-width: 1200px) {
   .nb-overview-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -137,6 +149,12 @@ body {
   .nb-tabbar {
     flex-direction: row;
     flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .nb-tab-button {
+    width: auto;
+    flex: 1 1 calc(50% - 8px);
   }
 
   .nb-app::before,
@@ -144,5 +162,37 @@ body {
     width: 280px;
     height: 280px;
     filter: blur(28px);
+  }
+}
+
+@media (max-width: 700px) {
+  .nb-app {
+    overflow-x: hidden;
+  }
+
+  .nb-status-item {
+    min-height: 0;
+  }
+
+  .nb-search-box {
+    flex-direction: column;
+  }
+
+  .nb-search-submit {
+    width: 100%;
+  }
+
+  .nb-tabbar {
+    flex-direction: column;
+    flex-wrap: nowrap;
+  }
+
+  .nb-tab-button {
+    width: 100%;
+    flex: 1 1 auto;
+  }
+
+  .nb-source-table-wrap {
+    overflow-x: auto;
   }
 }

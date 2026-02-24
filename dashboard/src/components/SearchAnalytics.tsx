@@ -80,29 +80,31 @@ const SearchAnalytics: React.FC = () => {
   };
 
   return (
-    <div style={styles.card}>
+    <div style={styles.card} data-testid="search-card">
       <h2 style={styles.title}>Search and Query</h2>
       
-      <form onSubmit={handleSearch} style={styles.searchBox}>
+      <form onSubmit={handleSearch} style={styles.searchBox} className="nb-search-box" data-testid="search-form">
         <input
           type="text"
           placeholder="Search your indexed documents..."
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           style={styles.input}
+          className="nb-search-input"
+          data-testid="search-input"
         />
-        <button type="submit" style={styles.button} disabled={loading}>
+        <button type="submit" style={styles.button} disabled={loading} className="nb-search-submit" data-testid="search-submit">
           {loading ? '⟳ Searching...' : 'Search'}
         </button>
       </form>
 
       {results.length > 0 && (
-        <div style={styles.results}>
+        <div style={styles.results} data-testid="search-results">
           <p style={{ ...styles.title, fontSize: nebulaTheme.typography.fontSize.lg, marginBottom: nebulaTheme.spacing.lg }}>
             {results.length} results found
           </p>
           {results.map((result, idx) => (
-            <div key={idx} style={styles.resultItem}>
+            <div key={idx} style={styles.resultItem} data-testid="search-result-item">
               <div style={{ marginBottom: nebulaTheme.spacing.sm }}>
                 <p style={{ color: nebulaTheme.colors.neonCyan, fontWeight: 'bold' }}>
                   {result.sourcePath}
@@ -120,7 +122,7 @@ const SearchAnalytics: React.FC = () => {
       )}
 
       {results.length === 0 && !loading && hasSearched && (
-        <div style={styles.resultItem}>
+        <div style={styles.resultItem} data-testid="search-no-results">
           <p style={{ color: nebulaTheme.colors.textMuted }}>No results found for "{query}"</p>
         </div>
       )}

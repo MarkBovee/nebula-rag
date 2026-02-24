@@ -174,6 +174,18 @@ Run visual tests:
 npm run test:visual
 ```
 
+Run visual tests in Playwright UI mode for fast tweak-and-rerun iteration:
+
+```bash
+npm run test:visual:ui
+```
+
+Run a focused headless loop against data/mobile assertions to catch regressions while iterating:
+
+```bash
+npm run test:visual:loop
+```
+
 Generate or refresh snapshot baselines:
 
 ```bash

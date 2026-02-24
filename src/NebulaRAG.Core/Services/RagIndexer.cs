@@ -43,10 +43,11 @@ public sealed class RagIndexer
     /// Indexes all documents in a directory recursively.
     /// </summary>
     /// <param name="sourceDirectory">The root directory to index.</param>
+    /// <param name="projectName">Optional explicit project-name prefix for stored source keys.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Summary of indexing results.</returns>
     /// <exception cref="RagIndexingException">Thrown if indexing fails.</exception>
-    public async Task<IndexSummary> IndexDirectoryAsync(string sourceDirectory, CancellationToken cancellationToken = default)
+    public async Task<IndexSummary> IndexDirectoryAsync(string sourceDirectory, string? projectName = null, CancellationToken cancellationToken = default)
     {
         if (!Directory.Exists(sourceDirectory))
         {
@@ -123,7 +124,7 @@ public sealed class RagIndexer
                         .ToList();
 
                     var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(content)));
-                    var sourcePath = BuildSourceStoragePath(projectRootPath, sourceRootPath, filePath);
+                    var sourcePath = BuildSourceStoragePath(projectRootPath, sourceRootPath, filePath, projectName);
                     var wasUpdated = await _store.UpsertDocumentAsync(sourcePath, hash, chunkEmbeddings, cancellationToken);
 
                     if (!wasUpdated)
@@ -197,14 +198,13 @@ public sealed class RagIndexer
     /// <summary>
     /// Converts a file path to a project-relative source key with forward slashes.
     /// </summary>
-    private static string BuildSourceStoragePath(string projectRootPath, string sourceRootPath, string filePath)
+    private static string BuildSourceStoragePath(string projectRootPath, string sourceRootPath, string filePath, string? projectName)
     {
-        if (SourcePathNormalizer.IsPathUnderRoot(filePath, projectRootPath))
-        {
-            return SourcePathNormalizer.NormalizeForStorage(filePath, projectRootPath);
-        }
+        var normalizedSourcePath = SourcePathNormalizer.IsPathUnderRoot(filePath, projectRootPath)
+            ? SourcePathNormalizer.NormalizeForStorage(filePath, projectRootPath)
+            : SourcePathNormalizer.NormalizeForStorage(filePath, sourceRootPath);
 
-        return SourcePathNormalizer.NormalizeForStorage(filePath, sourceRootPath);
+        return SourcePathNormalizer.ApplyExplicitProjectPrefix(normalizedSourcePath, projectName);
     }
 
     /// <summary>

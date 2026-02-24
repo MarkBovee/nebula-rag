@@ -51,7 +51,7 @@ const PerfTimeline: React.FC<PerfTimelineProps> = ({ metrics }) => {
   }, [metrics]);
 
   return (
-    <div style={styles.card}>
+    <div style={styles.card} data-testid="performance-card">
       <h2 style={styles.title}>Performance Timeline (24h)</h2>
 
       {data.length === 0 && (

@@ -62,6 +62,35 @@ public static class SourcePathNormalizer
     }
 
     /// <summary>
+    /// Applies an explicit project-name prefix to a normalized storage key.
+    /// </summary>
+    /// <param name="normalizedSourcePath">Already-normalized source path key.</param>
+    /// <param name="projectName">Optional explicit project name from caller input.</param>
+    /// <returns>Prefixed key when projectName is valid; otherwise original key.</returns>
+    public static string ApplyExplicitProjectPrefix(string normalizedSourcePath, string? projectName)
+    {
+        if (string.IsNullOrWhiteSpace(normalizedSourcePath))
+        {
+            return normalizedSourcePath;
+        }
+
+        var normalizedProjectName = NormalizeProjectName(projectName);
+        if (string.IsNullOrWhiteSpace(normalizedProjectName))
+        {
+            return normalizedSourcePath;
+        }
+
+        var projectPrefix = $"{normalizedProjectName}/";
+        if (normalizedSourcePath.Equals(normalizedProjectName, StringComparison.OrdinalIgnoreCase)
+            || normalizedSourcePath.StartsWith(projectPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            return normalizedSourcePath;
+        }
+
+        return $"{normalizedProjectName}/{normalizedSourcePath}";
+    }
+
+    /// <summary>
     /// Returns true when an absolute path is located under a specific root.
     /// </summary>
     /// <param name="absolutePath">Absolute path to test.</param>
@@ -170,5 +199,26 @@ public static class SourcePathNormalizer
         }
 
         return $"{projectFolderName}/{normalizedRelativePath}";
+    }
+
+    /// <summary>
+    /// Normalizes a user-provided project name to a safe source-key segment.
+    /// </summary>
+    /// <param name="projectName">Raw project name.</param>
+    /// <returns>Normalized project segment without path separators.</returns>
+    private static string NormalizeProjectName(string? projectName)
+    {
+        if (string.IsNullOrWhiteSpace(projectName))
+        {
+            return string.Empty;
+        }
+
+        var normalized = projectName.Trim().Replace('\\', '/').Trim('/');
+        if (string.IsNullOrWhiteSpace(normalized))
+        {
+            return string.Empty;
+        }
+
+        return normalized;
     }
 }

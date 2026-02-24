@@ -4,6 +4,24 @@ All notable changes to the Nebula RAG Home Assistant add-on are documented in th
 
 The format is inspired by Keep a Changelog and follows semantic versioning.
 
+## [0.2.29] - 2026-02-24
+
+- Added optional `projectName` input support to MCP indexing tools (`rag_index_path`, `rag_index_text`, `rag_index_url`, and `rag_reindex_source`) so clients can provide explicit project grouping without relying only on path inference.
+- Updated MCP `tools/list` input schemas to publish indexing argument contracts, including required fields and optional `projectName` metadata.
+- Preserved backward compatibility by keeping existing source-path normalization and using it as fallback when `projectName` is not supplied.
+
+## [0.2.28] - 2026-02-24
+
+- Added dashboard Playwright iteration scripts: `npm run test:visual:ui` for interactive rerun workflows and `npm run test:visual:loop` for repeated headless dashboard data/mobile checks.
+- Updated dashboard README visual-testing section with the new loop workflow commands for faster UI adjustment cycles.
+
+## [0.2.27] - 2026-02-24
+
+- Added a new Playwright functional dashboard suite that validates all major data surfaces (overview metrics, tab content, search results, source rows, activity items, performance panel, and memory metrics).
+- Added explicit mobile responsiveness coverage in Playwright to verify stacked search controls and no horizontal overflow at narrow viewport widths.
+- Improved dashboard responsiveness with targeted CSS for mobile tab navigation, search form stacking, and long source-path wrapping.
+- Added stable `data-testid` hooks across dashboard sections and cards to support deterministic UI and data-element testing.
+
 ## [0.2.26] - 2026-02-24
 
 - Added backend runtime telemetry plumbing so MCP tool calls are captured as dashboard activity events and surfaced in the Activity feed.

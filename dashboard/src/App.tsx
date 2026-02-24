@@ -227,10 +227,10 @@ const App: React.FC = () => {
   const { health, stats, sources, memoryStats, recentActivity, performanceMetrics, loading, error } = dashboard;
 
   return (
-    <div style={styles.container} className="nb-app">
+    <div style={styles.container} className="nb-app" data-testid="dashboard-root">
       {/* Header */}
       <div style={styles.shell} className="nb-shell">
-        <aside style={styles.nav} className="nb-nav nb-fade-up">
+        <aside style={styles.nav} className="nb-nav nb-fade-up" data-testid="dashboard-nav">
           <h1 style={styles.navTitle}>Nebula RAG</h1>
           <p style={styles.navSubtitle}>Control Center</p>
 
@@ -241,18 +241,20 @@ const App: React.FC = () => {
                 onClick={() => setActiveTab(tab.key)}
                 style={styles.tabButton(activeTab === tab.key)}
                 aria-pressed={activeTab === tab.key}
+                className="nb-tab-button"
+                data-testid={`tab-${tab.key}`}
               >
                 {tab.label}
               </button>
             ))}
           </div>
 
-          <button onClick={refreshDashboard} disabled={loading} style={styles.refreshButton}>
+          <button onClick={refreshDashboard} disabled={loading} style={styles.refreshButton} data-testid="refresh-dashboard-button">
             {loading ? 'Refreshing...' : 'Refresh Data'}
           </button>
         </aside>
 
-        <main style={styles.content} className="nb-content">
+        <main style={styles.content} className="nb-content" data-testid="dashboard-content">
           <div style={styles.header} className="nb-fade-up">
             <h2 style={styles.title}>Operations Dashboard</h2>
             <p style={styles.subtitle}>Observe index health, query quality, source coverage, and runtime behavior in one place.</p>
@@ -271,26 +273,26 @@ const App: React.FC = () => {
 
           {health && (
             <div style={styles.statusBar} className="nb-fade-up">
-              <div style={styles.statusItem}>
+              <div style={styles.statusItem} className="nb-status-item" data-testid="status-system">
                 <p style={styles.statusLabel}>System Status</p>
                 <div style={{ display: 'flex', alignItems: 'center', gap: nebulaTheme.spacing.sm }}>
                   <div style={styles.healthDot(health.isHealthy)} />
-                  <span style={styles.statusValue}>{health.isHealthy ? 'Healthy' : 'Degraded'}</span>
+                  <span style={styles.statusValue} data-testid="status-system-value">{health.isHealthy ? 'Healthy' : 'Degraded'}</span>
                 </div>
               </div>
               {stats && (
                 <>
-                  <div style={styles.statusItem}>
+                  <div style={styles.statusItem} className="nb-status-item" data-testid="status-documents">
                     <p style={styles.statusLabel}>Documents</p>
-                    <p style={styles.statusValue}>{(stats.documentCount ?? stats.totalDocuments ?? 0).toLocaleString()}</p>
+                    <p style={styles.statusValue} data-testid="status-documents-value">{(stats.documentCount ?? stats.totalDocuments ?? 0).toLocaleString()}</p>
                   </div>
-                  <div style={styles.statusItem}>
+                  <div style={styles.statusItem} className="nb-status-item" data-testid="status-chunks">
                     <p style={styles.statusLabel}>Chunks</p>
-                    <p style={styles.statusValue}>{(stats.chunkCount ?? stats.totalChunks ?? 0).toLocaleString()}</p>
+                    <p style={styles.statusValue} data-testid="status-chunks-value">{(stats.chunkCount ?? stats.totalChunks ?? 0).toLocaleString()}</p>
                   </div>
-                  <div style={styles.statusItem}>
+                  <div style={styles.statusItem} className="nb-status-item" data-testid="status-projects">
                     <p style={styles.statusLabel}>Projects</p>
-                    <p style={styles.statusValue}>{(stats.projectCount ?? 0).toLocaleString()}</p>
+                    <p style={styles.statusValue} data-testid="status-projects-value">{(stats.projectCount ?? 0).toLocaleString()}</p>
                   </div>
                 </>
               )}
@@ -298,7 +300,7 @@ const App: React.FC = () => {
           )}
 
           {activeTab === 'overview' && (
-            <div style={styles.overviewGridContainer} className="nb-overview-grid">
+            <div style={styles.overviewGridContainer} className="nb-overview-grid" data-testid="panel-overview">
               {stats && (
                 <div className="nb-card-shell nb-fade-up" style={{ animationDelay: '60ms' }}>
                   <IndexHealth stats={stats} />
@@ -316,7 +318,7 @@ const App: React.FC = () => {
           )}
 
           {activeTab === 'search' && (
-            <div style={styles.gridContainer}>
+            <div style={styles.gridContainer} data-testid="panel-search">
               <div className="nb-card-shell nb-fade-up">
                 <SearchAnalytics />
               </div>
@@ -324,7 +326,7 @@ const App: React.FC = () => {
           )}
 
           {activeTab === 'sources' && (
-            <div style={styles.gridContainer}>
+            <div style={styles.gridContainer} data-testid="panel-sources">
               {sources && (
                 <div style={styles.fullWidth} className="nb-card-shell nb-fade-up">
                   <SourceManager sources={sources} onRefresh={refreshDashboard} />
@@ -334,7 +336,7 @@ const App: React.FC = () => {
           )}
 
           {activeTab === 'activity' && (
-            <div style={styles.gridContainer}>
+            <div style={styles.gridContainer} data-testid="panel-activity">
               {recentActivity && (
                 <div style={styles.fullWidth} className="nb-card-shell nb-fade-up">
                   <ActivityFeed activities={recentActivity} />
@@ -344,7 +346,7 @@ const App: React.FC = () => {
           )}
 
           {activeTab === 'performance' && (
-            <div style={styles.gridContainer}>
+            <div style={styles.gridContainer} data-testid="panel-performance">
               <div style={styles.fullWidth} className="nb-card-shell nb-fade-up">
                 <PerfTimeline metrics={performanceMetrics} />
               </div>
@@ -352,7 +354,7 @@ const App: React.FC = () => {
           )}
 
           {activeTab === 'memory' && (
-            <div style={styles.gridContainer}>
+            <div style={styles.gridContainer} data-testid="panel-memory">
               <div style={styles.fullWidth} className="nb-card-shell nb-fade-up">
                 <MemoryInsights stats={memoryStats} />
               </div>

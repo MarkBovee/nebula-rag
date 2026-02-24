@@ -148,7 +148,7 @@ const SourceManager: React.FC<SourceManagerProps> = ({ sources, onRefresh }) => 
   };
 
   return (
-    <div style={styles.card}>
+    <div style={styles.card} data-testid="sources-card">
       <h2 style={styles.title}>Source Management</h2>
 
       <div style={styles.filterRow}>
@@ -157,6 +157,7 @@ const SourceManager: React.FC<SourceManagerProps> = ({ sources, onRefresh }) => 
           style={styles.filterSelect}
           value={selectedProject}
           onChange={(event) => setSelectedProject(event.target.value)}
+          data-testid="sources-project-filter"
         >
           <option value="ALL_PROJECTS">All Projects ({sources.length})</option>
           {projectNames.map((projectName) => {
@@ -171,8 +172,8 @@ const SourceManager: React.FC<SourceManagerProps> = ({ sources, onRefresh }) => 
       </div>
       
       {filteredSources.length > 0 ? (
-        <div style={{ overflowX: 'auto' }}>
-          <table style={styles.table}>
+        <div style={{ overflowX: 'auto' }} className="nb-source-table-wrap">
+          <table style={styles.table} data-testid="sources-table">
             <thead style={styles.thead}>
               <tr>
                 <th style={styles.th}>Source Path</th>
@@ -184,9 +185,9 @@ const SourceManager: React.FC<SourceManagerProps> = ({ sources, onRefresh }) => 
             </thead>
             <tbody>
               {filteredSources.map((source, idx) => (
-                <tr key={idx}>
+                <tr key={idx} data-testid="source-row">
                   <td style={styles.td}>
-                    <span style={{ color: nebulaTheme.colors.neonCyan }}>
+                    <span style={{ color: nebulaTheme.colors.neonCyan }} className="nb-source-path" data-testid="source-path">
                       {source.sourcePath}
                     </span>
                   </td>
@@ -199,6 +200,7 @@ const SourceManager: React.FC<SourceManagerProps> = ({ sources, onRefresh }) => 
                     <button
                       onClick={() => handleReindex(source.sourcePath)}
                       disabled={reindexing === source.sourcePath}
+                      data-testid="source-reindex-button"
                       style={{
                         ...styles.actionButton,
                         ...styles.reindexButton,
@@ -209,6 +211,7 @@ const SourceManager: React.FC<SourceManagerProps> = ({ sources, onRefresh }) => 
                     <button
                       onClick={() => handleDelete(source.sourcePath)}
                       disabled={deleting === source.sourcePath}
+                      data-testid="source-delete-button"
                       style={{
                         ...styles.actionButton,
                         ...styles.deleteButton,
@@ -223,7 +226,7 @@ const SourceManager: React.FC<SourceManagerProps> = ({ sources, onRefresh }) => 
           </table>
         </div>
       ) : (
-        <p style={{ color: nebulaTheme.colors.textMuted, textAlign: 'center', padding: nebulaTheme.spacing.lg }}>
+        <p style={{ color: nebulaTheme.colors.textMuted, textAlign: 'center', padding: nebulaTheme.spacing.lg }} data-testid="sources-empty-state">
           No sources found for this project filter
         </p>
       )}

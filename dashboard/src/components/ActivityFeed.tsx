@@ -93,14 +93,15 @@ const getEventColor = (eventType: string): string => {
 /// </summary>
 const ActivityFeed: React.FC<ActivityFeedProps> = ({ activities }) => {
   return (
-    <div style={styles.card}>
+    <div style={styles.card} data-testid="activity-card">
       <h2 style={styles.title}>Realtime Activity</h2>
       
-      <div style={styles.feedContainer}>
+      <div style={styles.feedContainer} data-testid="activity-list">
         {activities.length > 0 ? (
           activities.map((activity, idx) => (
             <div
               key={idx}
+              data-testid="activity-item"
               style={{
                 ...styles.activityItem,
                 borderLeftColor: getEventColor(activity.eventType),
@@ -122,7 +123,7 @@ const ActivityFeed: React.FC<ActivityFeedProps> = ({ activities }) => {
             </div>
           ))
         ) : (
-          <p style={{ color: nebulaTheme.colors.textMuted, textAlign: 'center', padding: nebulaTheme.spacing.lg }}>
+          <p style={{ color: nebulaTheme.colors.textMuted, textAlign: 'center', padding: nebulaTheme.spacing.lg }} data-testid="activity-empty-state">
             No recent activity
           </p>
         )}
