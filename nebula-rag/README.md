@@ -1,94 +1,101 @@
 # Home Assistant Add-on: Nebula RAG
 
-This directory contains the full Home Assistant add-on package for a long-running NebulaRAG host that serves:
+Nebula RAG is a Home Assistant add-on that runs a long-lived NebulaRAG host inside a container. The add-on provides:
 
-- a Nebula-themed browser UI
-- an MCP-over-HTTP endpoint (`/mcp`)
+- A browser-first dashboard for inspecting indexed sources, index health, and retrieval results.
+- An MCP-over-HTTP endpoint for agent integrations and editor tooling.
 
-## Package Contents
+**Key features**
 
-- `../repository.json`: Add-on repository metadata.
-- `config.json`: Add-on manifest, options, and schema.
-- `DOCS.md`: Home Assistant-facing usage guide.
-- `Dockerfile`: Multi-stage add-on image build.
-- `run.sh`: Runtime option-to-env mapping and host startup.
-- `build.yaml`: Build arguments for repository URL and ref pinning.
-- `icon.png` / `logo.png`: Add-on branding assets.
+- Persistent RAG service backed by PostgreSQL + `pgvector` for vector similarity queries.
+- One-click Home Assistant installation via this repository package.
+- Built-in dashboard to view sources, perform queries, and inspect chunk-level results.
+- MCP JSON-RPC endpoint for integrating external agents and IDE extensions.
 
-## Build Source and Pinning
+**Who should use this add-on?**
 
-The image build clones this repository by default:
+- Developers who need fast, project-aware context lookups inside Home Assistant.
+- Teams who want a local-first RAG endpoint for automating changelogs, PR drafting, or code-aware Q&A.
+
+## Quick Start
+
+1. Add this repository to Home Assistant add-on repositories and install the `Nebula RAG` add-on.
+2. Configure the add-on's `database.*` settings to point to a PostgreSQL instance with `pgvector` installed.
+3. Start the add-on and open the add-on ingress page to access the dashboard.
+
+Common quick commands (from the repository root):
+
+```powershell
+dotnet run --project src\NebulaRAG.Cli -- init
+dotnet run --project src\NebulaRAG.Cli -- index --source .
+dotnet run --project src\NebulaRAG.Cli -- query --text "How is MCP transport handled?"
+```
+
+## Configuration
+
+Required fields (in `config.json` add-on options):
+
+- `database.host` — PostgreSQL host
+- `database.port` — PostgreSQL port (default: `5432`)
+- `database.name` — database name
+- `database.username` — DB user
+- `database.password` — DB password
+- `database.ssl_mode` — `Disable`/`Prefer`/`Require` (recommended: `Prefer`)
+
+Recommended options:
+
+- `default_index_path` — path to index inside the container (default: `/share`)
+- `path_base` — optional route prefix (e.g., `/nebula`) to expose UI and MCP under a subpath
+- `telemetry.otlp_endpoint` — optional OTLP collector URL for traces/metrics
+
+Security notes:
+
+- Do not expose the PostgreSQL instance directly to the public internet.
+- Use Home Assistant ingress for UI access rather than exposing the service port when possible.
+
+## Endpoints
+
+- UI root: `http://<host>:8099/` (ingress will provide a friendly path)
+- Dashboard: `http://<host>:8099/dashboard/`
+- MCP JSON-RPC: `http://<host>:8099/mcp`
+
+If `path_base` is set to `/nebula`, paths become `/nebula/`, `/nebula/dashboard/`, and `/nebula/mcp`.
+
+## Packaging & Build
+
+By default the build clones this repository:
 
 - `NEBULARAG_REPO_URL=https://github.com/MarkBovee/NebulaRAG.git`
 - `NEBULARAG_REPO_REF=main`
 
-Change `build.yaml` to pin a release tag, branch, or fork.
+Override `build.yaml` to pin a tag, branch, or fork for deterministic builds.
 
-## Runtime Surface
+## Release & Validation
 
-- Web UI (Home Assistant ingress and optional exposed port, root `/` redirects to `/dashboard/`)
-- MCP endpoint: `http://homeassistant.local:8099/mcp`
+When changing add-on behavior:
 
-With optional path base (`path_base=/nebula`):
+1. Bump the add-on version in `nebula-rag/config.json`.
+2. Add a matching entry to `nebula-rag/CHANGELOG.md`.
+3. Commit, push, and create a release if applicable.
 
-- Web UI root: `http://homeassistant.local:8099/nebula/`
-- Dashboard UI: `http://homeassistant.local:8099/nebula/dashboard/`
-- MCP endpoint: `http://homeassistant.local:8099/nebula/mcp`
-
-## Required Configuration
-
-- `database.host`
-- `database.port`
-- `database.name`
-- `database.username`
-- `database.password`
-- `database.ssl_mode`
-
-Recommended defaults:
-
-- `default_index_path=/share`
-- `database.port=5432`
-- `database.ssl_mode=Prefer` (or `Disable` on trusted LAN setups)
-
-Optional route prefix:
-
-- `path_base=/nebula` to expose UI/API/MCP under `/nebula/...`
-
-Optional telemetry export:
-
-- `telemetry.otlp_endpoint=http://collector:4317` to export OpenTelemetry traces/metrics to an OTLP collector.
-
-## Runtime Notes
-
-- Runtime image installs `libgssapi-krb5-2` to satisfy .NET native dependency loading.
-- Service listens on port `8099`.
-- Add-on manifest maps `8099/tcp` to host port `8099` by default; adjust in Home Assistant `Network` settings if needed.
-- Home Assistant ingress is enabled in `config.json`.
-
-## Release Process
-
-When add-on behavior changes:
-
-1. Bump `nebula-rag/config.json` version.
-2. Update `nebula-rag/CHANGELOG.md`.
-3. Commit and push.
-
-Patch bump:
+Use the helper script to bump versions:
 
 ```powershell
 pwsh -File .\scripts\bump-ha-addon-version.ps1 -Part Patch
 ```
 
-Explicit version:
+Validation is performed by `.github/workflows/ha-addon-validate.yml` and includes manifest checks and test builds.
 
-```powershell
-pwsh -File .\scripts\bump-ha-addon-version.ps1 -Version 0.2.0
-```
+## Troubleshooting
 
-## Validation
+- Database migration failures: verify connectivity and that `pgvector` is installed in the target Postgres instance.
+- No results from queries: confirm that sources were indexed (`index` CLI) and that `default_index_path` points to readable files.
+- Ingress or route issues: confirm `path_base` is configured consistently and Home Assistant ingress is enabled.
 
-Validation is automated in `.github/workflows/ha-addon-validate.yml` and includes:
+## Further reading
 
-- JSON manifest validation.
-- Required file checks.
-- Home Assistant builder `--test` image build for `amd64`.
+- See `DOCS.md` for Home Assistant-specific run and configuration notes.
+- See the top-level `README.md` for developer CLI usage, MCP tooling, and architecture details.
+
+---
+Updated to provide clearer guidance for installing and operating the Nebula RAG Home Assistant add-on.
