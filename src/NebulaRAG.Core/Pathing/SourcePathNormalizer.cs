@@ -19,7 +19,13 @@ public static class SourcePathNormalizer
         }
 
         var trimmed = sourcePath.Trim();
+        if (Uri.TryCreate(trimmed, UriKind.Absolute, out var absoluteUri) && !absoluteUri.IsFile)
+        {
+            return trimmed;
+        }
+
         var normalizedProjectRoot = NormalizeAbsolutePath(projectRootPath);
+        var projectFolderName = Path.GetFileName(normalizedProjectRoot.TrimEnd('/'));
 
         string normalizedPath;
         if (Path.IsPathRooted(trimmed))
@@ -28,19 +34,19 @@ public static class SourcePathNormalizer
             if (IsPathUnderRoot(normalizedPath, normalizedProjectRoot))
             {
                 var relative = Path.GetRelativePath(normalizedProjectRoot, normalizedPath);
-                return NormalizeRelativePath(relative);
+                return PrefixWithProjectFolder(NormalizeRelativePath(relative), projectFolderName);
             }
 
             var fallbackRelative = TryExtractRelativeByProjectFolderName(normalizedPath, normalizedProjectRoot);
             if (fallbackRelative is not null)
             {
-                return fallbackRelative;
+                return PrefixWithProjectFolder(fallbackRelative, projectFolderName);
             }
 
             return normalizedPath;
         }
 
-        return NormalizeRelativePath(trimmed);
+        return PrefixWithProjectFolder(NormalizeRelativePath(trimmed), projectFolderName);
     }
 
     /// <summary>
@@ -123,5 +129,28 @@ public static class SourcePathNormalizer
 
         var relativePath = normalizedAbsolutePath[relativeStart..];
         return NormalizeRelativePath(relativePath);
+    }
+
+    /// <summary>
+    /// Prefixes a relative path with the project folder name when missing.
+    /// </summary>
+    /// <param name="normalizedRelativePath">Normalized relative path.</param>
+    /// <param name="projectFolderName">Project folder segment.</param>
+    /// <returns>Prefixed relative path.</returns>
+    private static string PrefixWithProjectFolder(string normalizedRelativePath, string? projectFolderName)
+    {
+        if (string.IsNullOrWhiteSpace(projectFolderName) || string.IsNullOrWhiteSpace(normalizedRelativePath))
+        {
+            return normalizedRelativePath;
+        }
+
+        var prefix = $"{projectFolderName}/";
+        if (normalizedRelativePath.Equals(projectFolderName, StringComparison.OrdinalIgnoreCase)
+            || normalizedRelativePath.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+        {
+            return normalizedRelativePath;
+        }
+
+        return $"{projectFolderName}/{normalizedRelativePath}";
     }
 }

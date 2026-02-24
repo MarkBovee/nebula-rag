@@ -4,6 +4,12 @@ All notable changes to the Nebula RAG Home Assistant add-on are documented in th
 
 The format is inspired by Keep a Changelog and follows semantic versioning.
 
+## [0.2.10] - 2026-02-24
+
+- Updated source-path normalization to prefix indexed keys with the project folder name (for example `NebulaRAG/src/...`).
+- Preserved URL-based source keys while normalizing file-system paths.
+- Re-synchronized `rag-sources.md` after source key migration.
+
 ## [0.2.9] - 2026-02-24
 
 - Normalized indexed source keys to project-relative paths for cleaner MCP source output.
