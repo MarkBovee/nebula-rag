@@ -351,7 +351,12 @@ public sealed class PostgresRagStore
         const string sql = @"
             SELECT 
                 COUNT(DISTINCT d.id) as doc_count,
-                COUNT(DISTINCT d.source_path) as source_count,
+                COUNT(DISTINCT
+                    CASE
+                        WHEN d.source_path ~* '^https?://' THEN split_part(split_part(d.source_path, '://', 2), '/', 1)
+                        ELSE split_part(replace(d.source_path, '\\', '/'), '/', 1)
+                    END
+                ) as project_count,
                 COUNT(c.id) as chunk_count,
                 COALESCE(SUM(c.token_count), 0) as total_tokens,
                 MIN(d.indexed_at) as oldest,

@@ -169,7 +169,7 @@ test('renders overview status and summary metrics from dashboard data', async ({
   await expect(page.getByTestId('metric-total-documents')).toContainText('124');
   await expect(page.getByTestId('metric-total-chunks')).toContainText('1,822');
   await expect(page.getByTestId('source-breakdown-list')).toBeVisible();
-  await expect(page.getByTestId('source-breakdown-item')).toHaveCount(3);
+  await expect(page.getByTestId('source-breakdown-item')).toHaveCount(1);
 });
 
 test('navigates through all tabs and validates key data surfaces', async ({ page }) => {

@@ -182,6 +182,34 @@ const styles = {
     marginTop: `-${nebulaTheme.spacing.xs}`,
     marginBottom: nebulaTheme.spacing.md,
   } as React.CSSProperties,
+  memoryScopeStatusRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: nebulaTheme.spacing.sm,
+    marginTop: `-${nebulaTheme.spacing.xs}`,
+    marginBottom: nebulaTheme.spacing.md,
+    flexWrap: 'wrap',
+  } as React.CSSProperties,
+  memoryScopeStatusLabel: {
+    color: nebulaTheme.colors.textMuted,
+    fontSize: nebulaTheme.typography.fontSize.xs,
+    textTransform: 'uppercase',
+    letterSpacing: '0.08em',
+  } as React.CSSProperties,
+  memoryScopeBadge: (scope: MemoryScopeType) => ({
+    display: 'inline-flex',
+    alignItems: 'center',
+    borderRadius: '999px',
+    padding: `${nebulaTheme.spacing.xs} ${nebulaTheme.spacing.sm}`,
+    fontSize: nebulaTheme.typography.fontSize.xs,
+    fontWeight: nebulaTheme.typography.fontWeight.semibold,
+    border: `1px solid ${scope === 'global' ? nebulaTheme.colors.success : nebulaTheme.colors.accentPrimary}`,
+    background: scope === 'global'
+      ? 'rgba(46, 213, 115, 0.16)'
+      : 'linear-gradient(120deg, rgba(253, 93, 50, 0.2), rgba(247, 183, 49, 0.2))',
+    color: nebulaTheme.colors.textPrimary,
+    letterSpacing: '0.02em',
+  } as React.CSSProperties),
 };
 
 const tabs: Array<{ key: DashboardTab; label: string }> = [
@@ -204,6 +232,8 @@ const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<DashboardTab>('overview');
   const [memoryScope, setMemoryScope] = useState<MemoryScopeType>('global');
   const [memoryScopeValue, setMemoryScopeValue] = useState('');
+  const [appliedMemoryScope, setAppliedMemoryScope] = useState<MemoryScopeType>('global');
+  const [appliedMemoryScopeValue, setAppliedMemoryScopeValue] = useState('');
 
   const loadScopedMemoryStats = async (scope: MemoryScopeType, scopeValue: string, fallbackStats?: MemoryDashboardStats): Promise<MemoryDashboardStats | undefined> => {
     if (scope === 'global') {
@@ -226,7 +256,7 @@ const App: React.FC = () => {
     setDashboard(prev => ({ ...prev, loading: true, error: undefined }));
     try {
       const snapshot = await apiClient.getDashboard();
-      const scopedMemoryStats = await loadScopedMemoryStats(memoryScope, memoryScopeValue, snapshot.memoryStats);
+      const scopedMemoryStats = await loadScopedMemoryStats(appliedMemoryScope, appliedMemoryScopeValue, snapshot.memoryStats);
 
       setDashboard({
         health: snapshot.health,
@@ -248,15 +278,21 @@ const App: React.FC = () => {
   };
 
   const applyMemoryScope = async () => {
-    setDashboard(prev => ({ ...prev, loading: true, error: undefined }));
-
     try {
-      const scopedMemoryStats = await loadScopedMemoryStats(memoryScope, memoryScopeValue, dashboard.memoryStats);
+      const normalizedScopeValue = memoryScopeValue.trim();
+      if (memoryScope !== 'global' && !normalizedScopeValue) {
+        throw new Error(memoryScope === 'project' ? 'Project id is required for project scope.' : 'Session id is required for session scope.');
+      }
+
+      setDashboard(prev => ({ ...prev, loading: true, error: undefined }));
+      const scopedMemoryStats = await loadScopedMemoryStats(memoryScope, normalizedScopeValue, dashboard.memoryStats);
       setDashboard(prev => ({
         ...prev,
         memoryStats: scopedMemoryStats,
         loading: false,
       }));
+      setAppliedMemoryScope(memoryScope);
+      setAppliedMemoryScopeValue(normalizedScopeValue);
     } catch (error: any) {
       setDashboard(prev => ({
         ...prev,
@@ -359,7 +395,7 @@ const App: React.FC = () => {
                     <p style={styles.statusValue} data-testid="status-chunks-value">{(stats.chunkCount ?? stats.totalChunks ?? 0).toLocaleString()}</p>
                   </div>
                   <div style={styles.statusItem} className="nb-status-item" data-testid="status-projects">
-                    <p style={styles.statusLabel}>Sources</p>
+                    <p style={styles.statusLabel}>Projects</p>
                     <p style={styles.statusValue} data-testid="status-projects-value">{(stats.projectCount ?? 0).toLocaleString()}</p>
                   </div>
                 </>
@@ -452,8 +488,14 @@ const App: React.FC = () => {
                     Apply Scope
                   </button>
                 </div>
+                <div style={styles.memoryScopeStatusRow}>
+                  <span style={styles.memoryScopeStatusLabel}>Applied Scope</span>
+                  <span style={styles.memoryScopeBadge(appliedMemoryScope)} data-testid="memory-scope-badge">
+                    {appliedMemoryScope === 'global' ? 'Global (all memories)' : `${appliedMemoryScope}: ${appliedMemoryScopeValue || 'n/a'}`}
+                  </span>
+                </div>
                 <p style={styles.memoryScopeHint}>
-                  Scope controls memory analytics and API-backed memory list/search filters while keeping global as default behavior.
+                  Use scope controls to focus memory analytics while keeping global as the default overview.
                 </p>
                 <MemoryInsights stats={memoryStats} />
               </div>

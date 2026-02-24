@@ -4,6 +4,17 @@ All notable changes to the Nebula RAG Home Assistant add-on are documented in th
 
 The format is inspired by Keep a Changelog and follows semantic versioning.
 
+## [0.2.46] - 2026-02-24
+
+- Improved Memory tab scope visibility by adding a dedicated `Applied Scope` status badge, making it obvious when analytics are in `Global` mode versus `Project`/`Session` filters.
+- Kept global-all-memories as the default applied view, with scope changes only taking effect when users click `Apply Scope`.
+
+## [0.2.45] - 2026-02-24
+
+- Restored project-aware source views in the dashboard (`Source Breakdown` and `Source Management` project filter) using a generic project-key extraction strategy without hardcoded segment lists like `workspace-notes`, `notes`, or `docs`.
+- Updated index stats project counting to compute distinct project keys from stored source-path prefixes/URLs, so the top KPI reports projects again.
+- Fixed memory-scope UX so global memory analytics remain the default overall view; project/session filtering only applies after clicking `Apply Scope`.
+
 ## [0.2.44] - 2026-02-24
 
 - Fixed stale `Indexing Rate (docs/sec)` values in the performance timeline by expiring old explicit indexing samples and combining them with live document-delta throughput.

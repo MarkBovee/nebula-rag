@@ -2,6 +2,7 @@ import React from 'react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 import { nebulaTheme, chartTheme } from '@/styles/theme';
 import type { SourceInfo } from '@/types';
+import { summarizeSourcesByProject } from '@/utils/projectGrouping';
 
 interface SourceBreakdownProps {
   sources: SourceInfo[];
@@ -29,19 +30,16 @@ const styles = {
 };
 
 /// <summary>
-/// SourceBreakdown component visualizes chunk distribution across top indexed source paths.
+/// SourceBreakdown component visualizes document distribution across projects using a pie chart.
 /// </summary>
 const SourceBreakdown: React.FC<SourceBreakdownProps> = ({ sources }) => {
-  const data = sources
-    .map((source) => ({
-      name: source.sourcePath,
-      value: source.chunkCount,
-      chunkCount: source.chunkCount,
-    }))
-    .sort((left, right) => right.value - left.value)
-    .slice(0, 12);
+  const data = summarizeSourcesByProject(sources).map((projectSummary) => ({
+    name: projectSummary.projectName,
+    value: projectSummary.sourceCount,
+    chunkCount: projectSummary.chunkCount,
+  }));
 
-  const totalChunks = data.reduce((sum, item) => sum + item.value, 0);
+  const totalSources = data.reduce((sum, item) => sum + item.value, 0);
 
   return (
     <div style={styles.card} data-testid="source-breakdown-card">
@@ -59,7 +57,7 @@ const SourceBreakdown: React.FC<SourceBreakdownProps> = ({ sources }) => {
                 outerRadius={100}
                 paddingAngle={2}
                 dataKey="value"
-                label={({ value }) => `${totalChunks === 0 ? 0 : ((value / totalChunks) * 100).toFixed(0)}%`}
+                label={({ value }) => `${((value / totalSources) * 100).toFixed(0)}%`}
               >
                 {data.map((_, index) => (
                   <Cell key={`cell-${index}`} fill={chartTheme.colors[index % chartTheme.colors.length]} />
@@ -73,8 +71,9 @@ const SourceBreakdown: React.FC<SourceBreakdownProps> = ({ sources }) => {
                   color: nebulaTheme.colors.textPrimary,
                 }}
                 formatter={(value, _, payload) => {
-                  const chunkCount = Number(value);
-                  return [`${chunkCount} chunks`, payload?.payload?.name ?? 'Source'];
+                  const sourceCount = Number(value);
+                  const payloadChunkCount = Number(payload?.payload?.chunkCount ?? 0);
+                  return [`${sourceCount} sources (${payloadChunkCount} chunks)`, 'Project'];
                 }}
               />
             </PieChart>
@@ -97,7 +96,7 @@ const SourceBreakdown: React.FC<SourceBreakdownProps> = ({ sources }) => {
                   ● {item.name}
                 </span>
                 <span style={{ color: nebulaTheme.colors.textSecondary }}>
-                  {item.value} chunks ({totalChunks === 0 ? '0.0' : ((item.value / totalChunks) * 100).toFixed(1)}%)
+                  {item.value} sources ({((item.value / totalSources) * 100).toFixed(1)}%)
                 </span>
               </div>
             ))}
