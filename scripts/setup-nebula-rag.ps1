@@ -18,6 +18,7 @@ param(
 
     [string]$ServerName = "nebula-rag",
     [string]$ImageName = "localhost/nebula-rag-mcp:latest",
+    [string]$TemplateRawBaseUrl = "https://raw.githubusercontent.com/MarkBovee/NebulaRAG/main",
     [string]$HomeAssistantMcpUrl = "http://homeassistant.local:8099/nebula/mcp",
     [string]$ExternalHomeAssistantMcpUrl,
     [switch]$UseExternalHomeAssistantUrl,
@@ -66,6 +67,52 @@ function Ensure-Directory {
     if (-not (Test-Path -LiteralPath $Path)) {
         New-Item -ItemType Directory -Path $Path | Out-Null
     }
+}
+
+function Resolve-TemplateFile {
+    param(
+        [string]$TemplateRoot,
+        [string]$RelativePath,
+        [string]$RawBaseUrl,
+        [switch]$Required
+    )
+
+    $localPath = Join-Path $TemplateRoot $RelativePath
+    if (Test-Path -LiteralPath $localPath) {
+        return [System.IO.Path]::GetFullPath($localPath)
+    }
+
+    if ([string]::IsNullOrWhiteSpace($RawBaseUrl)) {
+        if ($Required) {
+            throw "Required template file not found locally and no raw template base URL provided: $RelativePath"
+        }
+
+        return $null
+    }
+
+    $normalizedRelativePath = ($RelativePath -replace '\\', '/').TrimStart('/')
+    $downloadRoot = Join-Path ([System.IO.Path]::GetTempPath()) "nebula-rag-setup-template"
+    $downloadPath = Join-Path $downloadRoot ($normalizedRelativePath -replace '/', '\\')
+
+    if (-not (Test-Path -LiteralPath $downloadPath)) {
+        Ensure-Directory -Path (Split-Path -Parent $downloadPath)
+        $downloadUrl = "$(($RawBaseUrl.TrimEnd('/')))/$normalizedRelativePath"
+
+        try {
+            Invoke-WebRequest -Uri $downloadUrl -OutFile $downloadPath -ErrorAction Stop
+            Write-Host "Downloaded template file: $normalizedRelativePath"
+        }
+        catch {
+            if ($Required) {
+                throw "Failed to download required template file '$normalizedRelativePath' from '$downloadUrl'. $($_.Exception.Message)"
+            }
+
+            Write-Host "Skip optional template file: failed to download $normalizedRelativePath"
+            return $null
+        }
+    }
+
+    return [System.IO.Path]::GetFullPath($downloadPath)
 }
 
 function Write-TextFile {
@@ -433,11 +480,12 @@ function Ensure-EnvTemplate {
     param(
         [string]$ConfiguredEnvPath,
         [string]$TemplateRoot,
+        [string]$RawBaseUrl,
         [switch]$ForceWrite
     )
 
-    $rootEnvPath = Join-Path $TemplateRoot ".nebula.env"
-    $exampleEnvPath = Join-Path $TemplateRoot ".env.example"
+    $rootEnvPath = Resolve-TemplateFile -TemplateRoot $TemplateRoot -RelativePath ".nebula.env" -RawBaseUrl $RawBaseUrl
+    $exampleEnvPath = Resolve-TemplateFile -TemplateRoot $TemplateRoot -RelativePath ".env.example" -RawBaseUrl $RawBaseUrl
 
     $sourceEnvPath = $null
     if (Test-Path -LiteralPath $rootEnvPath) {
@@ -466,14 +514,11 @@ function Ensure-EnvTemplate {
 function Ensure-GlobalAgentsGuide {
     param(
         [string]$TemplateRoot,
+        [string]$RawBaseUrl,
         [switch]$ForceWrite
     )
 
-    $sourceAgentsPath = Join-Path $TemplateRoot "AGENTS.md"
-    if (-not (Test-Path -LiteralPath $sourceAgentsPath)) {
-        Write-Host "Skip global AGENTS setup: source file not found at $sourceAgentsPath"
-        return
-    }
+    $sourceAgentsPath = Resolve-TemplateFile -TemplateRoot $TemplateRoot -RelativePath "AGENTS.md" -RawBaseUrl $RawBaseUrl -Required
 
     $homeDirectory = $HOME
     if ([string]::IsNullOrWhiteSpace($homeDirectory)) {
@@ -522,7 +567,8 @@ function Setup-Project {
         [string]$ProjectPath,
         [switch]$ForceWrite,
         [switch]$SkipSkillFile,
-        [string]$TemplateRoot
+        [string]$TemplateRoot,
+        [string]$RawBaseUrl
     )
 
     $resolvedTargetPath = Resolve-Path -LiteralPath $ProjectPath -ErrorAction SilentlyContinue
@@ -538,18 +584,23 @@ function Setup-Project {
         throw "Refusing to scaffold into the scripts directory. Use -TargetPath to point at your project root."
     }
 
-    Copy-FileSafe -Source (Join-Path $TemplateRoot ".github/copilot-instructions.md") -Destination (Join-Path $targetRoot ".github/copilot-instructions.md") -ForceWrite:$ForceWrite
-    Copy-FileSafe -Source (Join-Path $TemplateRoot ".github/instructions/rag.instructions.md") -Destination (Join-Path $targetRoot ".github/instructions/rag.instructions.md") -ForceWrite:$ForceWrite
-    Copy-FileSafe -Source (Join-Path $TemplateRoot "AGENTS.md") -Destination (Join-Path $targetRoot "AGENTS.md") -ForceWrite:$ForceWrite
+    $copilotInstructionsSource = Resolve-TemplateFile -TemplateRoot $TemplateRoot -RelativePath ".github/copilot-instructions.md" -RawBaseUrl $RawBaseUrl -Required
+    $ragInstructionsSource = Resolve-TemplateFile -TemplateRoot $TemplateRoot -RelativePath ".github/instructions/rag.instructions.md" -RawBaseUrl $RawBaseUrl -Required
+    $agentsSource = Resolve-TemplateFile -TemplateRoot $TemplateRoot -RelativePath "AGENTS.md" -RawBaseUrl $RawBaseUrl -Required
+
+    Copy-FileSafe -Source $copilotInstructionsSource -Destination (Join-Path $targetRoot ".github/copilot-instructions.md") -ForceWrite:$ForceWrite
+    Copy-FileSafe -Source $ragInstructionsSource -Destination (Join-Path $targetRoot ".github/instructions/rag.instructions.md") -ForceWrite:$ForceWrite
+    Copy-FileSafe -Source $agentsSource -Destination (Join-Path $targetRoot "AGENTS.md") -ForceWrite:$ForceWrite
     Write-Host "Applied memory routing templates for project setup (Nebula memory + VS Code memory, recall/store cadence, and secret-safe memory rules)."
 
     if (-not $SkipSkillFile) {
-        Copy-FileSafe -Source (Join-Path $TemplateRoot ".github/skills/nebularag/SKILL.md") -Destination (Join-Path $targetRoot ".github/skills/nebularag/SKILL.md") -ForceWrite:$ForceWrite
+        $skillSource = Resolve-TemplateFile -TemplateRoot $TemplateRoot -RelativePath ".github/skills/nebularag/SKILL.md" -RawBaseUrl $RawBaseUrl -Required
+        Copy-FileSafe -Source $skillSource -Destination (Join-Path $targetRoot ".github/skills/nebularag/SKILL.md") -ForceWrite:$ForceWrite
         Write-Host "Applied Nebula skill template with memory recall/list and persistence workflow."
     }
 
-    $sourceEnvExample = Join-Path $TemplateRoot ".env.example"
-    if (Test-Path -LiteralPath $sourceEnvExample) {
+    $sourceEnvExample = Resolve-TemplateFile -TemplateRoot $TemplateRoot -RelativePath ".env.example" -RawBaseUrl $RawBaseUrl
+    if (-not [string]::IsNullOrWhiteSpace($sourceEnvExample)) {
         Copy-FileSafe -Source $sourceEnvExample -Destination (Join-Path $targetRoot ".env.example") -ForceWrite:$ForceWrite
     }
 
@@ -571,7 +622,8 @@ function Setup-User {
         [switch]$WriteEnvTemplate,
         [switch]$ForceWrite,
         [switch]$SkipBackup,
-        [string]$TemplateRoot
+        [string]$TemplateRoot,
+        [string]$RawBaseUrl
     )
 
     $configPaths = @()
@@ -593,7 +645,7 @@ function Setup-User {
     }
 
     if ($WriteEnvTemplate) {
-        Ensure-EnvTemplate -ConfiguredEnvPath $ConfiguredEnvFilePath -TemplateRoot $TemplateRoot -ForceWrite:$ForceWrite
+        Ensure-EnvTemplate -ConfiguredEnvPath $ConfiguredEnvFilePath -TemplateRoot $TemplateRoot -RawBaseUrl $RawBaseUrl -ForceWrite:$ForceWrite
     }
 
     Write-Host ""
@@ -675,19 +727,19 @@ if ([string]::IsNullOrWhiteSpace($EnvFilePath)) {
 
 if ($Mode -in @("Both", "User")) {
     if ($resolvedClientTargets -contains "VSCode") {
-        Setup-User -SelectedChannel $Channel -ExplicitUserConfigPath $UserConfigPath -ConfiguredServerName $ServerName -ConfiguredImageName $ImageName -ConfiguredEnvFilePath $EnvFilePath -SelectedInstallTarget $resolvedInstallTarget -ConfiguredHomeAssistantMcpUrl $resolvedHomeAssistantMcpUrl -WriteEnvTemplate:($CreateEnvTemplate -and $resolvedInstallTarget -eq "LocalContainer") -ForceWrite:$Force -SkipBackup:$NoBackup -TemplateRoot $templateRoot
+        Setup-User -SelectedChannel $Channel -ExplicitUserConfigPath $UserConfigPath -ConfiguredServerName $ServerName -ConfiguredImageName $ImageName -ConfiguredEnvFilePath $EnvFilePath -SelectedInstallTarget $resolvedInstallTarget -ConfiguredHomeAssistantMcpUrl $resolvedHomeAssistantMcpUrl -WriteEnvTemplate:($CreateEnvTemplate -and $resolvedInstallTarget -eq "LocalContainer") -ForceWrite:$Force -SkipBackup:$NoBackup -TemplateRoot $templateRoot -RawBaseUrl $TemplateRawBaseUrl
     }
 
     if ($resolvedClientTargets -contains "ClaudeCode") {
         $userServerDefinition = New-ServerDefinition -ConfiguredImage $ImageName -ConfiguredEnvFile $EnvFilePath -WorkspaceFolderScope "" -HostSourcePath "" -SelectedInstallTarget $resolvedInstallTarget -ConfiguredHomeAssistantMcpUrl $resolvedHomeAssistantMcpUrl
         Setup-ClaudeUser -ExplicitClaudeUserConfigPath $ClaudeUserConfigPath -ConfiguredServerName $ServerName -ServerDefinition $userServerDefinition -ForceWrite:$Force -SkipBackup:$NoBackup
         if ($CreateEnvTemplate -and $resolvedInstallTarget -eq "LocalContainer") {
-            Ensure-EnvTemplate -ConfiguredEnvPath $EnvFilePath -TemplateRoot $templateRoot -ForceWrite:$Force
+            Ensure-EnvTemplate -ConfiguredEnvPath $EnvFilePath -TemplateRoot $templateRoot -RawBaseUrl $TemplateRawBaseUrl -ForceWrite:$Force
         }
     }
 
     if (-not $SkipGlobalAgents) {
-        Ensure-GlobalAgentsGuide -TemplateRoot $templateRoot -ForceWrite:$Force
+        Ensure-GlobalAgentsGuide -TemplateRoot $templateRoot -RawBaseUrl $TemplateRawBaseUrl -ForceWrite:$Force
     }
     else {
         Write-Host "Skip global AGENTS setup by request (-SkipGlobalAgents)."
@@ -704,7 +756,7 @@ if ($Mode -in @("Both", "Project")) {
         }
     }
 
-    Setup-Project -ProjectPath $TargetPath -ForceWrite:$Force -SkipSkillFile:$SkipSkill -TemplateRoot $templateRoot
+    Setup-Project -ProjectPath $TargetPath -ForceWrite:$Force -SkipSkillFile:$SkipSkill -TemplateRoot $templateRoot -RawBaseUrl $TemplateRawBaseUrl
 
     if ($resolvedClientTargets -contains "ClaudeCode") {
         $projectServerDefinition = New-ServerDefinition -ConfiguredImage $ImageName -ConfiguredEnvFile $EnvFilePath -WorkspaceFolderScope "" -HostSourcePath '${PWD}' -SelectedInstallTarget $resolvedInstallTarget -ConfiguredHomeAssistantMcpUrl $resolvedHomeAssistantMcpUrl

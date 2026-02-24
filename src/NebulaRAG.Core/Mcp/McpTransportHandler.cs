@@ -191,6 +191,13 @@ public sealed partial class McpTransportHandler
     {
         return toolName switch
         {
+            QueryProjectRagToolName => BuildObjectSchema(
+                new JsonObject
+                {
+                    ["text"] = BuildStringSchema("Semantic query text."),
+                    ["limit"] = BuildIntegerSchema("Optional max number of matches to return.", minimum: 1, maximum: 20)
+                },
+                "text"),
             RagIndexPathToolName => BuildObjectSchema(
                 new JsonObject
                 {
@@ -222,11 +229,48 @@ public sealed partial class McpTransportHandler
                     ["projectName"] = BuildStringSchema("Optional project name used as the source-key prefix.")
                 },
                 "sourcePath"),
+            RagGetChunkToolName => BuildObjectSchema(
+                new JsonObject
+                {
+                    ["chunkId"] = BuildIntegerSchema("Chunk row identifier to fetch.", minimum: 1)
+                },
+                "chunkId"),
+            RagSearchSimilarToolName => BuildObjectSchema(
+                new JsonObject
+                {
+                    ["text"] = BuildStringSchema("Semantic query text."),
+                    ["limit"] = BuildIntegerSchema("Optional max number of matches to return.", minimum: 1, maximum: 20)
+                },
+                "text"),
+            RagNormalizeSourcePathsToolName => BuildObjectSchema(
+                new JsonObject
+                {
+                    ["projectRootPath"] = BuildStringSchema("Optional project root path used for path normalization.")
+                }),
+            RagDeleteSourceToolName => BuildObjectSchema(
+                new JsonObject
+                {
+                    ["sourcePath"] = BuildStringSchema("Indexed source path to delete."),
+                    ["confirm"] = BuildBooleanSchema("Safety flag. Must be true to delete.")
+                },
+                "sourcePath",
+                "confirm"),
+            RagPurgeAllToolName => BuildObjectSchema(
+                new JsonObject
+                {
+                    ["confirmPhrase"] = BuildConstStringSchema("Safety phrase required to purge all indexed data.", "PURGE ALL")
+                },
+                "confirmPhrase"),
+            RagListSourcesToolName => BuildObjectSchema(
+                new JsonObject
+                {
+                    ["limit"] = BuildIntegerSchema("Optional max number of sources to return.", minimum: 1, maximum: 1000)
+                }),
             MemoryStoreToolName => BuildObjectSchema(
                 new JsonObject
                 {
                     ["sessionId"] = BuildStringSchema("Optional session-id for grouping related memories."),
-                    ["type"] = BuildStringSchema("Memory type: episodic, semantic, or procedural."),
+                    ["type"] = BuildEnumStringSchema("Memory type.", "episodic", "semantic", "procedural"),
                     ["content"] = BuildStringSchema("Natural-language memory content to store."),
                     ["tags"] = new JsonObject
                     {
@@ -242,7 +286,7 @@ public sealed partial class McpTransportHandler
                 {
                     ["text"] = BuildStringSchema("Semantic probe text for memory recall."),
                     ["limit"] = BuildIntegerSchema("Optional max number of memories to return.", minimum: 1, maximum: 50),
-                    ["type"] = BuildStringSchema("Optional memory type filter."),
+                    ["type"] = BuildEnumStringSchema("Optional memory type filter.", "episodic", "semantic", "procedural"),
                     ["tag"] = BuildStringSchema("Optional memory tag filter."),
                     ["sessionId"] = BuildStringSchema("Optional session-id filter.")
                 },
@@ -251,10 +295,30 @@ public sealed partial class McpTransportHandler
                 new JsonObject
                 {
                     ["limit"] = BuildIntegerSchema("Optional max number of memories to list.", minimum: 1, maximum: 100),
-                    ["type"] = BuildStringSchema("Optional memory type filter."),
+                    ["type"] = BuildEnumStringSchema("Optional memory type filter.", "episodic", "semantic", "procedural"),
                     ["tag"] = BuildStringSchema("Optional memory tag filter."),
                     ["sessionId"] = BuildStringSchema("Optional session-id filter.")
                 }),
+            MemoryDeleteToolName => BuildObjectSchema(
+                new JsonObject
+                {
+                    ["memoryId"] = BuildIntegerSchema("Memory identifier to delete.", minimum: 1)
+                },
+                "memoryId"),
+            MemoryUpdateToolName => BuildObjectSchema(
+                new JsonObject
+                {
+                    ["memoryId"] = BuildIntegerSchema("Memory identifier to update.", minimum: 1),
+                    ["type"] = BuildEnumStringSchema("Optional memory type update.", "episodic", "semantic", "procedural"),
+                    ["content"] = BuildStringSchema("Optional replacement content."),
+                    ["tags"] = new JsonObject
+                    {
+                        ["type"] = "array",
+                        ["description"] = "Optional replacement tags.",
+                        ["items"] = BuildStringSchema("Memory tag.")
+                    }
+                },
+                "memoryId"),
             _ => BuildObjectSchema(new JsonObject())
         };
     }
@@ -297,6 +361,58 @@ public sealed partial class McpTransportHandler
         return new JsonObject
         {
             ["type"] = "string",
+            ["description"] = description
+        };
+    }
+
+    /// <summary>
+    /// Builds a string-property schema node with enum constraints.
+    /// </summary>
+    /// <param name="description">Property description.</param>
+    /// <param name="values">Allowed string values.</param>
+    /// <returns>String enum schema node.</returns>
+    private static JsonObject BuildEnumStringSchema(string description, params string[] values)
+    {
+        var enumValues = new JsonArray();
+        foreach (var value in values)
+        {
+            enumValues.Add(value);
+        }
+
+        return new JsonObject
+        {
+            ["type"] = "string",
+            ["description"] = description,
+            ["enum"] = enumValues
+        };
+    }
+
+    /// <summary>
+    /// Builds a string-property schema node constrained to one constant value.
+    /// </summary>
+    /// <param name="description">Property description.</param>
+    /// <param name="value">Required constant string value.</param>
+    /// <returns>Constant string schema node.</returns>
+    private static JsonObject BuildConstStringSchema(string description, string value)
+    {
+        return new JsonObject
+        {
+            ["type"] = "string",
+            ["description"] = description,
+            ["const"] = value
+        };
+    }
+
+    /// <summary>
+    /// Builds a boolean-property schema node with description.
+    /// </summary>
+    /// <param name="description">Property description.</param>
+    /// <returns>Boolean schema node.</returns>
+    private static JsonObject BuildBooleanSchema(string description)
+    {
+        return new JsonObject
+        {
+            ["type"] = "boolean",
             ["description"] = description
         };
     }

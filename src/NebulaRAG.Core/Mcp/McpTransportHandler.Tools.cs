@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Diagnostics;
+using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -32,7 +33,7 @@ public sealed partial class McpTransportHandler
                 RagHealthCheckToolName => await ExecuteHealthCheckToolAsync(cancellationToken),
                 RagServerInfoToolName => ExecuteServerInfoTool(),
                 RagIndexStatsToolName => await ExecuteIndexStatsToolAsync(cancellationToken),
-                RagListSourcesToolName => await ExecuteListSourcesToolAsync(cancellationToken),
+                RagListSourcesToolName => await ExecuteListSourcesToolAsync(arguments, cancellationToken),
                 RagIndexPathToolName => await ExecuteIndexPathToolAsync(arguments, cancellationToken),
                 RagIndexTextToolName => await ExecuteIndexTextToolAsync(arguments, cancellationToken),
                 RagIndexUrlToolName => await ExecuteIndexUrlToolAsync(arguments, cancellationToken),
@@ -233,13 +234,16 @@ public sealed partial class McpTransportHandler
     /// <summary>
     /// Executes indexed source listing.
     /// </summary>
+    /// <param name="arguments">Tool arguments.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Tool result payload.</returns>
-    private async Task<JsonObject> ExecuteListSourcesToolAsync(CancellationToken cancellationToken)
+    private async Task<JsonObject> ExecuteListSourcesToolAsync(JsonObject? arguments, CancellationToken cancellationToken)
     {
+        var limit = Math.Clamp(arguments?["limit"]?.GetValue<int?>() ?? 200, 1, 1000);
         var sources = await _managementService.ListSourcesAsync(cancellationToken: cancellationToken);
+        var limitedSources = sources.Take(limit).ToList();
         var items = new JsonArray();
-        foreach (var source in sources)
+        foreach (var source in limitedSources)
         {
             items.Add(new JsonObject
             {
@@ -249,7 +253,13 @@ public sealed partial class McpTransportHandler
             });
         }
 
-        return BuildToolResult("Indexed sources.", new JsonObject { ["items"] = items });
+        return BuildToolResult("Indexed sources.", new JsonObject
+        {
+            ["items"] = items,
+            ["limit"] = limit,
+            ["returnedCount"] = limitedSources.Count,
+            ["totalCount"] = sources.Count
+        });
     }
 
     /// <summary>
@@ -382,13 +392,12 @@ public sealed partial class McpTransportHandler
     /// <returns>Tool result payload.</returns>
     private async Task<JsonObject> ExecuteGetChunkToolAsync(JsonObject? arguments, CancellationToken cancellationToken)
     {
-        var chunkId = arguments?["chunkId"]?.GetValue<long?>();
-        if (chunkId is null || chunkId.Value <= 0)
+        if (!TryGetLongArgument(arguments, "chunkId", out var chunkId) || chunkId <= 0)
         {
-            return BuildToolResult("chunkId is required and must be > 0.", isError: true);
+            return BuildToolResult("chunkId is required and must be a positive integer. Example: { \"chunkId\": 123 }", isError: true);
         }
 
-        var chunk = await _store.GetChunkByIdAsync(chunkId.Value, cancellationToken);
+        var chunk = await _store.GetChunkByIdAsync(chunkId, cancellationToken);
         if (chunk is null)
         {
             return BuildToolResult("Chunk not found.", isError: true);
@@ -403,6 +412,48 @@ public sealed partial class McpTransportHandler
             ["indexedAtUtc"] = chunk.IndexedAtUtc.ToUniversalTime().ToString("O"),
             ["chunkText"] = chunk.ChunkText
         });
+    }
+
+    /// <summary>
+    /// Tries to read a long argument from tool arguments, accepting numeric and numeric-string JSON values.
+    /// </summary>
+    /// <param name="arguments">Tool arguments object.</param>
+    /// <param name="argumentName">Argument name to read.</param>
+    /// <param name="value">Parsed long value when successful.</param>
+    /// <returns><c>true</c> when parsing succeeds; otherwise <c>false</c>.</returns>
+    private static bool TryGetLongArgument(JsonObject? arguments, string argumentName, out long value)
+    {
+        value = 0;
+
+        var argumentNode = arguments?[argumentName];
+        if (argumentNode is null)
+        {
+            return false;
+        }
+
+        if (argumentNode is not JsonValue jsonValue)
+        {
+            return false;
+        }
+
+        if (jsonValue.TryGetValue<long>(out var longValue))
+        {
+            value = longValue;
+            return true;
+        }
+
+        if (jsonValue.TryGetValue<int>(out var intValue))
+        {
+            value = intValue;
+            return true;
+        }
+
+        if (!jsonValue.TryGetValue<string>(out var stringValue) || string.IsNullOrWhiteSpace(stringValue))
+        {
+            return false;
+        }
+
+        return long.TryParse(stringValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out value);
     }
 
     /// <summary>

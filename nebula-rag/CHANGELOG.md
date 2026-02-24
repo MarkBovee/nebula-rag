@@ -4,6 +4,29 @@ All notable changes to the Nebula RAG Home Assistant add-on are documented in th
 
 The format is inspired by Keep a Changelog and follows semantic versioning.
 
+## [0.2.37] - 2026-02-24
+
+- Cleaned invalid indexed workspace-note sources that surfaced as separate dashboard projects (`operations` and `retrieval-probe.md`).
+- Updated `Memory Insights` chart layout so full-width screens render `Type Distribution` at one-third width and `Top Tags` at two-thirds width, while preserving stacked behavior on smaller breakpoints.
+
+## [0.2.39] - 2026-02-24
+
+- Expanded MCP `tools/list` input schemas to cover previously under-specified tools: `rag_list_sources`, `rag_normalize_source_paths`, `rag_delete_source`, `rag_purge_all`, `memory_delete`, and `memory_update`.
+- Added stronger schema metadata (enum/const/boolean/integer constraints) so MCP clients can generate safer calls with fewer trial-and-error failures.
+- Improved `rag_list_sources` usability with optional `limit` input and richer response metadata (`returnedCount`, `totalCount`, `limit`) for better paging/inspection workflows.
+
+## [0.2.37] - 2026-02-24
+
+- Fixed MCP tool discoverability for `rag_get_chunk` by publishing an explicit input schema with required `chunkId` so clients stop issuing empty argument calls.
+- Added explicit input schemas for `query_project_rag` and `rag_search_similar` to improve argument guidance in `tools/list`.
+- Improved `rag_get_chunk` argument handling to accept numeric-string values and return a clearer validation message with a usage example when `chunkId` is missing/invalid.
+
+## [0.2.36] - 2026-02-24
+
+- Fixed remote `setup-nebula-rag.ps1` behavior when launched from a downloaded temp script by adding template-file fallback downloads from GitHub raw for required setup assets (`AGENTS.md`, `.github/copilot-instructions.md`, `.github/instructions/rag.instructions.md`, and skill templates).
+- Added a configurable installer parameter `-TemplateRawBaseUrl` (defaulting to the NebulaRAG `main` raw URL) used to resolve missing template files in user/project setup paths.
+- Updated env-template and global/project scaffold flows to use the shared template resolver so setup no longer fails with local "Source file not found" errors in remote-only installs.
+
 ## [0.2.35] - 2026-02-24
 
 - Updated MCP `memory_store` behavior so `sessionId` is optional; when omitted, NebulaRAG now generates a session identifier automatically.

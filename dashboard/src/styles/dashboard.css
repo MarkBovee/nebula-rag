@@ -101,6 +101,28 @@ body {
   word-break: break-word;
 }
 
+.nb-memory-charts {
+  grid-template-columns: 1fr;
+}
+
+@media (min-width: 1201px) {
+  .nb-memory-charts {
+    grid-template-columns: minmax(280px, 1fr) minmax(560px, 2fr);
+  }
+
+  .nb-memory-type {
+    grid-column: 1;
+  }
+
+  .nb-memory-tags {
+    grid-column: 2;
+  }
+
+  .nb-memory-growth {
+    grid-column: 1 / -1;
+  }
+}
+
 @media (max-width: 1200px) {
   .nb-overview-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
