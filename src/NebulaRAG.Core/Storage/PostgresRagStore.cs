@@ -3,6 +3,7 @@ using System.Text;
 using NebulaRAG.Core.Models;
 using NebulaRAG.Core.Pathing;
 using Npgsql;
+using NpgsqlTypes;
 
 namespace NebulaRAG.Core.Storage;
 
@@ -727,8 +728,8 @@ public sealed class PostgresRagStore
         const string sql = """
             SELECT id, session_id, type, content, tags, created_at
             FROM memories
-            WHERE (@type IS NULL OR type = @type)
-              AND (@tag IS NULL OR @tag = ANY(tags))
+                        WHERE (@type::text IS NULL OR type = @type::text)
+                            AND (@tag::text IS NULL OR @tag::text = ANY(tags))
             ORDER BY created_at DESC
             LIMIT @limit
             """;
@@ -736,8 +737,8 @@ public sealed class PostgresRagStore
         await using var connection = new NpgsqlConnection(_connectionString);
         await connection.OpenAsync(cancellationToken);
         await using var command = new NpgsqlCommand(sql, connection);
-        command.Parameters.AddWithValue("type", (object?)type ?? DBNull.Value);
-        command.Parameters.AddWithValue("tag", (object?)tag ?? DBNull.Value);
+        command.Parameters.Add(CreateNullableTextParameter("type", type));
+        command.Parameters.Add(CreateNullableTextParameter("tag", tag));
         command.Parameters.AddWithValue("limit", limit);
 
         var rows = new List<MemoryRecord>();
@@ -786,8 +787,8 @@ public sealed class PostgresRagStore
                    created_at,
                    1 - (embedding <=> CAST(@embedding AS vector)) AS score
             FROM memories
-            WHERE (@type IS NULL OR type = @type)
-              AND (@tag IS NULL OR @tag = ANY(tags))
+                        WHERE (@type::text IS NULL OR type = @type::text)
+                            AND (@tag::text IS NULL OR @tag::text = ANY(tags))
             ORDER BY embedding <=> CAST(@embedding AS vector)
             LIMIT @limit
             """;
@@ -796,8 +797,8 @@ public sealed class PostgresRagStore
         await connection.OpenAsync(cancellationToken);
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue("embedding", ToVectorLiteral(queryEmbedding));
-        command.Parameters.AddWithValue("type", (object?)type ?? DBNull.Value);
-        command.Parameters.AddWithValue("tag", (object?)tag ?? DBNull.Value);
+        command.Parameters.Add(CreateNullableTextParameter("type", type));
+        command.Parameters.Add(CreateNullableTextParameter("tag", tag));
         command.Parameters.AddWithValue("limit", limit);
 
         var rows = new List<MemorySearchResult>();
@@ -820,6 +821,54 @@ public sealed class PostgresRagStore
         }
 
         return rows;
+    }
+
+    /// <summary>
+    /// Computes memory analytics suitable for dashboard visualization.
+    /// </summary>
+    /// <param name="dayWindow">Number of trailing days to include in daily counts.</param>
+    /// <param name="topTagLimit">Maximum number of top tags to return.</param>
+    /// <param name="recentSessionLimit">Maximum number of recent sessions to return.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Aggregated memory analytics payload.</returns>
+    public async Task<MemoryDashboardStats> GetMemoryStatsAsync(int dayWindow = 30, int topTagLimit = 10, int recentSessionLimit = 12, CancellationToken cancellationToken = default)
+    {
+        if (dayWindow <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(dayWindow), "Day window must be greater than 0.");
+        }
+
+        if (topTagLimit <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(topTagLimit), "Top tag limit must be greater than 0.");
+        }
+
+        if (recentSessionLimit <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(recentSessionLimit), "Recent session limit must be greater than 0.");
+        }
+
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+
+        var overview = await GetMemoryOverviewAsync(connection, cancellationToken);
+        var typeCounts = await GetMemoryTypeCountsAsync(connection, cancellationToken);
+        var topTags = await GetTopMemoryTagsAsync(connection, topTagLimit, cancellationToken);
+        var dailyCounts = await GetMemoryDailyCountsAsync(connection, dayWindow, cancellationToken);
+        var recentSessions = await GetRecentMemorySessionsAsync(connection, recentSessionLimit, cancellationToken);
+
+        var canonicalTypeCounts = BuildCanonicalTypeCounts(typeCounts);
+        return new MemoryDashboardStats(
+            TotalMemories: overview.TotalMemories,
+            Recent24HoursCount: overview.Recent24HoursCount,
+            DistinctSessionCount: overview.DistinctSessionCount,
+            AverageTagsPerMemory: overview.AverageTagsPerMemory,
+            FirstMemoryAtUtc: overview.FirstMemoryAtUtc,
+            LastMemoryAtUtc: overview.LastMemoryAtUtc,
+            TypeCounts: canonicalTypeCounts,
+            TopTags: topTags,
+            DailyCounts: dailyCounts,
+            RecentSessions: recentSessions);
     }
 
     /// <summary>
@@ -846,10 +895,10 @@ public sealed class PostgresRagStore
 
         const string sql = """
             UPDATE memories
-            SET type = COALESCE(@type, type),
-                content = COALESCE(@content, content),
-                embedding = CASE WHEN @embedding IS NULL THEN embedding ELSE CAST(@embedding AS vector) END,
-                tags = COALESCE(@tags, tags)
+            SET type = COALESCE(@type::text, type),
+                content = COALESCE(@content::text, content),
+                embedding = CASE WHEN @embedding::text IS NULL THEN embedding ELSE CAST(@embedding AS vector) END,
+                tags = COALESCE(@tags::text[], tags)
             WHERE id = @id
             """;
 
@@ -857,13 +906,204 @@ public sealed class PostgresRagStore
         await connection.OpenAsync(cancellationToken);
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue("id", memoryId);
-        command.Parameters.AddWithValue("type", (object?)type ?? DBNull.Value);
-        command.Parameters.AddWithValue("content", (object?)content ?? DBNull.Value);
-        command.Parameters.AddWithValue("embedding", embedding is null ? DBNull.Value : ToVectorLiteral(embedding));
-        command.Parameters.AddWithValue("tags", tags is null ? DBNull.Value : tags.ToArray());
+        command.Parameters.Add(CreateNullableTextParameter("type", type));
+        command.Parameters.Add(CreateNullableTextParameter("content", content));
+        command.Parameters.Add(CreateNullableTextParameter("embedding", embedding is null ? null : ToVectorLiteral(embedding)));
+
+        var tagsParameter = new NpgsqlParameter("tags", NpgsqlDbType.Array | NpgsqlDbType.Text)
+        {
+            Value = tags is null ? DBNull.Value : tags.ToArray()
+        };
+        command.Parameters.Add(tagsParameter);
 
         var updated = await command.ExecuteNonQueryAsync(cancellationToken);
         return updated > 0;
+    }
+
+    /// <summary>
+    /// Loads high-level aggregate counters for the memories table.
+    /// </summary>
+    /// <param name="connection">Open PostgreSQL connection.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Memory overview aggregate values.</returns>
+    private static async Task<MemoryOverviewAggregate> GetMemoryOverviewAsync(NpgsqlConnection connection, CancellationToken cancellationToken)
+    {
+        const string sql = """
+            SELECT COUNT(*)::bigint AS total_memories,
+                   COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '24 hours')::bigint AS recent_24h_count,
+                   COUNT(DISTINCT session_id)::int AS distinct_session_count,
+                   COALESCE(AVG(COALESCE(array_length(tags, 1), 0)), 0)::double precision AS average_tags_per_memory,
+                   MIN(created_at) AS first_memory_at,
+                   MAX(created_at) AS last_memory_at
+            FROM memories
+            """;
+
+        await using var command = new NpgsqlCommand(sql, connection);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        await reader.ReadAsync(cancellationToken);
+
+        var firstMemoryAt = reader.IsDBNull(4) ? (DateTimeOffset?)null : reader.GetFieldValue<DateTimeOffset>(4);
+        var lastMemoryAt = reader.IsDBNull(5) ? (DateTimeOffset?)null : reader.GetFieldValue<DateTimeOffset>(5);
+
+        return new MemoryOverviewAggregate(
+            TotalMemories: reader.GetInt64(0),
+            Recent24HoursCount: reader.GetInt64(1),
+            DistinctSessionCount: reader.GetInt32(2),
+            AverageTagsPerMemory: reader.GetDouble(3),
+            FirstMemoryAtUtc: firstMemoryAt,
+            LastMemoryAtUtc: lastMemoryAt);
+    }
+
+    /// <summary>
+    /// Loads grouped memory counts by type.
+    /// </summary>
+    /// <param name="connection">Open PostgreSQL connection.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Type-count rows from the memories table.</returns>
+    private static async Task<IReadOnlyList<MemoryTypeCount>> GetMemoryTypeCountsAsync(NpgsqlConnection connection, CancellationToken cancellationToken)
+    {
+        const string sql = """
+            SELECT type,
+                   COUNT(*)::bigint AS memory_count
+            FROM memories
+            GROUP BY type
+            ORDER BY type ASC
+            """;
+
+        await using var command = new NpgsqlCommand(sql, connection);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var rows = new List<MemoryTypeCount>();
+
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            rows.Add(new MemoryTypeCount(
+                Type: reader.GetString(0),
+                Count: reader.GetInt64(1)));
+        }
+
+        return rows;
+    }
+
+    /// <summary>
+    /// Loads the most frequently used memory tags.
+    /// </summary>
+    /// <param name="connection">Open PostgreSQL connection.</param>
+    /// <param name="limit">Maximum number of tags to return.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Top tag-count rows ordered by usage descending.</returns>
+    private static async Task<IReadOnlyList<MemoryTagCount>> GetTopMemoryTagsAsync(NpgsqlConnection connection, int limit, CancellationToken cancellationToken)
+    {
+        const string sql = """
+            SELECT tag,
+                   COUNT(*)::bigint AS tag_count
+            FROM memories
+            CROSS JOIN LATERAL unnest(tags) AS tag
+            WHERE tag IS NOT NULL
+              AND btrim(tag) <> ''
+            GROUP BY tag
+            ORDER BY tag_count DESC, tag ASC
+            LIMIT @limit
+            """;
+
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("limit", limit);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var rows = new List<MemoryTagCount>();
+
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            rows.Add(new MemoryTagCount(
+                Tag: reader.GetString(0),
+                Count: reader.GetInt64(1)));
+        }
+
+        return rows;
+    }
+
+    /// <summary>
+    /// Loads daily memory creation totals across a trailing date window.
+    /// </summary>
+    /// <param name="connection">Open PostgreSQL connection.</param>
+    /// <param name="dayWindow">Trailing number of days to include.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Daily UTC date buckets with counts.</returns>
+    private static async Task<IReadOnlyList<MemoryDailyCount>> GetMemoryDailyCountsAsync(NpgsqlConnection connection, int dayWindow, CancellationToken cancellationToken)
+    {
+        const string sql = """
+            SELECT DATE(created_at AT TIME ZONE 'UTC') AS day_utc,
+                   COUNT(*)::bigint AS memory_count
+            FROM memories
+            WHERE created_at >= NOW() - make_interval(days => @dayWindow)
+            GROUP BY day_utc
+            ORDER BY day_utc ASC
+            """;
+
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("dayWindow", dayWindow);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var rows = new List<MemoryDailyCount>();
+
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            rows.Add(new MemoryDailyCount(
+                DateUtc: DateOnly.FromDateTime(reader.GetDateTime(0)),
+                Count: reader.GetInt64(1)));
+        }
+
+        return rows;
+    }
+
+    /// <summary>
+    /// Loads recently active sessions with memory volume and last-write timestamp.
+    /// </summary>
+    /// <param name="connection">Open PostgreSQL connection.</param>
+    /// <param name="limit">Maximum number of sessions to return.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Recent session memory summaries.</returns>
+    private static async Task<IReadOnlyList<MemorySessionSummary>> GetRecentMemorySessionsAsync(NpgsqlConnection connection, int limit, CancellationToken cancellationToken)
+    {
+        const string sql = """
+            SELECT session_id,
+                   COUNT(*)::bigint AS memory_count,
+                   MAX(created_at) AS last_memory_at
+            FROM memories
+            GROUP BY session_id
+            ORDER BY last_memory_at DESC
+            LIMIT @limit
+            """;
+
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("limit", limit);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var rows = new List<MemorySessionSummary>();
+
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            rows.Add(new MemorySessionSummary(
+                SessionId: reader.GetString(0),
+                MemoryCount: reader.GetInt64(1),
+                LastMemoryAtUtc: reader.GetFieldValue<DateTimeOffset>(2)));
+        }
+
+        return rows;
+    }
+
+    /// <summary>
+    /// Ensures all canonical memory types are present in the output, including zero-count entries.
+    /// </summary>
+    /// <param name="rawTypeCounts">Raw grouped type counts from the database.</param>
+    /// <returns>Canonical type list ordered as episodic, semantic, procedural.</returns>
+    private static IReadOnlyList<MemoryTypeCount> BuildCanonicalTypeCounts(IReadOnlyList<MemoryTypeCount> rawTypeCounts)
+    {
+        var countsByType = rawTypeCounts.ToDictionary(
+            keySelector: row => row.Type,
+            elementSelector: row => row.Count,
+            comparer: StringComparer.OrdinalIgnoreCase);
+
+        var canonicalTypes = new[] { "episodic", "semantic", "procedural" };
+        return canonicalTypes
+            .Select(type => new MemoryTypeCount(type, countsByType.GetValueOrDefault(type, 0)))
+            .ToList();
     }
 
     /// <summary>
@@ -928,6 +1168,20 @@ public sealed class PostgresRagStore
     }
 
     /// <summary>
+    /// Creates a nullable text parameter with an explicit PostgreSQL type.
+    /// </summary>
+    /// <param name="name">Parameter name.</param>
+    /// <param name="value">Nullable string value.</param>
+    /// <returns>Configured typed parameter for PostgreSQL commands.</returns>
+    private static NpgsqlParameter CreateNullableTextParameter(string name, string? value)
+    {
+        return new NpgsqlParameter(name, NpgsqlDbType.Text)
+        {
+            Value = value is null ? DBNull.Value : value
+        };
+    }
+
+    /// <summary>
     /// Converts a float array to a PostgreSQL vector literal string format.
     /// </summary>
     /// <remarks>
@@ -950,4 +1204,21 @@ public sealed class PostgresRagStore
         builder.Append(']');
         return builder.ToString();
     }
+
+    /// <summary>
+    /// In-memory representation of aggregate memory counters.
+    /// </summary>
+    /// <param name="TotalMemories">Total number of memory rows.</param>
+    /// <param name="Recent24HoursCount">Number of rows created in the last 24 hours.</param>
+    /// <param name="DistinctSessionCount">Distinct number of session identifiers.</param>
+    /// <param name="AverageTagsPerMemory">Average tags attached per memory row.</param>
+    /// <param name="FirstMemoryAtUtc">Oldest memory timestamp, when available.</param>
+    /// <param name="LastMemoryAtUtc">Newest memory timestamp, when available.</param>
+    private sealed record MemoryOverviewAggregate(
+        long TotalMemories,
+        long Recent24HoursCount,
+        int DistinctSessionCount,
+        double AverageTagsPerMemory,
+        DateTimeOffset? FirstMemoryAtUtc,
+        DateTimeOffset? LastMemoryAtUtc);
 }

@@ -15,6 +15,7 @@ public sealed class DashboardSnapshotService
     private readonly TimedCache<HealthCheckResult> _healthCache;
     private readonly TimedCache<IndexStats> _statsCache;
     private readonly TimedCache<IndexStats> _statsWithSizeCache;
+    private readonly TimedCache<MemoryDashboardStats> _memoryStatsCache;
     private readonly object _performanceSync = new();
     private readonly Queue<double> _queryLatenciesMs;
     private readonly Queue<PerformanceMetricPoint> _performanceHistory;
@@ -32,6 +33,7 @@ public sealed class DashboardSnapshotService
         _healthCache = new TimedCache<HealthCheckResult>(TimeSpan.FromSeconds(30));
         _statsCache = new TimedCache<IndexStats>(TimeSpan.FromSeconds(30));
         _statsWithSizeCache = new TimedCache<IndexStats>(TimeSpan.FromMinutes(2));
+        _memoryStatsCache = new TimedCache<MemoryDashboardStats>(TimeSpan.FromSeconds(30));
         _queryLatenciesMs = new Queue<double>();
         _performanceHistory = new Queue<PerformanceMetricPoint>();
         _lastSampleAtUtc = DateTime.MinValue;
@@ -108,6 +110,23 @@ public sealed class DashboardSnapshotService
     }
 
     /// <summary>
+    /// Gets memory analytics with short-lived caching.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Current memory analytics snapshot.</returns>
+    public async Task<MemoryDashboardStats> GetMemoryStatsAsync(CancellationToken cancellationToken = default)
+    {
+        if (_memoryStatsCache.TryGet(out var cachedMemoryStats))
+        {
+            return cachedMemoryStats;
+        }
+
+        var freshMemoryStats = await _managementService.GetMemoryStatsAsync(cancellationToken: cancellationToken);
+        _memoryStatsCache.Set(freshMemoryStats);
+        return freshMemoryStats;
+    }
+
+    /// <summary>
     /// Builds one consolidated dashboard payload in a single orchestration call.
     /// </summary>
     /// <param name="limit">Maximum number of sources to include.</param>
@@ -118,10 +137,11 @@ public sealed class DashboardSnapshotService
         var normalizedLimit = Math.Clamp(limit, 1, 500);
         var health = await GetHealthAsync(cancellationToken);
         var stats = await GetStatsAsync(includeIndexSize: true, cancellationToken);
+        var memoryStats = await GetMemoryStatsAsync(cancellationToken);
         var performanceMetrics = CapturePerformanceSample(stats);
         var sources = await _managementService.ListSourcesAsync(normalizedLimit, cancellationToken);
 
-        return new DashboardSnapshotResponse(health, stats, sources, performanceMetrics, DateTime.UtcNow);
+        return new DashboardSnapshotResponse(health, stats, sources, memoryStats, performanceMetrics, DateTime.UtcNow);
     }
 
     /// <summary>
@@ -192,9 +212,10 @@ public sealed class DashboardSnapshotService
 /// <param name="Health">Health status data.</param>
 /// <param name="Stats">Index statistics data.</param>
 /// <param name="Sources">Recent indexed sources.</param>
+/// <param name="MemoryStats">Aggregated memory analytics.</param>
 /// <param name="PerformanceMetrics">Recent sampled performance metrics.</param>
 /// <param name="GeneratedAtUtc">UTC timestamp when this payload was generated.</param>
-public sealed record DashboardSnapshotResponse(HealthCheckResult Health, IndexStats Stats, IReadOnlyList<SourceInfo> Sources, IReadOnlyList<PerformanceMetricPoint> PerformanceMetrics, DateTime GeneratedAtUtc);
+public sealed record DashboardSnapshotResponse(HealthCheckResult Health, IndexStats Stats, IReadOnlyList<SourceInfo> Sources, MemoryDashboardStats MemoryStats, IReadOnlyList<PerformanceMetricPoint> PerformanceMetrics, DateTime GeneratedAtUtc);
 
 /// <summary>
 /// One sampled runtime point displayed in dashboard performance timeline.

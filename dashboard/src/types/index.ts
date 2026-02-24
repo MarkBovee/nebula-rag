@@ -94,8 +94,58 @@ export interface DashboardSnapshot {
   health: HealthResponse;
   stats: IndexStats;
   sources: SourceInfo[];
+  memoryStats: MemoryDashboardStats;
   performanceMetrics: PerformanceMetric[];
   generatedAtUtc: string;
+}
+
+/// <summary>
+/// Aggregated memory analytics for dashboard visualizations.
+/// </summary>
+export interface MemoryDashboardStats {
+  totalMemories: number;
+  recent24HoursCount: number;
+  distinctSessionCount: number;
+  averageTagsPerMemory: number;
+  firstMemoryAtUtc?: string | null;
+  lastMemoryAtUtc?: string | null;
+  typeCounts: MemoryTypeCount[];
+  topTags: MemoryTagCount[];
+  dailyCounts: MemoryDailyCount[];
+  recentSessions: MemorySessionSummary[];
+}
+
+/// <summary>
+/// Count summary for one memory type.
+/// </summary>
+export interface MemoryTypeCount {
+  type: string;
+  count: number;
+}
+
+/// <summary>
+/// Count summary for one memory tag.
+/// </summary>
+export interface MemoryTagCount {
+  tag: string;
+  count: number;
+}
+
+/// <summary>
+/// Count summary for one UTC day.
+/// </summary>
+export interface MemoryDailyCount {
+  dateUtc: string;
+  count: number;
+}
+
+/// <summary>
+/// Session-level memory summary.
+/// </summary>
+export interface MemorySessionSummary {
+  sessionId: string;
+  memoryCount: number;
+  lastMemoryAtUtc: string;
 }
 
 /// <summary>
@@ -116,6 +166,7 @@ export interface DashboardState {
   health: HealthResponse;
   stats: IndexStats;
   sources: SourceInfo[];
+  memoryStats: MemoryDashboardStats;
   recentActivity: ActivityEvent[];
   performanceMetrics: PerformanceMetric[];
   loading: boolean;

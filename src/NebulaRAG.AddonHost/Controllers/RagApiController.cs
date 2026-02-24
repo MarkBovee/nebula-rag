@@ -66,6 +66,18 @@ public sealed class RagApiController : ControllerBase
     }
 
     /// <summary>
+    /// Returns aggregated memory analytics.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Memory stats payload.</returns>
+    [HttpGet("memory/stats")]
+    public async Task<ActionResult<MemoryDashboardStats>> GetMemoryStatsAsync(CancellationToken cancellationToken)
+    {
+        var memoryStats = await _dashboardSnapshotService.GetMemoryStatsAsync(cancellationToken);
+        return Ok(memoryStats);
+    }
+
+    /// <summary>
     /// Lists indexed sources.
     /// </summary>
     /// <param name="limit">Maximum number of sources.</param>

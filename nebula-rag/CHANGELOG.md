@@ -4,6 +4,18 @@ All notable changes to the Nebula RAG Home Assistant add-on are documented in th
 
 The format is inspired by Keep a Changelog and follows semantic versioning.
 
+## [0.2.24] - 2026-02-24
+
+- Added full memory analytics to backend storage/services with aggregated totals, 24h activity, distinct sessions, average tags, type distribution, top tags, daily growth series, and recent-session summaries.
+- Added API endpoint `GET /api/memory/stats` and expanded dashboard snapshot payload to include `memoryStats`.
+- Added a full `Memory Insights` dashboard experience (overview integration + dedicated tab) with KPI tiles, type distribution chart, top-tags chart, daily growth trend, and recent-session table.
+
+## [0.2.23] - 2026-02-24
+
+- Strengthened repository memory guidance across `AGENTS.md`, `.github/copilot-instructions.md`, `.github/instructions/rag.instructions.md`, and `.github/skills/nebularag/SKILL.md` with explicit Nebula memory recall/store cadence and secret-safe memory rules.
+- Updated `scripts/setup-nebula-rag.ps1` project setup messaging so generated projects explicitly inherit the new memory cadence and Nebula skill workflow.
+- Fixed PostgreSQL memory query/update parameter typing in `PostgresRagStore` to avoid `42P08` type-inference failures when nullable memory filters/fields are passed.
+
 ## [0.2.22] - 2026-02-24
 
 - Updated repository coding instructions to explicitly require latest stable dependency versions (unless documented constraints apply) and to enforce switch/pattern-matching plus small-helper decomposition for large dispatch methods.

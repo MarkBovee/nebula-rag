@@ -541,10 +541,11 @@ function Setup-Project {
     Copy-FileSafe -Source (Join-Path $TemplateRoot ".github/copilot-instructions.md") -Destination (Join-Path $targetRoot ".github/copilot-instructions.md") -ForceWrite:$ForceWrite
     Copy-FileSafe -Source (Join-Path $TemplateRoot ".github/instructions/rag.instructions.md") -Destination (Join-Path $targetRoot ".github/instructions/rag.instructions.md") -ForceWrite:$ForceWrite
     Copy-FileSafe -Source (Join-Path $TemplateRoot "AGENTS.md") -Destination (Join-Path $targetRoot "AGENTS.md") -ForceWrite:$ForceWrite
-    Write-Host "Applied memory routing templates for project setup (Nebula memory + VS Code memory)."
+    Write-Host "Applied memory routing templates for project setup (Nebula memory + VS Code memory, recall/store cadence, and secret-safe memory rules)."
 
     if (-not $SkipSkillFile) {
         Copy-FileSafe -Source (Join-Path $TemplateRoot ".github/skills/nebularag/SKILL.md") -Destination (Join-Path $targetRoot ".github/skills/nebularag/SKILL.md") -ForceWrite:$ForceWrite
+        Write-Host "Applied Nebula skill template with memory recall/list and persistence workflow."
     }
 
     $sourceEnvExample = Join-Path $TemplateRoot ".env.example"

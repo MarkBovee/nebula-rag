@@ -10,6 +10,7 @@ A modern, real-time management dashboard for **Nebula RAG** built with React, Ty
 - **📡 Real-time Activity**: Live feed of indexing, queries, and system events
 - **🗂️ Source Management**: Table interface for managing indexed sources with delete/reindex actions
 - **📈 Performance Timeline**: 24-hour charts tracking query latency, indexing rate, and CPU usage
+- **🧠 Memory Insights**: Full analytics for memory growth, type/tag distribution, and recent memory sessions
 
 ## Nebula Theme
 

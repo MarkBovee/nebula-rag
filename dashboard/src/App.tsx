@@ -8,8 +8,9 @@ import SourceBreakdown from '@/components/SourceBreakdown';
 import ActivityFeed from '@/components/ActivityFeed';
 import SourceManager from '@/components/SourceManager';
 import PerfTimeline from '@/components/PerfTimeline';
+import MemoryInsights from '@/components/MemoryInsights';
 
-type DashboardTab = 'overview' | 'search' | 'sources' | 'activity' | 'performance';
+type DashboardTab = 'overview' | 'search' | 'sources' | 'activity' | 'performance' | 'memory';
 
 const styles = {
   container: {
@@ -156,6 +157,7 @@ const tabs: Array<{ key: DashboardTab; label: string }> = [
   { key: 'sources', label: 'Sources' },
   { key: 'activity', label: 'Activity' },
   { key: 'performance', label: 'Performance' },
+  { key: 'memory', label: 'Memory' },
 ];
 
 /// <summary>
@@ -183,6 +185,7 @@ const App: React.FC = () => {
         health: snapshot.health,
         stats: snapshot.stats,
         sources: snapshot.sources,
+        memoryStats: snapshot.memoryStats,
         performanceMetrics: snapshot.performanceMetrics,
         recentActivity: activity,
         loading: false,
@@ -223,7 +226,7 @@ const App: React.FC = () => {
     };
   }, []);
 
-  const { health, stats, sources, recentActivity, performanceMetrics, loading, error } = dashboard;
+  const { health, stats, sources, memoryStats, recentActivity, performanceMetrics, loading, error } = dashboard;
 
   return (
     <div style={styles.container} className="nb-app">
@@ -291,6 +294,10 @@ const App: React.FC = () => {
                     <p style={styles.statusLabel}>Projects</p>
                     <p style={styles.statusValue}>{(stats.projectCount ?? 0).toLocaleString()}</p>
                   </div>
+                  <div style={styles.statusItem}>
+                    <p style={styles.statusLabel}>Memories</p>
+                    <p style={styles.statusValue}>{(memoryStats?.totalMemories ?? 0).toLocaleString()}</p>
+                  </div>
                 </>
               )}
             </div>
@@ -308,6 +315,9 @@ const App: React.FC = () => {
                   <SourceBreakdown sources={sources} />
                 </div>
               )}
+              <div className="nb-card-shell nb-fade-up nb-overview-source-wide" style={{ animationDelay: '160ms' }}>
+                <MemoryInsights stats={memoryStats} />
+              </div>
               <div style={styles.fullWidth} className="nb-card-shell nb-fade-up">
                 <PerfTimeline metrics={performanceMetrics} />
               </div>
@@ -346,6 +356,14 @@ const App: React.FC = () => {
             <div style={styles.gridContainer}>
               <div style={styles.fullWidth} className="nb-card-shell nb-fade-up">
                 <PerfTimeline metrics={performanceMetrics} />
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'memory' && (
+            <div style={styles.gridContainer}>
+              <div style={styles.fullWidth} className="nb-card-shell nb-fade-up">
+                <MemoryInsights stats={memoryStats} />
               </div>
             </div>
           )}

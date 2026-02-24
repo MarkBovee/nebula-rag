@@ -106,6 +106,25 @@ Write a memory after each session or when:
 - A project convention is agreed (`procedural`)
 - A meaningful milestone is completed (`episodic`)
 
+Minimum cadence for Nebula memory in this repository:
+
+- Non-trivial implementation/debug session: store at least 1 Nebula memory before ending.
+- Multi-step implementation/debug session: store 2-5 concise Nebula memories covering decision, fix, and operational/runbook impact.
+- If no memory is written, explicitly justify why (for example truly trivial Q&A).
+
+Essential memory targets to prioritize:
+
+- Operational conventions (for example env-loading, run commands, migration order).
+- Architecture and interface decisions (contracts, tool names, schema behavior).
+- Recurring bug patterns and their verified fixes.
+- Deployment or add-on behavior gotchas that are easy to regress.
+
+Memory safety constraints:
+
+- Never store credentials, tokens, passwords, or full connection strings.
+- Store references to secret sources (for example `.nebula.env`) instead of secret values.
+- Keep memory entries concise and deduplicated.
+
 Do not write memory for trivial Q&A, duplicates of existing memory, or generic facts that are not user/project specific.
 
 ### Write Decision Table
@@ -134,9 +153,10 @@ Preferred tags: `architecture`, `preference`, `bug`, `convention`, `decision`, `
 ### Session Start
 
 1. Run Nebula memory recall (`memory_recall`) for recent project context, decisions, and bug history.
-2. Run VS Code memory recall for user preferences and communication expectations.
-3. Run `rag_health_check` to verify index availability.
-4. Provide a short summary of retrieved context before implementation.
+2. Run Nebula memory listing (`memory_list`) when available to quickly spot recent/duplicate entries.
+3. Run VS Code memory recall for user preferences and communication expectations.
+4. Run `rag_health_check` to verify index availability.
+5. Provide a short summary of retrieved context before implementation.
 
 ### Session End
 
@@ -144,6 +164,8 @@ Preferred tags: `architecture`, `preference`, `bug`, `convention`, `decision`, `
 2. Store remaining project open tasks/questions in Nebula memory when they should be queryable later.
 3. Store user preference updates in VS Code memory.
 4. Store any newly agreed conventions in Nebula memory (and VS Code memory when user-specific).
+5. Ensure stored entries include useful tags (`project:NebulaRAG` plus `decision|bug|convention|architecture`).
+6. Confirm no secrets were persisted; if sensitive context was involved, keep memory at reference-only level.
 
 ## Coding Standards
 

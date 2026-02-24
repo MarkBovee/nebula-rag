@@ -1,5 +1,5 @@
 import axios, { AxiosInstance } from 'axios';
-import type { HealthResponse, IndexStats, SourceInfo, QueryResult, ActivityEvent, ClientErrorReport, DashboardSnapshot } from '@/types';
+import type { HealthResponse, IndexStats, SourceInfo, QueryResult, ActivityEvent, ClientErrorReport, DashboardSnapshot, MemoryDashboardStats } from '@/types';
 
 /// <summary>
 /// Resolves the hosting base path from the current location.
@@ -95,6 +95,15 @@ export class NebularRagClient {
       params: { limit }
     });
 
+    return response.data;
+  }
+
+  /// <summary>
+  /// Retrieves aggregated memory analytics from the backend.
+  /// </summary>
+  /// <returns>Memory analytics payload.</returns>
+  async getMemoryStats(): Promise<MemoryDashboardStats> {
+    const response = await this.api.get<MemoryDashboardStats>('api/memory/stats');
     return response.data;
   }
 

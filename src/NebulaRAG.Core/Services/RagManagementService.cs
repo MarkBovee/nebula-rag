@@ -152,4 +152,36 @@ public sealed class RagManagementService
             return new HealthCheckResult(IsHealthy: false, Message: message);
         }
     }
+
+    /// <summary>
+    /// Gets aggregated memory analytics for operational dashboards.
+    /// </summary>
+    /// <param name="dayWindow">Trailing number of days to include in daily memory counts.</param>
+    /// <param name="topTagLimit">Maximum number of top tags to return.</param>
+    /// <param name="recentSessionLimit">Maximum number of recent sessions to return.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Aggregated memory analytics snapshot.</returns>
+    public async Task<MemoryDashboardStats> GetMemoryStatsAsync(int dayWindow = 30, int topTagLimit = 10, int recentSessionLimit = 12, CancellationToken cancellationToken = default)
+    {
+        _logger.LogDebug(
+            "Retrieving memory stats (dayWindow={DayWindow}, topTagLimit={TopTagLimit}, recentSessionLimit={RecentSessionLimit})",
+            dayWindow,
+            topTagLimit,
+            recentSessionLimit);
+
+        try
+        {
+            var stats = await _store.GetMemoryStatsAsync(dayWindow, topTagLimit, recentSessionLimit, cancellationToken);
+            _logger.LogDebug(
+                "Memory stats retrieved: {TotalMemories} memories, {Recent24HoursCount} in last 24h",
+                stats.TotalMemories,
+                stats.Recent24HoursCount);
+            return stats;
+        }
+        catch (Exception ex) when (!(ex is RagException))
+        {
+            _logger.LogError(ex, "Failed to retrieve memory stats");
+            throw new RagDatabaseException("Failed to retrieve memory stats", ex);
+        }
+    }
 }

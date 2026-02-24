@@ -20,6 +20,9 @@ Memory guidance:
 - For project-specific decision history, recurring bug patterns, and conventions, prefer Nebula memory tools first (`memory_recall`, `memory_store`, etc.).
 - For user-level preferences and assistant behavior, prefer VS Code memory.
 - When a fact matters to both scopes, dual-write: concise note in VS Code memory plus structured project note in Nebula memory.
+- For non-trivial implementation/debug tasks, do one memory recall at start and store at least one Nebula memory before finishing.
+- For multi-step tasks, store multiple concise Nebula memories that capture decisions, fixes, and operational conventions.
+- Never store secret values in memory; store only secret-source references (for example `.nebula.env`).
 
 Agent setup baseline:
 
