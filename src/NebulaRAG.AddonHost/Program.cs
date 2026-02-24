@@ -198,7 +198,7 @@ app.MapPost("/mcp", async (JsonObject request, CancellationToken cancellationTok
         return Results.Json(BuildResult(id, new JsonObject
         {
             ["protocolVersion"] = "2025-11-25",
-            ["serverInfo"] = new JsonObject { ["name"] = "Nebula RAG Add-on MCP", ["version"] = "0.2.0" },
+            ["serverInfo"] = new JsonObject { ["name"] = "Nebula RAG", ["version"] = "0.2.0" },
             ["capabilities"] = new JsonObject { ["tools"] = new JsonObject { ["listChanged"] = false } }
         }));
     }
@@ -454,7 +454,7 @@ static async Task<JsonObject> ExecuteToolAsync(
         {
             return BuildToolResult("Server info.", new JsonObject
             {
-                ["serverName"] = "Nebula RAG Add-on MCP",
+                ["serverName"] = "Nebula RAG",
                 ["databaseHost"] = settings.Database.Host,
                 ["databasePort"] = settings.Database.Port,
                 ["databaseName"] = settings.Database.Database

@@ -14,6 +14,8 @@ param(
     [string]$ServerName = "nebula-rag",
     [string]$ImageName = "localhost/nebula-rag-mcp:latest",
     [string]$HomeAssistantMcpUrl = "http://homeassistant.local:8099/nebula/mcp",
+    [string]$ExternalHomeAssistantMcpUrl,
+    [switch]$UseExternalHomeAssistantUrl,
 
     [string]$EnvFileName = ".nebula.env",
     [string]$EnvFilePath,
@@ -24,10 +26,34 @@ param(
     [switch]$CreateEnvTemplate,
     [switch]$SkipSkill,
     [switch]$NoBackup,
+    [switch]$ForceExternal,
     [switch]$Force
 )
 
 $ErrorActionPreference = "Stop"
+
+function Resolve-HomeAssistantMcpUrl {
+    param(
+        [string]$LocalUrl,
+        [string]$ExternalUrl,
+        [switch]$PreferExternalUrl,
+        [switch]$ExternalConsent
+    )
+
+    if ($PreferExternalUrl) {
+        if (-not $ExternalConsent) {
+            throw "External MCP URL mode is blocked by default for privacy. Re-run with -UseExternalHomeAssistantUrl -ForceExternal -ExternalHomeAssistantMcpUrl <url> to opt in."
+        }
+
+        if ([string]::IsNullOrWhiteSpace($ExternalUrl)) {
+            throw "-UseExternalHomeAssistantUrl requires -ExternalHomeAssistantMcpUrl."
+        }
+
+        return $ExternalUrl
+    }
+
+    return $LocalUrl
+}
 
 function Ensure-Directory {
     param([string]$Path)
@@ -485,13 +511,14 @@ function Setup-User {
 
 $templateRoot = Split-Path -Parent $PSScriptRoot
 $resolvedInstallTarget = Resolve-InstallTarget -SelectedInstallTarget $InstallTarget
+$resolvedHomeAssistantMcpUrl = Resolve-HomeAssistantMcpUrl -LocalUrl $HomeAssistantMcpUrl -ExternalUrl $ExternalHomeAssistantMcpUrl -PreferExternalUrl:$UseExternalHomeAssistantUrl -ExternalConsent:$ForceExternal
 
 if ([string]::IsNullOrWhiteSpace($EnvFilePath)) {
     $EnvFilePath = Join-Path $HOME ".nebula-rag/.nebula.env"
 }
 
 if ($Mode -in @("Both", "User")) {
-    Setup-User -SelectedChannel $Channel -ExplicitUserConfigPath $UserConfigPath -ConfiguredServerName $ServerName -ConfiguredImageName $ImageName -ConfiguredEnvFilePath $EnvFilePath -SelectedInstallTarget $resolvedInstallTarget -ConfiguredHomeAssistantMcpUrl $HomeAssistantMcpUrl -WriteEnvTemplate:($CreateEnvTemplate -and $resolvedInstallTarget -eq "LocalContainer") -ForceWrite:$Force -SkipBackup:$NoBackup -TemplateRoot $templateRoot
+    Setup-User -SelectedChannel $Channel -ExplicitUserConfigPath $UserConfigPath -ConfiguredServerName $ServerName -ConfiguredImageName $ImageName -ConfiguredEnvFilePath $EnvFilePath -SelectedInstallTarget $resolvedInstallTarget -ConfiguredHomeAssistantMcpUrl $resolvedHomeAssistantMcpUrl -WriteEnvTemplate:($CreateEnvTemplate -and $resolvedInstallTarget -eq "LocalContainer") -ForceWrite:$Force -SkipBackup:$NoBackup -TemplateRoot $templateRoot
     Ensure-GlobalAgentsGuide -TemplateRoot $templateRoot -ForceWrite:$Force
 }
 
@@ -514,5 +541,11 @@ Write-Host "Install target: $resolvedInstallTarget"
 Write-Host "Server: $ServerName"
 Write-Host "Image:  $ImageName"
 if ($resolvedInstallTarget -eq "HomeAssistantAddon") {
-    Write-Host "MCP URL: $HomeAssistantMcpUrl"
+    Write-Host "MCP URL: $resolvedHomeAssistantMcpUrl"
+    if ($UseExternalHomeAssistantUrl) {
+        Write-Host "URL mode: External"
+    }
+    else {
+        Write-Host "URL mode: Local network"
+    }
 }

@@ -141,7 +141,13 @@ Never commit credential-bearing files.
 Configure user MCP for Home Assistant-hosted MCP endpoint:
 
 ```powershell
-pwsh -File .\scripts\setup-nebula-rag.ps1 -Mode User -InstallTarget HomeAssistantAddon -HomeAssistantMcpUrl http://homeassistant.local:8099/mcp -Force
+pwsh -File .\scripts\setup-nebula-rag.ps1 -Mode User -InstallTarget HomeAssistantAddon -HomeAssistantMcpUrl http://homeassistant.local:8099/nebula/mcp -Force
+```
+
+Use an external URL only when explicitly needed:
+
+```powershell
+pwsh -File .\scripts\setup-nebula-rag.ps1 -Mode User -InstallTarget HomeAssistantAddon -UseExternalHomeAssistantUrl -ForceExternal -ExternalHomeAssistantMcpUrl https://boefjes.duckdns.org/api/hassio_ingress/<token>/mcp -Force
 ```
 
 This setup also writes a global agent baseline to `~/AGENTS.md` and project baseline files (including `AGENTS.md`) when project mode is used.

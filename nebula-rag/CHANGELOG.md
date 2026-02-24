@@ -4,6 +4,12 @@ All notable changes to the Nebula RAG Home Assistant add-on are documented in th
 
 The format is inspired by Keep a Changelog and follows semantic versioning.
 
+## [0.2.7] - 2026-02-24
+
+- Updated setup script defaults for privacy-first usage: Home Assistant MCP URL now defaults to local network path-base endpoint (`http://homeassistant.local:8099/nebula/mcp`).
+- Added explicit external MCP URL option in setup script (`-UseExternalHomeAssistantUrl` with `-ExternalHomeAssistantMcpUrl`) so public ingress usage is opt-in.
+- Added a hard safety guard for external mode: `-UseExternalHomeAssistantUrl` now also requires `-ForceExternal` to prevent accidental public exposure.
+
 ## [0.2.6] - 2026-02-23
 
 - Added defensive numeric normalization in dashboard metrics so missing fields cannot trigger `toLocaleString` runtime crashes during mixed-version rollouts.

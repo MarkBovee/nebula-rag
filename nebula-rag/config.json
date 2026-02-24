@@ -1,6 +1,6 @@
 {
   "name": "Nebula RAG",
-  "version": "0.2.6",
+  "version": "0.2.7",
   "slug": "nebula_rag",
   "description": "NebulaRAG long-running add-on with Nebula web UI and MCP endpoint.",
   "url": "https://github.com/MarkBovee/NebulaRAG/tree/main/nebula-rag",
@@ -13,14 +13,20 @@
   "panel_icon": "mdi:star-four-points-outline",
   "panel_title": "Nebula RAG",
   "webui": "http://[HOST]:[PORT:8099]",
-  "arch": ["amd64", "aarch64"],
+  "arch": [
+    "amd64",
+    "aarch64"
+  ],
   "ports": {
     "8099/tcp": 8099
   },
   "ports_description": {
     "8099/tcp": "Nebula RAG web UI and MCP endpoint"
   },
-  "map": ["share:rw", "addon_config:rw"],
+  "map": [
+    "share:rw",
+    "addon_config:rw"
+  ],
   "options": {
     "default_index_path": "/share",
     "path_base": "/nebula",
