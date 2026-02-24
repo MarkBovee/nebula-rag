@@ -4,6 +4,12 @@ All notable changes to the Nebula RAG Home Assistant add-on are documented in th
 
 The format is inspired by Keep a Changelog and follows semantic versioning.
 
+## [0.2.9] - 2026-02-24
+
+- Normalized indexed source keys to project-relative paths for cleaner MCP source output.
+- Improved ingestion defaults to skip generated/compiled artifacts during indexing.
+- Added source normalization tooling to migrate existing absolute-path source records.
+
 ## [0.2.8] - 2026-02-24
 
 - Refactored add-on REST API endpoints into a dedicated controller (`RagApiController`) to improve maintainability as the API surface grows.
