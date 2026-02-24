@@ -573,6 +573,7 @@ public sealed partial class McpTransportHandler
     private async Task<JsonObject> ExecuteMemoryStoreToolAsync(JsonObject? arguments, CancellationToken cancellationToken)
     {
         var sessionId = arguments?["sessionId"]?.GetValue<string>();
+        var explicitProjectId = arguments?["projectId"]?.GetValue<string>();
         var type = arguments?["type"]?.GetValue<string>();
         var content = arguments?["content"]?.GetValue<string>();
         if (string.IsNullOrWhiteSpace(type) || string.IsNullOrWhiteSpace(content))
@@ -585,12 +586,14 @@ public sealed partial class McpTransportHandler
             ? $"session-{Guid.NewGuid():N}"
             : sessionId;
         var tags = ParseTags(arguments?["tags"]);
+        var resolvedProjectId = ResolveProjectId(explicitProjectId, tags);
         var embedding = _embeddingGenerator.GenerateEmbedding(content, _settings.Ingestion.VectorDimensions);
-        var memoryId = await _store.CreateMemoryAsync(resolvedSessionId, type, content, tags, embedding, cancellationToken);
+        var memoryId = await _store.CreateMemoryAsync(resolvedSessionId, resolvedProjectId, type, content, tags, embedding, cancellationToken);
         return BuildToolResult("Memory stored.", new JsonObject
         {
             ["memoryId"] = memoryId,
             ["sessionId"] = resolvedSessionId,
+            ["projectId"] = resolvedProjectId,
             ["type"] = type,
             ["tags"] = JsonSerializer.SerializeToNode(tags)
         });
@@ -614,15 +617,16 @@ public sealed partial class McpTransportHandler
         var type = arguments?["type"]?.GetValue<string>();
         var tag = arguments?["tag"]?.GetValue<string>();
         var sessionId = arguments?["sessionId"]?.GetValue<string>();
+        var projectId = ResolveProjectId(arguments?["projectId"]?.GetValue<string>(), tags: null);
         var queryEmbedding = _embeddingGenerator.GenerateEmbedding(text, _settings.Ingestion.VectorDimensions);
-        var memories = await _store.SearchMemoriesAsync(queryEmbedding, limit, type, tag, sessionId, cancellationToken);
+        var memories = await _store.SearchMemoriesAsync(queryEmbedding, limit, type, tag, sessionId, projectId, cancellationToken);
         var usedFallback = false;
         if (memories.Count == 0)
         {
             // Fallback to recent-memory listing so recall remains useful when semantic ranking returns no hits.
-            var listedMemories = await _store.ListMemoriesAsync(limit, type, tag, sessionId, cancellationToken);
+            var listedMemories = await _store.ListMemoriesAsync(limit, type, tag, sessionId, projectId, cancellationToken);
             memories = listedMemories
-                .Select(memory => new MemorySearchResult(memory.Id, memory.SessionId, memory.Type, memory.Content, memory.Tags, memory.CreatedAtUtc, 0d))
+                .Select(memory => new MemorySearchResult(memory.Id, memory.SessionId, memory.ProjectId, memory.Type, memory.Content, memory.Tags, memory.CreatedAtUtc, 0d))
                 .ToList();
             usedFallback = memories.Count > 0;
         }
@@ -634,6 +638,7 @@ public sealed partial class McpTransportHandler
             {
                 ["id"] = memory.Id,
                 ["sessionId"] = memory.SessionId,
+                ["projectId"] = memory.ProjectId,
                 ["type"] = memory.Type,
                 ["content"] = memory.Content,
                 ["tags"] = JsonSerializer.SerializeToNode(memory.Tags),
@@ -646,6 +651,7 @@ public sealed partial class McpTransportHandler
         {
             ["items"] = items,
             ["sessionId"] = sessionId,
+            ["projectId"] = projectId,
             ["fallbackUsed"] = usedFallback
         });
     }
@@ -662,7 +668,8 @@ public sealed partial class McpTransportHandler
         var type = arguments?["type"]?.GetValue<string>();
         var tag = arguments?["tag"]?.GetValue<string>();
         var sessionId = arguments?["sessionId"]?.GetValue<string>();
-        var memories = await _store.ListMemoriesAsync(limit, type, tag, sessionId, cancellationToken);
+        var projectId = ResolveProjectId(arguments?["projectId"]?.GetValue<string>(), tags: null);
+        var memories = await _store.ListMemoriesAsync(limit, type, tag, sessionId, projectId, cancellationToken);
         var items = new JsonArray();
         foreach (var memory in memories)
         {
@@ -670,6 +677,7 @@ public sealed partial class McpTransportHandler
             {
                 ["id"] = memory.Id,
                 ["sessionId"] = memory.SessionId,
+                ["projectId"] = memory.ProjectId,
                 ["type"] = memory.Type,
                 ["content"] = memory.Content,
                 ["tags"] = JsonSerializer.SerializeToNode(memory.Tags),
@@ -680,7 +688,8 @@ public sealed partial class McpTransportHandler
         return BuildToolResult($"Listed {memories.Count} memories.", new JsonObject
         {
             ["items"] = items,
-            ["sessionId"] = sessionId
+            ["sessionId"] = sessionId,
+            ["projectId"] = projectId
         });
     }
 
@@ -803,6 +812,41 @@ public sealed partial class McpTransportHandler
         }
 
         return tags;
+    }
+
+    /// <summary>
+    /// Resolves an optional project id, with tag-based fallback for project-scoped memory writes.
+    /// </summary>
+    /// <param name="explicitProjectId">Project id explicitly provided by caller.</param>
+    /// <param name="tags">Optional memory tags to inspect for project:* conventions.</param>
+    /// <returns>Resolved project id or <c>null</c> when no project scope is provided.</returns>
+    private static string? ResolveProjectId(string? explicitProjectId, IReadOnlyList<string>? tags)
+    {
+        if (!string.IsNullOrWhiteSpace(explicitProjectId))
+        {
+            return explicitProjectId.Trim();
+        }
+
+        if (tags is null)
+        {
+            return null;
+        }
+
+        foreach (var tag in tags)
+        {
+            if (string.IsNullOrWhiteSpace(tag) || !tag.StartsWith("project:", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var projectFromTag = tag["project:".Length..].Trim();
+            if (!string.IsNullOrWhiteSpace(projectFromTag))
+            {
+                return projectFromTag;
+            }
+        }
+
+        return null;
     }
 
     /// <summary>

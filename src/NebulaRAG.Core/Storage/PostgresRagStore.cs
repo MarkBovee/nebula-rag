@@ -67,12 +67,16 @@ public sealed class PostgresRagStore
             CREATE TABLE IF NOT EXISTS memories (
                 id BIGSERIAL PRIMARY KEY,
                 session_id TEXT NOT NULL,
+                project_id TEXT,
                 type TEXT NOT NULL CHECK (type IN ('episodic', 'semantic', 'procedural')),
                 content TEXT NOT NULL,
                 embedding VECTOR({vectorDimensions}) NOT NULL,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 tags TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[]
             );
+
+            ALTER TABLE memories
+                ADD COLUMN IF NOT EXISTS project_id TEXT;
 
             CREATE INDEX IF NOT EXISTS ix_rag_chunks_document_id ON rag_chunks(document_id);
             CREATE INDEX IF NOT EXISTS ix_rag_chunks_embedding_ivfflat
@@ -85,6 +89,7 @@ public sealed class PostgresRagStore
 
             CREATE INDEX IF NOT EXISTS ix_memories_created_at ON memories (created_at DESC);
             CREATE INDEX IF NOT EXISTS ix_memories_type ON memories (type);
+            CREATE INDEX IF NOT EXISTS ix_memories_project_id ON memories (project_id);
             CREATE INDEX IF NOT EXISTS ix_memories_tags_gin ON memories USING GIN (tags);
             CREATE INDEX IF NOT EXISTS ix_memories_embedding_ivfflat
                 ON memories
@@ -346,6 +351,7 @@ public sealed class PostgresRagStore
         const string sql = @"
             SELECT 
                 COUNT(DISTINCT d.id) as doc_count,
+                COUNT(DISTINCT d.source_path) as source_count,
                 COUNT(c.id) as chunk_count,
                 COALESCE(SUM(c.token_count), 0) as total_tokens,
                 MIN(d.indexed_at) as oldest,
@@ -363,18 +369,6 @@ public sealed class PostgresRagStore
         await connection.OpenAsync(cancellationToken);
         await using var command = new NpgsqlCommand(sql, connection);
 
-        var sourcePaths = new List<string>();
-        await using (var projectCommand = new NpgsqlCommand("SELECT source_path FROM rag_documents", connection))
-        await using (var projectReader = await projectCommand.ExecuteReaderAsync(cancellationToken))
-        {
-            while (await projectReader.ReadAsync(cancellationToken))
-            {
-                sourcePaths.Add(projectReader.GetString(0));
-            }
-        }
-
-        var projectCount = CountDistinctProjects(sourcePaths);
-
         long indexSizeBytes = 0;
         if (includeIndexSize)
         {
@@ -388,65 +382,15 @@ public sealed class PostgresRagStore
         {
             return new IndexStats(
                 DocumentCount: reader.GetInt32(0),
-                ChunkCount: reader.GetInt32(1),
-                TotalTokens: reader.GetInt64(2),
-                OldestIndexedAt: reader.IsDBNull(3) ? null : reader.GetDateTime(3),
-                NewestIndexedAt: reader.IsDBNull(4) ? null : reader.GetDateTime(4),
+                ChunkCount: reader.GetInt32(2),
+                TotalTokens: reader.GetInt64(3),
+                OldestIndexedAt: reader.IsDBNull(4) ? null : reader.GetDateTime(4),
+                NewestIndexedAt: reader.IsDBNull(5) ? null : reader.GetDateTime(5),
                 IndexSizeBytes: indexSizeBytes,
-                ProjectCount: projectCount);
+                ProjectCount: reader.GetInt32(1));
         }
 
         return new IndexStats(0, 0, 0, null, null, 0, 0);
-    }
-
-    /// <summary>
-    /// Counts the number of distinct projects represented in indexed source paths.
-    /// </summary>
-    /// <param name="sourcePaths">Indexed source paths.</param>
-    /// <returns>Distinct project count.</returns>
-    private static int CountDistinctProjects(IEnumerable<string> sourcePaths)
-    {
-        var projectNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-        foreach (var sourcePath in sourcePaths)
-        {
-            projectNames.Add(ExtractProjectName(sourcePath));
-        }
-
-        return projectNames.Count;
-    }
-
-    /// <summary>
-    /// Extracts a normalized project key from a source path.
-    /// </summary>
-    /// <param name="sourcePath">Source path or URL.</param>
-    /// <returns>Project key used for grouped statistics.</returns>
-    private static string ExtractProjectName(string sourcePath)
-    {
-        if (string.IsNullOrWhiteSpace(sourcePath))
-        {
-            return "Unknown";
-        }
-
-        if (Uri.TryCreate(sourcePath, UriKind.Absolute, out var uri)
-            && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps))
-        {
-            return uri.Host;
-        }
-
-        var normalizedPath = sourcePath.Replace('\\', '/');
-        var pathSegments = normalizedPath.Split('/', StringSplitOptions.RemoveEmptyEntries);
-        if (pathSegments.Length == 0)
-        {
-            return "Unknown";
-        }
-
-        if (pathSegments[0].Length == 2 && char.IsLetter(pathSegments[0][0]) && pathSegments[0][1] == ':')
-        {
-            return pathSegments.Length > 1 ? pathSegments[1] : pathSegments[0];
-        }
-
-        return pathSegments[0];
     }
 
     /// <summary>
@@ -687,14 +631,31 @@ public sealed class PostgresRagStore
     /// <param name="embedding">Memory embedding vector.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Identifier of the inserted memory row.</returns>
-    public async Task<long> CreateMemoryAsync(string? sessionId, string type, string content, IReadOnlyList<string> tags, IReadOnlyList<float> embedding, CancellationToken cancellationToken = default)
+    public Task<long> CreateMemoryAsync(string? sessionId, string type, string content, IReadOnlyList<string> tags, IReadOnlyList<float> embedding, CancellationToken cancellationToken = default)
+    {
+        return CreateMemoryAsync(sessionId, projectId: null, type, content, tags, embedding, cancellationToken);
+    }
+
+    /// <summary>
+    /// Stores a memory entry and returns its newly assigned identifier.
+    /// </summary>
+    /// <param name="sessionId">Optional logical session identifier for grouping related memories.</param>
+    /// <param name="projectId">Optional project identifier used for project-wide filtering.</param>
+    /// <param name="type">Memory type: episodic, semantic, or procedural.</param>
+    /// <param name="content">Natural language memory content.</param>
+    /// <param name="tags">Tag collection for memory filtering.</param>
+    /// <param name="embedding">Memory embedding vector.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Identifier of the inserted memory row.</returns>
+    public async Task<long> CreateMemoryAsync(string? sessionId, string? projectId, string type, string content, IReadOnlyList<string> tags, IReadOnlyList<float> embedding, CancellationToken cancellationToken = default)
     {
         ValidateMemoryArguments(type, content, embedding);
         var resolvedSessionId = NormalizeSessionId(sessionId);
+        var resolvedProjectId = NormalizeProjectId(projectId);
 
         const string sql = """
-            INSERT INTO memories (session_id, type, content, embedding, tags)
-            VALUES (@sessionId, @type, @content, CAST(@embedding AS vector), @tags)
+            INSERT INTO memories (session_id, project_id, type, content, embedding, tags)
+            VALUES (@sessionId, @projectId, @type, @content, CAST(@embedding AS vector), @tags)
             RETURNING id
             """;
 
@@ -702,6 +663,7 @@ public sealed class PostgresRagStore
         await connection.OpenAsync(cancellationToken);
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue("sessionId", resolvedSessionId);
+        command.Parameters.Add(CreateNullableTextParameter("projectId", resolvedProjectId));
         command.Parameters.AddWithValue("type", type);
         command.Parameters.AddWithValue("content", content);
         command.Parameters.AddWithValue("embedding", ToVectorLiteral(embedding));
@@ -720,19 +682,37 @@ public sealed class PostgresRagStore
     /// <param name="sessionId">Optional session-id filter.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Recent memory rows sorted by creation date descending.</returns>
-    public async Task<IReadOnlyList<MemoryRecord>> ListMemoriesAsync(int limit, string? type = null, string? tag = null, string? sessionId = null, CancellationToken cancellationToken = default)
+    public Task<IReadOnlyList<MemoryRecord>> ListMemoriesAsync(int limit, string? type = null, string? tag = null, string? sessionId = null, CancellationToken cancellationToken = default)
+    {
+        return ListMemoriesAsync(limit, type, tag, sessionId, projectId: null, cancellationToken);
+    }
+
+    /// <summary>
+    /// Lists the most recent memories optionally filtered by type, tag, session, and project.
+    /// </summary>
+    /// <param name="limit">Maximum number of rows to return.</param>
+    /// <param name="type">Optional memory type filter.</param>
+    /// <param name="tag">Optional tag filter.</param>
+    /// <param name="sessionId">Optional session-id filter.</param>
+    /// <param name="projectId">Optional project-id filter.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Recent memory rows sorted by creation date descending.</returns>
+    public async Task<IReadOnlyList<MemoryRecord>> ListMemoriesAsync(int limit, string? type, string? tag, string? sessionId, string? projectId, CancellationToken cancellationToken = default)
     {
         if (limit <= 0)
         {
             throw new ArgumentOutOfRangeException(nameof(limit), "Limit must be greater than 0.");
         }
 
+        var normalizedProjectId = NormalizeProjectId(projectId);
+
         const string sql = """
-            SELECT id, session_id, type, content, tags, created_at
+            SELECT id, session_id, project_id, type, content, tags, created_at
             FROM memories
                         WHERE (@type::text IS NULL OR type = @type::text)
                             AND (@tag::text IS NULL OR @tag::text = ANY(tags))
                             AND (@sessionId::text IS NULL OR session_id = @sessionId::text)
+                            AND (@projectId::text IS NULL OR project_id = @projectId::text)
             ORDER BY created_at DESC
             LIMIT @limit
             """;
@@ -743,6 +723,7 @@ public sealed class PostgresRagStore
         command.Parameters.Add(CreateNullableTextParameter("type", type));
         command.Parameters.Add(CreateNullableTextParameter("tag", tag));
         command.Parameters.Add(CreateNullableTextParameter("sessionId", sessionId));
+        command.Parameters.Add(CreateNullableTextParameter("projectId", normalizedProjectId));
         command.Parameters.AddWithValue("limit", limit);
 
         var rows = new List<MemoryRecord>();
@@ -752,10 +733,11 @@ public sealed class PostgresRagStore
             rows.Add(new MemoryRecord(
                 Id: reader.GetInt64(0),
                 SessionId: reader.GetString(1),
-                Type: reader.GetString(2),
-                Content: reader.GetString(3),
-                Tags: reader.GetFieldValue<string[]>(4),
-                CreatedAtUtc: reader.GetFieldValue<DateTimeOffset>(5)));
+                ProjectId: reader.IsDBNull(2) ? null : reader.GetString(2),
+                Type: reader.GetString(3),
+                Content: reader.GetString(4),
+                Tags: reader.GetFieldValue<string[]>(5),
+                CreatedAtUtc: reader.GetFieldValue<DateTimeOffset>(6)));
         }
 
         return rows;
@@ -771,7 +753,23 @@ public sealed class PostgresRagStore
     /// <param name="sessionId">Optional session-id filter.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Semantically ranked memory rows.</returns>
-    public async Task<IReadOnlyList<MemorySearchResult>> SearchMemoriesAsync(float[] queryEmbedding, int limit, string? type = null, string? tag = null, string? sessionId = null, CancellationToken cancellationToken = default)
+    public Task<IReadOnlyList<MemorySearchResult>> SearchMemoriesAsync(float[] queryEmbedding, int limit, string? type = null, string? tag = null, string? sessionId = null, CancellationToken cancellationToken = default)
+    {
+        return SearchMemoriesAsync(queryEmbedding, limit, type, tag, sessionId, projectId: null, cancellationToken);
+    }
+
+    /// <summary>
+    /// Performs semantic recall over memories using cosine similarity.
+    /// </summary>
+    /// <param name="queryEmbedding">Query embedding vector.</param>
+    /// <param name="limit">Maximum number of rows to return.</param>
+    /// <param name="type">Optional memory type filter.</param>
+    /// <param name="tag">Optional tag filter.</param>
+    /// <param name="sessionId">Optional session-id filter.</param>
+    /// <param name="projectId">Optional project-id filter.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Semantically ranked memory rows.</returns>
+    public async Task<IReadOnlyList<MemorySearchResult>> SearchMemoriesAsync(float[] queryEmbedding, int limit, string? type, string? tag, string? sessionId, string? projectId, CancellationToken cancellationToken = default)
     {
         if (queryEmbedding.Length == 0)
         {
@@ -783,9 +781,12 @@ public sealed class PostgresRagStore
             throw new ArgumentOutOfRangeException(nameof(limit), "Limit must be greater than 0.");
         }
 
+        var normalizedProjectId = NormalizeProjectId(projectId);
+
         const string sql = """
             SELECT id,
                    session_id,
+                   project_id,
                    type,
                    content,
                    tags,
@@ -795,6 +796,7 @@ public sealed class PostgresRagStore
                         WHERE (@type::text IS NULL OR type = @type::text)
                             AND (@tag::text IS NULL OR @tag::text = ANY(tags))
                             AND (@sessionId::text IS NULL OR session_id = @sessionId::text)
+                            AND (@projectId::text IS NULL OR project_id = @projectId::text)
             ORDER BY embedding <=> CAST(@embedding AS vector)
             LIMIT @limit
             """;
@@ -806,6 +808,7 @@ public sealed class PostgresRagStore
         command.Parameters.Add(CreateNullableTextParameter("type", type));
         command.Parameters.Add(CreateNullableTextParameter("tag", tag));
         command.Parameters.Add(CreateNullableTextParameter("sessionId", sessionId));
+        command.Parameters.Add(CreateNullableTextParameter("projectId", normalizedProjectId));
         command.Parameters.AddWithValue("limit", limit);
 
         var rows = new List<MemorySearchResult>();
@@ -820,10 +823,11 @@ public sealed class PostgresRagStore
             rows.Add(new MemorySearchResult(
                 Id: reader.GetInt64(0),
                 SessionId: reader.GetString(1),
-                Type: reader.GetString(2),
-                Content: reader.GetString(3),
-                Tags: reader.GetFieldValue<string[]>(4),
-                CreatedAtUtc: reader.GetFieldValue<DateTimeOffset>(5),
+                ProjectId: reader.IsDBNull(2) ? null : reader.GetString(2),
+                Type: reader.GetString(3),
+                Content: reader.GetString(4),
+                Tags: reader.GetFieldValue<string[]>(5),
+                CreatedAtUtc: reader.GetFieldValue<DateTimeOffset>(6),
                 Score: score));
         }
 
@@ -838,7 +842,22 @@ public sealed class PostgresRagStore
     /// <param name="recentSessionLimit">Maximum number of recent sessions to return.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Aggregated memory analytics payload.</returns>
-    public async Task<MemoryDashboardStats> GetMemoryStatsAsync(int dayWindow = 30, int topTagLimit = 10, int recentSessionLimit = 12, CancellationToken cancellationToken = default)
+    public Task<MemoryDashboardStats> GetMemoryStatsAsync(int dayWindow = 30, int topTagLimit = 10, int recentSessionLimit = 12, CancellationToken cancellationToken = default)
+    {
+        return GetMemoryStatsAsync(dayWindow, topTagLimit, recentSessionLimit, sessionId: null, projectId: null, cancellationToken);
+    }
+
+    /// <summary>
+    /// Computes memory analytics suitable for dashboard visualization with optional session/project filters.
+    /// </summary>
+    /// <param name="dayWindow">Number of trailing days to include in daily counts.</param>
+    /// <param name="topTagLimit">Maximum number of top tags to return.</param>
+    /// <param name="recentSessionLimit">Maximum number of recent sessions to return.</param>
+    /// <param name="sessionId">Optional session-id scope filter.</param>
+    /// <param name="projectId">Optional project-id scope filter.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Aggregated memory analytics payload.</returns>
+    public async Task<MemoryDashboardStats> GetMemoryStatsAsync(int dayWindow, int topTagLimit, int recentSessionLimit, string? sessionId, string? projectId, CancellationToken cancellationToken = default)
     {
         if (dayWindow <= 0)
         {
@@ -855,20 +874,24 @@ public sealed class PostgresRagStore
             throw new ArgumentOutOfRangeException(nameof(recentSessionLimit), "Recent session limit must be greater than 0.");
         }
 
+        var normalizedSessionId = NormalizeSessionId(sessionId);
+        var normalizedProjectId = NormalizeProjectId(projectId);
+
         await using var connection = new NpgsqlConnection(_connectionString);
         await connection.OpenAsync(cancellationToken);
 
-        var overview = await GetMemoryOverviewAsync(connection, cancellationToken);
-        var typeCounts = await GetMemoryTypeCountsAsync(connection, cancellationToken);
-        var topTags = await GetTopMemoryTagsAsync(connection, topTagLimit, cancellationToken);
-        var dailyCounts = await GetMemoryDailyCountsAsync(connection, dayWindow, cancellationToken);
-        var recentSessions = await GetRecentMemorySessionsAsync(connection, recentSessionLimit, cancellationToken);
+        var overview = await GetMemoryOverviewAsync(connection, normalizedSessionId, normalizedProjectId, cancellationToken);
+        var typeCounts = await GetMemoryTypeCountsAsync(connection, normalizedSessionId, normalizedProjectId, cancellationToken);
+        var topTags = await GetTopMemoryTagsAsync(connection, topTagLimit, normalizedSessionId, normalizedProjectId, cancellationToken);
+        var dailyCounts = await GetMemoryDailyCountsAsync(connection, dayWindow, normalizedSessionId, normalizedProjectId, cancellationToken);
+        var recentSessions = await GetRecentMemorySessionsAsync(connection, recentSessionLimit, normalizedSessionId, normalizedProjectId, cancellationToken);
 
         var canonicalTypeCounts = BuildCanonicalTypeCounts(typeCounts);
         return new MemoryDashboardStats(
             TotalMemories: overview.TotalMemories,
             Recent24HoursCount: overview.Recent24HoursCount,
             DistinctSessionCount: overview.DistinctSessionCount,
+            DistinctProjectCount: overview.DistinctProjectCount,
             AverageTagsPerMemory: overview.AverageTagsPerMemory,
             FirstMemoryAtUtc: overview.FirstMemoryAtUtc,
             LastMemoryAtUtc: overview.LastMemoryAtUtc,
@@ -933,30 +956,36 @@ public sealed class PostgresRagStore
     /// <param name="connection">Open PostgreSQL connection.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Memory overview aggregate values.</returns>
-    private static async Task<MemoryOverviewAggregate> GetMemoryOverviewAsync(NpgsqlConnection connection, CancellationToken cancellationToken)
+    private static async Task<MemoryOverviewAggregate> GetMemoryOverviewAsync(NpgsqlConnection connection, string? sessionId, string? projectId, CancellationToken cancellationToken)
     {
         const string sql = """
             SELECT COUNT(*)::bigint AS total_memories,
                    COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '24 hours')::bigint AS recent_24h_count,
                    COUNT(DISTINCT session_id)::int AS distinct_session_count,
+                                     COUNT(DISTINCT COALESCE(project_id, 'unscoped'))::int AS distinct_project_count,
                    COALESCE(AVG(COALESCE(array_length(tags, 1), 0)), 0)::double precision AS average_tags_per_memory,
                    MIN(created_at) AS first_memory_at,
                    MAX(created_at) AS last_memory_at
             FROM memories
+            WHERE (@sessionId::text IS NULL OR session_id = @sessionId::text)
+              AND (@projectId::text IS NULL OR project_id = @projectId::text)
             """;
 
         await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.Add(CreateNullableTextParameter("sessionId", sessionId));
+        command.Parameters.Add(CreateNullableTextParameter("projectId", projectId));
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         await reader.ReadAsync(cancellationToken);
 
-        var firstMemoryAt = reader.IsDBNull(4) ? (DateTimeOffset?)null : reader.GetFieldValue<DateTimeOffset>(4);
-        var lastMemoryAt = reader.IsDBNull(5) ? (DateTimeOffset?)null : reader.GetFieldValue<DateTimeOffset>(5);
+        var firstMemoryAt = reader.IsDBNull(5) ? (DateTimeOffset?)null : reader.GetFieldValue<DateTimeOffset>(5);
+        var lastMemoryAt = reader.IsDBNull(6) ? (DateTimeOffset?)null : reader.GetFieldValue<DateTimeOffset>(6);
 
         return new MemoryOverviewAggregate(
             TotalMemories: reader.GetInt64(0),
             Recent24HoursCount: reader.GetInt64(1),
             DistinctSessionCount: reader.GetInt32(2),
-            AverageTagsPerMemory: reader.GetDouble(3),
+            DistinctProjectCount: reader.GetInt32(3),
+            AverageTagsPerMemory: reader.GetDouble(4),
             FirstMemoryAtUtc: firstMemoryAt,
             LastMemoryAtUtc: lastMemoryAt);
     }
@@ -967,17 +996,21 @@ public sealed class PostgresRagStore
     /// <param name="connection">Open PostgreSQL connection.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Type-count rows from the memories table.</returns>
-    private static async Task<IReadOnlyList<MemoryTypeCount>> GetMemoryTypeCountsAsync(NpgsqlConnection connection, CancellationToken cancellationToken)
+    private static async Task<IReadOnlyList<MemoryTypeCount>> GetMemoryTypeCountsAsync(NpgsqlConnection connection, string? sessionId, string? projectId, CancellationToken cancellationToken)
     {
         const string sql = """
             SELECT type,
                    COUNT(*)::bigint AS memory_count
             FROM memories
+            WHERE (@sessionId::text IS NULL OR session_id = @sessionId::text)
+              AND (@projectId::text IS NULL OR project_id = @projectId::text)
             GROUP BY type
             ORDER BY type ASC
             """;
 
         await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.Add(CreateNullableTextParameter("sessionId", sessionId));
+        command.Parameters.Add(CreateNullableTextParameter("projectId", projectId));
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         var rows = new List<MemoryTypeCount>();
 
@@ -998,14 +1031,16 @@ public sealed class PostgresRagStore
     /// <param name="limit">Maximum number of tags to return.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Top tag-count rows ordered by usage descending.</returns>
-    private static async Task<IReadOnlyList<MemoryTagCount>> GetTopMemoryTagsAsync(NpgsqlConnection connection, int limit, CancellationToken cancellationToken)
+        private static async Task<IReadOnlyList<MemoryTagCount>> GetTopMemoryTagsAsync(NpgsqlConnection connection, int limit, string? sessionId, string? projectId, CancellationToken cancellationToken)
     {
         const string sql = """
             SELECT tag,
                    COUNT(*)::bigint AS tag_count
             FROM memories
             CROSS JOIN LATERAL unnest(tags) AS tag
-            WHERE tag IS NOT NULL
+                        WHERE (@sessionId::text IS NULL OR session_id = @sessionId::text)
+                            AND (@projectId::text IS NULL OR project_id = @projectId::text)
+                            AND tag IS NOT NULL
               AND btrim(tag) <> ''
             GROUP BY tag
             ORDER BY tag_count DESC, tag ASC
@@ -1013,6 +1048,8 @@ public sealed class PostgresRagStore
             """;
 
         await using var command = new NpgsqlCommand(sql, connection);
+                command.Parameters.Add(CreateNullableTextParameter("sessionId", sessionId));
+                command.Parameters.Add(CreateNullableTextParameter("projectId", projectId));
         command.Parameters.AddWithValue("limit", limit);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         var rows = new List<MemoryTagCount>();
@@ -1034,19 +1071,23 @@ public sealed class PostgresRagStore
     /// <param name="dayWindow">Trailing number of days to include.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Daily UTC date buckets with counts.</returns>
-    private static async Task<IReadOnlyList<MemoryDailyCount>> GetMemoryDailyCountsAsync(NpgsqlConnection connection, int dayWindow, CancellationToken cancellationToken)
+    private static async Task<IReadOnlyList<MemoryDailyCount>> GetMemoryDailyCountsAsync(NpgsqlConnection connection, int dayWindow, string? sessionId, string? projectId, CancellationToken cancellationToken)
     {
         const string sql = """
             SELECT DATE(created_at AT TIME ZONE 'UTC') AS day_utc,
                    COUNT(*)::bigint AS memory_count
             FROM memories
             WHERE created_at >= NOW() - make_interval(days => @dayWindow)
+              AND (@sessionId::text IS NULL OR session_id = @sessionId::text)
+              AND (@projectId::text IS NULL OR project_id = @projectId::text)
             GROUP BY day_utc
             ORDER BY day_utc ASC
             """;
 
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue("dayWindow", dayWindow);
+        command.Parameters.Add(CreateNullableTextParameter("sessionId", sessionId));
+        command.Parameters.Add(CreateNullableTextParameter("projectId", projectId));
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         var rows = new List<MemoryDailyCount>();
 
@@ -1067,19 +1108,23 @@ public sealed class PostgresRagStore
     /// <param name="limit">Maximum number of sessions to return.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Recent session memory summaries.</returns>
-    private static async Task<IReadOnlyList<MemorySessionSummary>> GetRecentMemorySessionsAsync(NpgsqlConnection connection, int limit, CancellationToken cancellationToken)
+    private static async Task<IReadOnlyList<MemorySessionSummary>> GetRecentMemorySessionsAsync(NpgsqlConnection connection, int limit, string? sessionId, string? projectId, CancellationToken cancellationToken)
     {
         const string sql = """
             SELECT session_id,
                    COUNT(*)::bigint AS memory_count,
                    MAX(created_at) AS last_memory_at
             FROM memories
+            WHERE (@sessionId::text IS NULL OR session_id = @sessionId::text)
+              AND (@projectId::text IS NULL OR project_id = @projectId::text)
             GROUP BY session_id
             ORDER BY last_memory_at DESC
             LIMIT @limit
             """;
 
         await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.Add(CreateNullableTextParameter("sessionId", sessionId));
+        command.Parameters.Add(CreateNullableTextParameter("projectId", projectId));
         command.Parameters.AddWithValue("limit", limit);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         var rows = new List<MemorySessionSummary>();
@@ -1181,6 +1226,18 @@ public sealed class PostgresRagStore
     }
 
     /// <summary>
+    /// Resolves an optional project identifier into a normalized persisted value.
+    /// </summary>
+    /// <param name="projectId">Optional caller-provided project identifier.</param>
+    /// <returns>Trimmed project identifier or <c>null</c> when no project scope is provided.</returns>
+    private static string? NormalizeProjectId(string? projectId)
+    {
+        return string.IsNullOrWhiteSpace(projectId)
+            ? null
+            : projectId.Trim();
+    }
+
+    /// <summary>
     /// Creates a nullable text parameter with an explicit PostgreSQL type.
     /// </summary>
     /// <param name="name">Parameter name.</param>
@@ -1231,6 +1288,7 @@ public sealed class PostgresRagStore
         long TotalMemories,
         long Recent24HoursCount,
         int DistinctSessionCount,
+        int DistinctProjectCount,
         double AverageTagsPerMemory,
         DateTimeOffset? FirstMemoryAtUtc,
         DateTimeOffset? LastMemoryAtUtc);

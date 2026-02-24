@@ -5,23 +5,25 @@ namespace NebulaRAG.Core.Models;
 /// </summary>
 /// <param name="Id">Database identifier of the memory entry.</param>
 /// <param name="SessionId">Logical session identifier associated with the memory.</param>
+/// <param name="ProjectId">Optional project identifier associated with the memory.</param>
 /// <param name="Type">Memory type: episodic, semantic, or procedural.</param>
 /// <param name="Content">Natural language memory content.</param>
 /// <param name="Tags">Tags associated with the memory for filtering.</param>
 /// <param name="CreatedAtUtc">UTC timestamp when the memory was created.</param>
-public sealed record MemoryRecord(long Id, string SessionId, string Type, string Content, IReadOnlyList<string> Tags, DateTimeOffset CreatedAtUtc);
+public sealed record MemoryRecord(long Id, string SessionId, string? ProjectId, string Type, string Content, IReadOnlyList<string> Tags, DateTimeOffset CreatedAtUtc);
 
 /// <summary>
 /// Represents a memory recall result including semantic score.
 /// </summary>
 /// <param name="Id">Database identifier of the recalled memory entry.</param>
 /// <param name="SessionId">Logical session identifier associated with the memory.</param>
+/// <param name="ProjectId">Optional project identifier associated with the memory.</param>
 /// <param name="Type">Memory type: episodic, semantic, or procedural.</param>
 /// <param name="Content">Natural language memory content.</param>
 /// <param name="Tags">Tags associated with the memory for filtering.</param>
 /// <param name="CreatedAtUtc">UTC timestamp when the memory was created.</param>
 /// <param name="Score">Cosine similarity score against the recall query.</param>
-public sealed record MemorySearchResult(long Id, string SessionId, string Type, string Content, IReadOnlyList<string> Tags, DateTimeOffset CreatedAtUtc, double Score);
+public sealed record MemorySearchResult(long Id, string SessionId, string? ProjectId, string Type, string Content, IReadOnlyList<string> Tags, DateTimeOffset CreatedAtUtc, double Score);
 
 /// <summary>
 /// Aggregated memory analytics payload used by dashboard and API consumers.
@@ -29,6 +31,7 @@ public sealed record MemorySearchResult(long Id, string SessionId, string Type, 
 /// <param name="TotalMemories">Total number of stored memories.</param>
 /// <param name="Recent24HoursCount">Number of memories created in the last 24 hours.</param>
 /// <param name="DistinctSessionCount">Number of distinct session identifiers represented in memory records.</param>
+/// <param name="DistinctProjectCount">Number of distinct project identifiers represented in memory records.</param>
 /// <param name="AverageTagsPerMemory">Average number of tags attached per memory entry.</param>
 /// <param name="FirstMemoryAtUtc">Oldest memory timestamp, or <c>null</c> when no memories exist.</param>
 /// <param name="LastMemoryAtUtc">Newest memory timestamp, or <c>null</c> when no memories exist.</param>
@@ -40,6 +43,7 @@ public sealed record MemoryDashboardStats(
 	long TotalMemories,
 	long Recent24HoursCount,
 	int DistinctSessionCount,
+	int DistinctProjectCount,
 	double AverageTagsPerMemory,
 	DateTimeOffset? FirstMemoryAtUtc,
 	DateTimeOffset? LastMemoryAtUtc,

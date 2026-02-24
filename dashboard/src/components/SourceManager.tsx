@@ -1,8 +1,7 @@
-import React, { useMemo, useState } from 'react';
+import React, { useState } from 'react';
 import { nebulaTheme } from '@/styles/theme';
 import { apiClient } from '@/api/client';
 import type { SourceInfo } from '@/types';
-import { extractProjectName } from '@/utils/projectGrouping';
 
 interface SourceManagerProps {
   sources: SourceInfo[];
@@ -64,28 +63,6 @@ const styles = {
     color: nebulaTheme.colors.warning,
     border: `1px solid ${nebulaTheme.colors.warning}`,
   } as React.CSSProperties,
-  filterRow: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: nebulaTheme.spacing.md,
-    marginBottom: nebulaTheme.spacing.md,
-    flexWrap: 'wrap',
-  } as React.CSSProperties,
-  filterLabel: {
-    color: nebulaTheme.colors.textSecondary,
-    fontSize: nebulaTheme.typography.fontSize.sm,
-    textTransform: 'uppercase',
-    letterSpacing: '0.05em',
-  } as React.CSSProperties,
-  filterSelect: {
-    background: nebulaTheme.colors.surfaceLight,
-    color: nebulaTheme.colors.textPrimary,
-    border: `1px solid ${nebulaTheme.colors.surfaceBorder}`,
-    borderRadius: nebulaTheme.borderRadius.md,
-    padding: `${nebulaTheme.spacing.sm} ${nebulaTheme.spacing.md}`,
-    minWidth: '220px',
-  } as React.CSSProperties,
 };
 
 /// <summary>
@@ -95,31 +72,6 @@ const styles = {
 const SourceManager: React.FC<SourceManagerProps> = ({ sources, onRefresh }) => {
   const [deleting, setDeleting] = useState<string | null>(null);
   const [reindexing, setReindexing] = useState<string | null>(null);
-  const [selectedProject, setSelectedProject] = useState<string>('ALL_PROJECTS');
-
-  const projectNames = useMemo(() => {
-    const distinctProjectNames = [...new Set(sources.map((source) => extractProjectName(source.sourcePath)))];
-    return distinctProjectNames.sort((left, right) => left.localeCompare(right));
-  }, [sources]);
-
-  const sourceCountByProject = useMemo(() => {
-    const projectCountMap = new Map<string, number>();
-
-    for (const source of sources) {
-      const projectName = extractProjectName(source.sourcePath);
-      projectCountMap.set(projectName, (projectCountMap.get(projectName) ?? 0) + 1);
-    }
-
-    return projectCountMap;
-  }, [sources]);
-
-  const filteredSources = useMemo(() => {
-    if (selectedProject === 'ALL_PROJECTS') {
-      return sources;
-    }
-
-    return sources.filter((source) => extractProjectName(source.sourcePath) === selectedProject);
-  }, [selectedProject, sources]);
 
   const handleDelete = async (sourcePath: string) => {
     if (!confirm(`Delete source "${sourcePath}"? This cannot be undone.`)) return;
@@ -150,28 +102,8 @@ const SourceManager: React.FC<SourceManagerProps> = ({ sources, onRefresh }) => 
   return (
     <div style={styles.card} data-testid="sources-card">
       <h2 style={styles.title}>Source Management</h2>
-
-      <div style={styles.filterRow}>
-        <span style={styles.filterLabel}>Project Filter</span>
-        <select
-          style={styles.filterSelect}
-          value={selectedProject}
-          onChange={(event) => setSelectedProject(event.target.value)}
-          data-testid="sources-project-filter"
-        >
-          <option value="ALL_PROJECTS">All Projects ({sources.length})</option>
-          {projectNames.map((projectName) => {
-            const sourceCountForProject = sourceCountByProject.get(projectName) ?? 0;
-            return (
-              <option key={projectName} value={projectName}>
-                {projectName} ({sourceCountForProject})
-              </option>
-            );
-          })}
-        </select>
-      </div>
       
-      {filteredSources.length > 0 ? (
+      {sources.length > 0 ? (
         <div style={{ overflowX: 'auto' }} className="nb-source-table-wrap">
           <table style={styles.table} data-testid="sources-table">
             <thead style={styles.thead}>
@@ -184,7 +116,7 @@ const SourceManager: React.FC<SourceManagerProps> = ({ sources, onRefresh }) => 
               </tr>
             </thead>
             <tbody>
-              {filteredSources.map((source, idx) => (
+              {sources.map((source, idx) => (
                 <tr key={idx} data-testid="source-row">
                   <td style={styles.td}>
                     <span style={{ color: nebulaTheme.colors.neonCyan }} className="nb-source-path" data-testid="source-path">
@@ -227,7 +159,7 @@ const SourceManager: React.FC<SourceManagerProps> = ({ sources, onRefresh }) => 
         </div>
       ) : (
         <p style={{ color: nebulaTheme.colors.textMuted, textAlign: 'center', padding: nebulaTheme.spacing.lg }} data-testid="sources-empty-state">
-          No sources found for this project filter
+          No indexed sources found
         </p>
       )}
     </div>

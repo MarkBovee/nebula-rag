@@ -38,6 +38,7 @@ const dashboardFixture = {
     totalMemories: 42,
     recent24HoursCount: 8,
     distinctSessionCount: 6,
+    distinctProjectCount: 3,
     averageTagsPerMemory: 2.5,
     typeCounts: [
       { type: 'semantic', count: 20 },
@@ -123,6 +124,14 @@ const mockDashboardApi = async (page: Page) => {
     });
   });
 
+  await page.route('**/api/memory/stats**', async (route: Route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(dashboardFixture.memoryStats),
+    });
+  });
+
   await page.route('**/api/query', async (route: Route) => {
     await route.fulfill({
       status: 200,
@@ -160,7 +169,7 @@ test('renders overview status and summary metrics from dashboard data', async ({
   await expect(page.getByTestId('metric-total-documents')).toContainText('124');
   await expect(page.getByTestId('metric-total-chunks')).toContainText('1,822');
   await expect(page.getByTestId('source-breakdown-list')).toBeVisible();
-  await expect(page.getByTestId('source-breakdown-item')).toHaveCount(1);
+  await expect(page.getByTestId('source-breakdown-item')).toHaveCount(3);
 });
 
 test('navigates through all tabs and validates key data surfaces', async ({ page }) => {
@@ -185,6 +194,7 @@ test('navigates through all tabs and validates key data surfaces', async ({ page
   await expect(page.getByTestId('memory-total-memories')).toContainText('42');
   await expect(page.getByTestId('memory-recent-24h')).toContainText('8');
   await expect(page.getByTestId('memory-distinct-sessions')).toContainText('6');
+  await expect(page.getByTestId('memory-distinct-projects')).toContainText('3');
 });
 
 test('executes a search query and renders returned matches', async ({ page }) => {

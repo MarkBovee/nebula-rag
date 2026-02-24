@@ -1,5 +1,5 @@
 import axios, { AxiosInstance } from 'axios';
-import type { HealthResponse, IndexStats, SourceInfo, QueryResult, ActivityEvent, ClientErrorReport, DashboardSnapshot, MemoryDashboardStats } from '@/types';
+import type { HealthResponse, IndexStats, SourceInfo, QueryResult, ActivityEvent, ClientErrorReport, DashboardSnapshot, MemoryDashboardStats, MemoryScopeType } from '@/types';
 
 /// <summary>
 /// Resolves the hosting base path from the current location.
@@ -88,12 +88,9 @@ export class NebularRagClient {
   /// <summary>
   /// Retrieves an aggregated dashboard snapshot in a single API call.
   /// </summary>
-  /// <param name="limit">Maximum number of sources included in the snapshot.</param>
   /// <returns>Dashboard snapshot containing health, stats, and source list.</returns>
-  async getDashboard(limit = 50): Promise<DashboardSnapshot> {
-    const response = await this.api.get<DashboardSnapshot>('api/dashboard', {
-      params: { limit }
-    });
+  async getDashboard(): Promise<DashboardSnapshot> {
+    const response = await this.api.get<DashboardSnapshot>('api/dashboard');
 
     return response.data;
   }
@@ -102,8 +99,62 @@ export class NebularRagClient {
   /// Retrieves aggregated memory analytics from the backend.
   /// </summary>
   /// <returns>Memory analytics payload.</returns>
-  async getMemoryStats(): Promise<MemoryDashboardStats> {
-    const response = await this.api.get<MemoryDashboardStats>('api/memory/stats');
+  async getMemoryStats(scope: MemoryScopeType = 'global', scopeValue?: string): Promise<MemoryDashboardStats> {
+    const params: Record<string, string> = { scope };
+
+    if (scope === 'project' && scopeValue) {
+      params.projectId = scopeValue;
+    }
+
+    if (scope === 'session' && scopeValue) {
+      params.sessionId = scopeValue;
+    }
+
+    const response = await this.api.get<MemoryDashboardStats>('api/memory/stats', { params });
+    return response.data;
+  }
+
+  /// <summary>
+  /// Lists memories from the management API with optional scope and filters.
+  /// </summary>
+  /// <param name="scope">Scope selector: global, project, or session.</param>
+  /// <param name="scopeValue">Optional project/session id tied to selected scope.</param>
+  /// <param name="limit">Maximum rows returned by the backend.</param>
+  /// <returns>Raw memory records.</returns>
+  async listMemories(scope: MemoryScopeType = 'global', scopeValue?: string, limit = 100): Promise<any[]> {
+    const params: Record<string, any> = { scope, limit };
+    if (scope === 'project' && scopeValue) {
+      params.projectId = scopeValue;
+    }
+
+    if (scope === 'session' && scopeValue) {
+      params.sessionId = scopeValue;
+    }
+
+    const response = await this.api.get<any[]>('api/memory/list', { params });
+    return response.data;
+  }
+
+  /// <summary>
+  /// Executes semantic memory search with optional scope filtering.
+  /// </summary>
+  /// <param name="text">Natural language memory search text.</param>
+  /// <param name="scope">Scope selector: global, project, or session.</param>
+  /// <param name="scopeValue">Optional project/session id tied to selected scope.</param>
+  /// <param name="limit">Maximum number of ranked rows to return.</param>
+  /// <returns>Semantic memory matches.</returns>
+  async searchMemories(text: string, scope: MemoryScopeType = 'global', scopeValue?: string, limit = 20): Promise<any[]> {
+    const payload: Record<string, any> = { text, scope, limit };
+
+    if (scope === 'project' && scopeValue) {
+      payload.projectId = scopeValue;
+    }
+
+    if (scope === 'session' && scopeValue) {
+      payload.sessionId = scopeValue;
+    }
+
+    const response = await this.api.post<any[]>('api/memory/search', payload);
     return response.data;
   }
 

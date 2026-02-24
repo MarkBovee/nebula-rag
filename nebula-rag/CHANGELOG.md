@@ -4,6 +4,29 @@ All notable changes to the Nebula RAG Home Assistant add-on are documented in th
 
 The format is inspired by Keep a Changelog and follows semantic versioning.
 
+## [0.2.44] - 2026-02-24
+
+- Fixed stale `Indexing Rate (docs/sec)` values in the performance timeline by expiring old explicit indexing samples and combining them with live document-delta throughput.
+- Updated telemetry sampling so indexing throughput decays back to zero when indexing is idle instead of remaining pinned from historical non-zero averages.
+
+## [0.2.43] - 2026-02-24
+
+- Removed dashboard snapshot source limiting: `/api/dashboard` now returns the full indexed source set instead of truncating by a limit parameter.
+- Removed backend source-path project inference from index stats; the status counter now reflects distinct indexed source paths without heuristic grouping logic.
+- Simplified dashboard source views to operate on direct source data (no project-name extraction/grouping rules in source breakdown and source manager).
+
+## [0.2.42] - 2026-02-24
+
+- Added scope-aware memory REST APIs in AddonHost: `GET /api/memory/stats`, `GET /api/memory/list`, and `POST /api/memory/search` now support `global`, `project`, and `session` filters with backward-compatible global defaults.
+- Extended core management/storage flows to apply optional `sessionId`/`projectId` filters to memory analytics, list retrieval, and semantic memory search.
+- Added dashboard memory scope controls (Global/Project/Session) so operators can switch memory insights to scoped views without losing the default global behavior.
+
+## [0.2.41] - 2026-02-24
+
+- Added additive project-scoping groundwork for memories in PostgreSQL storage by introducing optional `project_id`, index support, and backward-compatible memory store/list/recall overloads.
+- Expanded MCP memory tool input contracts (`memory_store`, `memory_recall`, `memory_list`) with optional `projectId`, and propagated project scope through tool execution and structured outputs.
+- Added dashboard memory visibility for project scope with a new `Distinct Projects` KPI in `Memory Insights` and updated dashboard fixtures/types accordingly.
+
 ## [0.2.40] - 2026-02-24
 
 - Updated the README one-line installer to a PowerShell-native command intended for users already running PowerShell, avoiding nested `pwsh -Command` quoting pitfalls.

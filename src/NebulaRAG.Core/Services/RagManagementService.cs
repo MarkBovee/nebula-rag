@@ -1,4 +1,6 @@
 using Microsoft.Extensions.Logging;
+using NebulaRAG.Core.Configuration;
+using NebulaRAG.Core.Embeddings;
 using NebulaRAG.Core.Exceptions;
 using NebulaRAG.Core.Models;
 using NebulaRAG.Core.Storage;
@@ -11,16 +13,22 @@ namespace NebulaRAG.Core.Services;
 public sealed class RagManagementService
 {
     private readonly PostgresRagStore _store;
+    private readonly IEmbeddingGenerator _embeddingGenerator;
+    private readonly RagSettings _settings;
     private readonly ILogger<RagManagementService> _logger;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="RagManagementService"/> class.
     /// </summary>
     /// <param name="store">The PostgreSQL RAG store.</param>
+    /// <param name="embeddingGenerator">Embedding generator used for memory semantic search.</param>
+    /// <param name="settings">Runtime settings for vector dimensions and retrieval defaults.</param>
     /// <param name="logger">The logger instance.</param>
-    public RagManagementService(PostgresRagStore store, ILogger<RagManagementService> logger)
+    public RagManagementService(PostgresRagStore store, IEmbeddingGenerator embeddingGenerator, RagSettings settings, ILogger<RagManagementService> logger)
     {
         _store = store ?? throw new ArgumentNullException(nameof(store));
+        _embeddingGenerator = embeddingGenerator ?? throw new ArgumentNullException(nameof(embeddingGenerator));
+        _settings = settings ?? throw new ArgumentNullException(nameof(settings));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -161,17 +169,19 @@ public sealed class RagManagementService
     /// <param name="recentSessionLimit">Maximum number of recent sessions to return.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Aggregated memory analytics snapshot.</returns>
-    public async Task<MemoryDashboardStats> GetMemoryStatsAsync(int dayWindow = 30, int topTagLimit = 10, int recentSessionLimit = 12, CancellationToken cancellationToken = default)
+    public async Task<MemoryDashboardStats> GetMemoryStatsAsync(int dayWindow = 30, int topTagLimit = 10, int recentSessionLimit = 12, string? sessionId = null, string? projectId = null, CancellationToken cancellationToken = default)
     {
         _logger.LogDebug(
-            "Retrieving memory stats (dayWindow={DayWindow}, topTagLimit={TopTagLimit}, recentSessionLimit={RecentSessionLimit})",
+            "Retrieving memory stats (dayWindow={DayWindow}, topTagLimit={TopTagLimit}, recentSessionLimit={RecentSessionLimit}, sessionId={SessionId}, projectId={ProjectId})",
             dayWindow,
             topTagLimit,
-            recentSessionLimit);
+            recentSessionLimit,
+            sessionId,
+            projectId);
 
         try
         {
-            var stats = await _store.GetMemoryStatsAsync(dayWindow, topTagLimit, recentSessionLimit, cancellationToken);
+            var stats = await _store.GetMemoryStatsAsync(dayWindow, topTagLimit, recentSessionLimit, sessionId, projectId, cancellationToken);
             _logger.LogDebug(
                 "Memory stats retrieved: {TotalMemories} memories, {Recent24HoursCount} in last 24h",
                 stats.TotalMemories,
@@ -182,6 +192,75 @@ public sealed class RagManagementService
         {
             _logger.LogError(ex, "Failed to retrieve memory stats");
             throw new RagDatabaseException("Failed to retrieve memory stats", ex);
+        }
+    }
+
+    /// <summary>
+    /// Lists memory records with optional type/tag/session/project filters.
+    /// </summary>
+    /// <param name="limit">Maximum number of memories to return.</param>
+    /// <param name="type">Optional memory type filter.</param>
+    /// <param name="tag">Optional tag filter.</param>
+    /// <param name="sessionId">Optional session-id filter.</param>
+    /// <param name="projectId">Optional project-id filter.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Recent memory records.</returns>
+    public async Task<IReadOnlyList<MemoryRecord>> ListMemoriesAsync(int limit, string? type = null, string? tag = null, string? sessionId = null, string? projectId = null, CancellationToken cancellationToken = default)
+    {
+        _logger.LogDebug(
+            "Listing memories (limit={Limit}, type={Type}, tag={Tag}, sessionId={SessionId}, projectId={ProjectId})",
+            limit,
+            type,
+            tag,
+            sessionId,
+            projectId);
+
+        try
+        {
+            return await _store.ListMemoriesAsync(limit, type, tag, sessionId, projectId, cancellationToken);
+        }
+        catch (Exception ex) when (!(ex is RagException))
+        {
+            _logger.LogError(ex, "Failed to list memories");
+            throw new RagDatabaseException("Failed to list memories", ex);
+        }
+    }
+
+    /// <summary>
+    /// Performs semantic search over memories with optional type/tag/session/project filters.
+    /// </summary>
+    /// <param name="text">Natural language search text.</param>
+    /// <param name="limit">Maximum number of memories to return.</param>
+    /// <param name="type">Optional memory type filter.</param>
+    /// <param name="tag">Optional tag filter.</param>
+    /// <param name="sessionId">Optional session-id filter.</param>
+    /// <param name="projectId">Optional project-id filter.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Semantically ranked memory results.</returns>
+    public async Task<IReadOnlyList<MemorySearchResult>> SearchMemoriesAsync(string text, int limit, string? type = null, string? tag = null, string? sessionId = null, string? projectId = null, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            throw new ArgumentException("Search text cannot be null or empty.", nameof(text));
+        }
+
+        _logger.LogDebug(
+            "Searching memories (limit={Limit}, type={Type}, tag={Tag}, sessionId={SessionId}, projectId={ProjectId})",
+            limit,
+            type,
+            tag,
+            sessionId,
+            projectId);
+
+        try
+        {
+            var queryEmbedding = _embeddingGenerator.GenerateEmbedding(text, _settings.Ingestion.VectorDimensions);
+            return await _store.SearchMemoriesAsync(queryEmbedding, limit, type, tag, sessionId, projectId, cancellationToken);
+        }
+        catch (Exception ex) when (!(ex is RagException))
+        {
+            _logger.LogError(ex, "Failed to search memories");
+            throw new RagDatabaseException("Failed to search memories", ex);
         }
     }
 }

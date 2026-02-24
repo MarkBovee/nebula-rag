@@ -137,6 +137,10 @@ const MemoryInsights: React.FC<MemoryInsightsProps> = ({ stats }) => {
           <p style={styles.summaryLabel}>Distinct Sessions</p>
           <p style={styles.summaryValue}>{stats.distinctSessionCount.toLocaleString()}</p>
         </div>
+        <div style={styles.summaryTile} data-testid="memory-distinct-projects">
+          <p style={styles.summaryLabel}>Distinct Projects</p>
+          <p style={styles.summaryValue}>{stats.distinctProjectCount.toLocaleString()}</p>
+        </div>
         <div style={styles.summaryTile}>
           <p style={styles.summaryLabel}>Avg Tags Per Memory</p>
           <p style={styles.summaryValue}>{stats.averageTagsPerMemory.toFixed(2)}</p>

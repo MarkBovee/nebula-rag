@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { nebulaTheme, getBackgroundGradient } from '@/styles/theme';
 import { apiClient } from '@/api/client';
-import type { DashboardState } from '@/types';
+import type { DashboardState, MemoryScopeType, MemoryDashboardStats } from '@/types';
 import IndexHealth from '@/components/IndexHealth';
 import SearchAnalytics from '@/components/SearchAnalytics';
 import SourceBreakdown from '@/components/SourceBreakdown';
@@ -149,6 +149,39 @@ const styles = {
     fontWeight: nebulaTheme.typography.fontWeight.semibold,
     transition: nebulaTheme.transition.base,
   } as React.CSSProperties,
+  memoryScopeBar: {
+    display: 'grid',
+    gridTemplateColumns: 'minmax(160px, 220px) minmax(240px, 1fr) auto',
+    gap: nebulaTheme.spacing.sm,
+    marginBottom: nebulaTheme.spacing.lg,
+    alignItems: 'center',
+  } as React.CSSProperties,
+  memoryScopeInput: {
+    width: '100%',
+    borderRadius: nebulaTheme.borderRadius.md,
+    border: `1px solid ${nebulaTheme.colors.surfaceBorder}`,
+    background: nebulaTheme.colors.surfaceLight,
+    color: nebulaTheme.colors.textPrimary,
+    padding: `${nebulaTheme.spacing.sm} ${nebulaTheme.spacing.md}`,
+    fontSize: nebulaTheme.typography.fontSize.sm,
+  } as React.CSSProperties,
+  memoryScopeButton: {
+    borderRadius: nebulaTheme.borderRadius.md,
+    border: `1px solid ${nebulaTheme.colors.accentPrimary}`,
+    background: 'linear-gradient(120deg, rgba(253, 93, 50, 0.18), rgba(247, 183, 49, 0.18))',
+    color: nebulaTheme.colors.textPrimary,
+    padding: `${nebulaTheme.spacing.sm} ${nebulaTheme.spacing.md}`,
+    cursor: 'pointer',
+    fontWeight: nebulaTheme.typography.fontWeight.semibold,
+    minHeight: '38px',
+  } as React.CSSProperties,
+  memoryScopeHint: {
+    color: nebulaTheme.colors.textMuted,
+    fontSize: nebulaTheme.typography.fontSize.xs,
+    letterSpacing: '0.03em',
+    marginTop: `-${nebulaTheme.spacing.xs}`,
+    marginBottom: nebulaTheme.spacing.md,
+  } as React.CSSProperties,
 };
 
 const tabs: Array<{ key: DashboardTab; label: string }> = [
@@ -169,6 +202,21 @@ const App: React.FC = () => {
     loading: true,
   });
   const [activeTab, setActiveTab] = useState<DashboardTab>('overview');
+  const [memoryScope, setMemoryScope] = useState<MemoryScopeType>('global');
+  const [memoryScopeValue, setMemoryScopeValue] = useState('');
+
+  const loadScopedMemoryStats = async (scope: MemoryScopeType, scopeValue: string, fallbackStats?: MemoryDashboardStats): Promise<MemoryDashboardStats | undefined> => {
+    if (scope === 'global') {
+      return fallbackStats;
+    }
+
+    const normalizedScopeValue = scopeValue.trim();
+    if (!normalizedScopeValue) {
+      throw new Error(scope === 'project' ? 'Project id is required for project scope.' : 'Session id is required for session scope.');
+    }
+
+    return apiClient.getMemoryStats(scope, normalizedScopeValue);
+  };
 
   /// <summary>
   /// Refreshes all dashboard data by fetching from the API.
@@ -177,13 +225,14 @@ const App: React.FC = () => {
   const refreshDashboard = async () => {
     setDashboard(prev => ({ ...prev, loading: true, error: undefined }));
     try {
-      const snapshot = await apiClient.getDashboard(50);
+      const snapshot = await apiClient.getDashboard();
+      const scopedMemoryStats = await loadScopedMemoryStats(memoryScope, memoryScopeValue, snapshot.memoryStats);
 
       setDashboard({
         health: snapshot.health,
         stats: snapshot.stats,
         sources: snapshot.sources,
-        memoryStats: snapshot.memoryStats,
+        memoryStats: scopedMemoryStats,
         performanceMetrics: snapshot.performanceMetrics,
         recentActivity: snapshot.activity ?? apiClient.getActivityLog(),
         loading: false,
@@ -194,6 +243,25 @@ const App: React.FC = () => {
         ...prev,
         loading: false,
         error: error?.message || 'Failed to load dashboard data',
+      }));
+    }
+  };
+
+  const applyMemoryScope = async () => {
+    setDashboard(prev => ({ ...prev, loading: true, error: undefined }));
+
+    try {
+      const scopedMemoryStats = await loadScopedMemoryStats(memoryScope, memoryScopeValue, dashboard.memoryStats);
+      setDashboard(prev => ({
+        ...prev,
+        memoryStats: scopedMemoryStats,
+        loading: false,
+      }));
+    } catch (error: any) {
+      setDashboard(prev => ({
+        ...prev,
+        loading: false,
+        error: error?.message || 'Failed to apply memory scope',
       }));
     }
   };
@@ -291,7 +359,7 @@ const App: React.FC = () => {
                     <p style={styles.statusValue} data-testid="status-chunks-value">{(stats.chunkCount ?? stats.totalChunks ?? 0).toLocaleString()}</p>
                   </div>
                   <div style={styles.statusItem} className="nb-status-item" data-testid="status-projects">
-                    <p style={styles.statusLabel}>Projects</p>
+                    <p style={styles.statusLabel}>Sources</p>
                     <p style={styles.statusValue} data-testid="status-projects-value">{(stats.projectCount ?? 0).toLocaleString()}</p>
                   </div>
                 </>
@@ -356,6 +424,37 @@ const App: React.FC = () => {
           {activeTab === 'memory' && (
             <div style={styles.gridContainer} data-testid="panel-memory">
               <div style={styles.fullWidth} className="nb-card-shell nb-fade-up">
+                <div style={styles.memoryScopeBar}>
+                  <select
+                    value={memoryScope}
+                    onChange={(event) => setMemoryScope(event.target.value as MemoryScopeType)}
+                    style={styles.memoryScopeInput}
+                    data-testid="memory-scope-select"
+                  >
+                    <option value="global">Global</option>
+                    <option value="project">Project</option>
+                    <option value="session">Session</option>
+                  </select>
+                  <input
+                    value={memoryScopeValue}
+                    onChange={(event) => setMemoryScopeValue(event.target.value)}
+                    disabled={memoryScope === 'global'}
+                    placeholder={memoryScope === 'project' ? 'project-id (for example: NebulaRAG)' : memoryScope === 'session' ? 'session-id' : 'No value needed for global scope'}
+                    style={styles.memoryScopeInput}
+                    data-testid="memory-scope-value"
+                  />
+                  <button
+                    onClick={applyMemoryScope}
+                    disabled={loading}
+                    style={styles.memoryScopeButton}
+                    data-testid="memory-scope-apply"
+                  >
+                    Apply Scope
+                  </button>
+                </div>
+                <p style={styles.memoryScopeHint}>
+                  Scope controls memory analytics and API-backed memory list/search filters while keeping global as default behavior.
+                </p>
                 <MemoryInsights stats={memoryStats} />
               </div>
             </div>

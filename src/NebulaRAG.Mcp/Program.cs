@@ -33,7 +33,7 @@ var loggerFactory = LoggerFactory.Create(builder =>
 });
 
 var queryService = new RagQueryService(store, embeddingGenerator, settings, loggerFactory.CreateLogger<RagQueryService>());
-var managementService = new RagManagementService(store, loggerFactory.CreateLogger<RagManagementService>());
+var managementService = new RagManagementService(store, embeddingGenerator, settings, loggerFactory.CreateLogger<RagManagementService>());
 var sourcesManifestService = new RagSourcesManifestService(store, settings, loggerFactory.CreateLogger<RagSourcesManifestService>());
 var indexer = new RagIndexer(store, chunker, embeddingGenerator, settings, loggerFactory.CreateLogger<RagIndexer>());
 var handler = new McpTransportHandler(

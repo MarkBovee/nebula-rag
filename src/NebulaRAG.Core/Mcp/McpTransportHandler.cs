@@ -270,6 +270,7 @@ public sealed partial class McpTransportHandler
                 new JsonObject
                 {
                     ["sessionId"] = BuildStringSchema("Optional session-id for grouping related memories."),
+                    ["projectId"] = BuildStringSchema("Optional project-id for project-wide memory grouping."),
                     ["type"] = BuildEnumStringSchema("Memory type.", "episodic", "semantic", "procedural"),
                     ["content"] = BuildStringSchema("Natural-language memory content to store."),
                     ["tags"] = new JsonObject
@@ -288,7 +289,8 @@ public sealed partial class McpTransportHandler
                     ["limit"] = BuildIntegerSchema("Optional max number of memories to return.", minimum: 1, maximum: 50),
                     ["type"] = BuildEnumStringSchema("Optional memory type filter.", "episodic", "semantic", "procedural"),
                     ["tag"] = BuildStringSchema("Optional memory tag filter."),
-                    ["sessionId"] = BuildStringSchema("Optional session-id filter.")
+                    ["sessionId"] = BuildStringSchema("Optional session-id filter."),
+                    ["projectId"] = BuildStringSchema("Optional project-id filter.")
                 },
                 "text"),
             MemoryListToolName => BuildObjectSchema(
@@ -297,7 +299,8 @@ public sealed partial class McpTransportHandler
                     ["limit"] = BuildIntegerSchema("Optional max number of memories to list.", minimum: 1, maximum: 100),
                     ["type"] = BuildEnumStringSchema("Optional memory type filter.", "episodic", "semantic", "procedural"),
                     ["tag"] = BuildStringSchema("Optional memory tag filter."),
-                    ["sessionId"] = BuildStringSchema("Optional session-id filter.")
+                    ["sessionId"] = BuildStringSchema("Optional session-id filter."),
+                    ["projectId"] = BuildStringSchema("Optional project-id filter.")
                 }),
             MemoryDeleteToolName => BuildObjectSchema(
                 new JsonObject
