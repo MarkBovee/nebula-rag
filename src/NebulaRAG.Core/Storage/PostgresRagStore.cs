@@ -362,6 +362,18 @@ public sealed class PostgresRagStore
         await connection.OpenAsync(cancellationToken);
         await using var command = new NpgsqlCommand(sql, connection);
 
+        var sourcePaths = new List<string>();
+        await using (var projectCommand = new NpgsqlCommand("SELECT source_path FROM rag_documents", connection))
+        await using (var projectReader = await projectCommand.ExecuteReaderAsync(cancellationToken))
+        {
+            while (await projectReader.ReadAsync(cancellationToken))
+            {
+                sourcePaths.Add(projectReader.GetString(0));
+            }
+        }
+
+        var projectCount = CountDistinctProjects(sourcePaths);
+
         long indexSizeBytes = 0;
         if (includeIndexSize)
         {
@@ -379,10 +391,61 @@ public sealed class PostgresRagStore
                 TotalTokens: reader.GetInt64(2),
                 OldestIndexedAt: reader.IsDBNull(3) ? null : reader.GetDateTime(3),
                 NewestIndexedAt: reader.IsDBNull(4) ? null : reader.GetDateTime(4),
-                IndexSizeBytes: indexSizeBytes);
+                IndexSizeBytes: indexSizeBytes,
+                ProjectCount: projectCount);
         }
 
-        return new IndexStats(0, 0, 0, null, null, 0);
+        return new IndexStats(0, 0, 0, null, null, 0, 0);
+    }
+
+    /// <summary>
+    /// Counts the number of distinct projects represented in indexed source paths.
+    /// </summary>
+    /// <param name="sourcePaths">Indexed source paths.</param>
+    /// <returns>Distinct project count.</returns>
+    private static int CountDistinctProjects(IEnumerable<string> sourcePaths)
+    {
+        var projectNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var sourcePath in sourcePaths)
+        {
+            projectNames.Add(ExtractProjectName(sourcePath));
+        }
+
+        return projectNames.Count;
+    }
+
+    /// <summary>
+    /// Extracts a normalized project key from a source path.
+    /// </summary>
+    /// <param name="sourcePath">Source path or URL.</param>
+    /// <returns>Project key used for grouped statistics.</returns>
+    private static string ExtractProjectName(string sourcePath)
+    {
+        if (string.IsNullOrWhiteSpace(sourcePath))
+        {
+            return "Unknown";
+        }
+
+        if (Uri.TryCreate(sourcePath, UriKind.Absolute, out var uri)
+            && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps))
+        {
+            return uri.Host;
+        }
+
+        var normalizedPath = sourcePath.Replace('\\', '/');
+        var pathSegments = normalizedPath.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        if (pathSegments.Length == 0)
+        {
+            return "Unknown";
+        }
+
+        if (pathSegments[0].Length == 2 && char.IsLetter(pathSegments[0][0]) && pathSegments[0][1] == ':')
+        {
+            return pathSegments.Length > 1 ? pathSegments[1] : pathSegments[0];
+        }
+
+        return pathSegments[0];
     }
 
     /// <summary>

@@ -11,6 +11,7 @@ public sealed class DashboardSnapshotService
     private readonly RagManagementService _managementService;
     private readonly TimedCache<HealthCheckResult> _healthCache;
     private readonly TimedCache<IndexStats> _statsCache;
+    private readonly TimedCache<IndexStats> _statsWithSizeCache;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="DashboardSnapshotService"/> class.
@@ -21,6 +22,7 @@ public sealed class DashboardSnapshotService
         _managementService = managementService ?? throw new ArgumentNullException(nameof(managementService));
         _healthCache = new TimedCache<HealthCheckResult>(TimeSpan.FromSeconds(30));
         _statsCache = new TimedCache<IndexStats>(TimeSpan.FromSeconds(30));
+        _statsWithSizeCache = new TimedCache<IndexStats>(TimeSpan.FromMinutes(2));
     }
 
     /// <summary>
@@ -50,7 +52,14 @@ public sealed class DashboardSnapshotService
     {
         if (includeIndexSize)
         {
-            return await _managementService.GetStatsAsync(includeIndexSize: true, cancellationToken);
+            if (_statsWithSizeCache.TryGet(out var cachedStatsWithSize))
+            {
+                return cachedStatsWithSize;
+            }
+
+            var freshStatsWithSize = await _managementService.GetStatsAsync(includeIndexSize: true, cancellationToken);
+            _statsWithSizeCache.Set(freshStatsWithSize);
+            return freshStatsWithSize;
         }
 
         if (_statsCache.TryGet(out var cachedStats))
@@ -73,7 +82,7 @@ public sealed class DashboardSnapshotService
     {
         var normalizedLimit = Math.Clamp(limit, 1, 500);
         var health = await GetHealthAsync(cancellationToken);
-        var stats = await GetStatsAsync(includeIndexSize: false, cancellationToken);
+        var stats = await GetStatsAsync(includeIndexSize: true, cancellationToken);
         var sources = await _managementService.ListSourcesAsync(normalizedLimit, cancellationToken);
 
         return new DashboardSnapshotResponse(health, stats, sources, DateTime.UtcNow);

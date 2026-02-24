@@ -15,7 +15,9 @@ public sealed record IndexStats(
     /// <summary>UTC timestamp of the most recent document indexed, if any.</summary>
     DateTime? NewestIndexedAt,
     /// <summary>Total on-disk size in bytes for the core index relations and indexes.</summary>
-    long IndexSizeBytes);
+    long IndexSizeBytes,
+    /// <summary>Number of distinct projects represented by indexed sources.</summary>
+    int ProjectCount);
 
 /// <summary>
 /// Information about an indexed document source.

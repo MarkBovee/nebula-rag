@@ -16,6 +16,7 @@ export interface HealthResponse {
 export interface IndexStats {
   documentCount: number;
   chunkCount: number;
+  projectCount?: number;
   totalTokens: number;
   oldestIndexedAt?: string | null;
   newestIndexedAt?: string | null;

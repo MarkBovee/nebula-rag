@@ -54,6 +54,7 @@ const IndexHealth: React.FC<IndexHealthProps> = ({ stats }) => {
 
   const totalDocuments = toCount(stats.documentCount ?? stats.totalDocuments);
   const totalChunks = toCount(stats.chunkCount ?? stats.totalChunks);
+  const totalProjects = toCount(stats.projectCount);
   const totalTokens = toCount(stats.totalTokens);
   const averageChunkSize =
     stats.averageChunkSize ?? (totalChunks > 0 ? totalTokens / totalChunks : 0);
@@ -82,6 +83,11 @@ const IndexHealth: React.FC<IndexHealthProps> = ({ stats }) => {
       <div style={styles.metric}>
         <p style={styles.metricLabel}>Total Chunks</p>
         <p style={styles.metricValue}>{totalChunks.toLocaleString()}</p>
+      </div>
+
+      <div style={styles.metric}>
+        <p style={styles.metricLabel}>Projects</p>
+        <p style={styles.metricValue}>{totalProjects.toLocaleString()}</p>
       </div>
 
       <div style={styles.metric}>

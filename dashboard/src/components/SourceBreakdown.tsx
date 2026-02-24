@@ -2,6 +2,7 @@ import React from 'react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 import { nebulaTheme, chartTheme } from '@/styles/theme';
 import type { SourceInfo } from '@/types';
+import { summarizeSourcesByProject } from '@/utils/projectGrouping';
 
 interface SourceBreakdownProps {
   sources: SourceInfo[];
@@ -33,13 +34,13 @@ const styles = {
 /// Shows the proportion of chunks assigned to each source.
 /// </summary>
 const SourceBreakdown: React.FC<SourceBreakdownProps> = ({ sources }) => {
-  const data = sources.map((source) => ({
-    name: source.sourcePath.split('/').pop() || source.sourcePath,
-    value: source.chunkCount,
-    fullPath: source.sourcePath,
+  const data = summarizeSourcesByProject(sources).map((projectSummary) => ({
+    name: projectSummary.projectName,
+    value: projectSummary.sourceCount,
+    chunkCount: projectSummary.chunkCount,
   }));
 
-  const totalChunks = data.reduce((sum, item) => sum + item.value, 0);
+  const totalSources = data.reduce((sum, item) => sum + item.value, 0);
 
   return (
     <div style={styles.card}>
@@ -57,7 +58,7 @@ const SourceBreakdown: React.FC<SourceBreakdownProps> = ({ sources }) => {
                 outerRadius={100}
                 paddingAngle={2}
                 dataKey="value"
-                label={({ value }) => `${((value / totalChunks) * 100).toFixed(0)}%`}
+                label={({ value }) => `${((value / totalSources) * 100).toFixed(0)}%`}
               >
                 {data.map((_, index) => (
                   <Cell key={`cell-${index}`} fill={chartTheme.colors[index % chartTheme.colors.length]} />
@@ -70,7 +71,11 @@ const SourceBreakdown: React.FC<SourceBreakdownProps> = ({ sources }) => {
                   borderRadius: nebulaTheme.borderRadius.md,
                   color: nebulaTheme.colors.textPrimary,
                 }}
-                formatter={(value) => [`${value} chunks`, 'Chunks']}
+                formatter={(value, _, payload) => {
+                  const sourceCount = Number(value);
+                  const payloadChunkCount = Number(payload?.payload?.chunkCount ?? 0);
+                  return [`${sourceCount} sources (${payloadChunkCount} chunks)`, 'Project'];
+                }}
               />
             </PieChart>
           </ResponsiveContainer>
@@ -91,7 +96,7 @@ const SourceBreakdown: React.FC<SourceBreakdownProps> = ({ sources }) => {
                   ● {item.name}
                 </span>
                 <span style={{ color: nebulaTheme.colors.textSecondary }}>
-                  {item.value} ({((item.value / totalChunks) * 100).toFixed(1)}%)
+                  {item.value} sources ({((item.value / totalSources) * 100).toFixed(1)}%)
                 </span>
               </div>
             ))}

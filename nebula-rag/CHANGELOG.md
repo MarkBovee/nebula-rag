@@ -4,6 +4,25 @@ All notable changes to the Nebula RAG Home Assistant add-on are documented in th
 
 The format is inspired by Keep a Changelog and follows semantic versioning.
 
+## [0.2.20] - 2026-02-24
+
+- Added backend `projectCount` to index stats, derived from distinct project keys in indexed source paths (file and URL sources).
+- Dashboard now displays project count in both the top summary strip and `Index Health` panel.
+- Completed source-ops cleanup flow:
+	- `Source Breakdown` now groups by project using source counts.
+	- `Sources` tab now includes a project filter for scoped management actions.
+
+## [0.2.19] - 2026-02-24
+
+- Fixed dashboard `Index Size` visibility by including index-size stats in aggregated snapshot responses with dedicated short-lived caching for expensive size queries.
+- Reworked `Source Breakdown` to group by project and visualize source-count distribution per project (with project-level counts in legend/tooltip).
+- Added a project filter to `Sources` management so operators can quickly scope source operations per project.
+
+## [0.2.18] - 2026-02-24
+
+- Refined the overview layout so `Source Breakdown` aligns with the top metrics row by spanning the two right-side columns on wide screens.
+- Added responsive breakpoints so the overview gracefully collapses to full-width cards on medium and small screens.
+
 ## [0.2.17] - 2026-02-24
 
 - Expanded the overview `Source Breakdown` panel width with a dedicated two-column dashboard grid so the chart uses available screen space instead of leaving an empty right-side column on wide layouts.

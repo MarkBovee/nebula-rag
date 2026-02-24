@@ -286,6 +286,10 @@ const App: React.FC = () => {
                     <p style={styles.statusLabel}>Chunks</p>
                     <p style={styles.statusValue}>{(stats.chunkCount ?? stats.totalChunks ?? 0).toLocaleString()}</p>
                   </div>
+                  <div style={styles.statusItem}>
+                    <p style={styles.statusLabel}>Projects</p>
+                    <p style={styles.statusValue}>{(stats.projectCount ?? 0).toLocaleString()}</p>
+                  </div>
                 </>
               )}
             </div>
@@ -299,7 +303,7 @@ const App: React.FC = () => {
                 </div>
               )}
               {sources && (
-                <div className="nb-card-shell nb-fade-up" style={{ animationDelay: '120ms' }}>
+                <div className="nb-card-shell nb-fade-up nb-overview-source-wide" style={{ animationDelay: '120ms' }}>
                   <SourceBreakdown sources={sources} />
                 </div>
               )}

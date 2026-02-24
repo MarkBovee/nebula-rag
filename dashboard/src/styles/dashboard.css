@@ -82,7 +82,21 @@ body {
 }
 
 .nb-overview-grid {
-  grid-template-columns: minmax(320px, 1fr) minmax(0, 1.9fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.nb-overview-source-wide {
+  grid-column: span 2;
+}
+
+@media (max-width: 1200px) {
+  .nb-overview-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .nb-overview-source-wide {
+    grid-column: 1 / -1;
+  }
 }
 
 .nb-card-shell {
@@ -110,6 +124,10 @@ body {
 
   .nb-overview-grid {
     grid-template-columns: 1fr;
+  }
+
+  .nb-overview-source-wide {
+    grid-column: 1 / -1;
   }
 
   .nb-nav {
