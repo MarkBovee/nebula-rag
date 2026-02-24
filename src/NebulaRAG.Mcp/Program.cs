@@ -1116,7 +1116,7 @@ static async Task HandleRagIndexStatsToolAsync(Stream output, JsonNode? id, Post
 {
     try
     {
-        var stats = await store.GetIndexStatsAsync(cancellationToken);
+        var stats = await store.GetIndexStatsAsync(cancellationToken: cancellationToken);
         var structuredResult = new JsonObject
         {
             ["documentCount"] = stats.DocumentCount,
@@ -1203,8 +1203,7 @@ static async Task HandleRagListSourcesToolAsync(
 
     try
     {
-        var sources = await managementService.ListSourcesAsync(cancellationToken);
-        var selected = sources.Take(limit).ToList();
+        var selected = await managementService.ListSourcesAsync(limit, cancellationToken);
         var items = new JsonArray();
         foreach (var source in selected)
         {

@@ -1,5 +1,5 @@
 import axios, { AxiosInstance } from 'axios';
-import type { HealthResponse, IndexStats, SourceInfo, QueryResult, ActivityEvent, ClientErrorReport } from '@/types';
+import type { HealthResponse, IndexStats, SourceInfo, QueryResult, ActivityEvent, ClientErrorReport, DashboardSnapshot } from '@/types';
 
 /// <summary>
 /// Resolves the hosting base path from the current location.
@@ -79,6 +79,19 @@ export class NebularRagClient {
     const response = await this.api.get<SourceInfo[]>('api/sources', {
       params: { limit }
     });
+    return response.data;
+  }
+
+  /// <summary>
+  /// Retrieves an aggregated dashboard snapshot in a single API call.
+  /// </summary>
+  /// <param name="limit">Maximum number of sources included in the snapshot.</param>
+  /// <returns>Dashboard snapshot containing health, stats, and source list.</returns>
+  async getDashboard(limit = 50): Promise<DashboardSnapshot> {
+    const response = await this.api.get<DashboardSnapshot>('api/dashboard', {
+      params: { limit }
+    });
+
     return response.data;
   }
 

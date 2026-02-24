@@ -27,14 +27,17 @@ public sealed class RagManagementService
     /// <summary>
     /// Gets current index statistics.
     /// </summary>
-    public async Task<IndexStats> GetStatsAsync(CancellationToken cancellationToken = default)
+    /// <param name="includeIndexSize">When true, includes relation size bytes in the returned stats.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Current index statistics snapshot.</returns>
+    public async Task<IndexStats> GetStatsAsync(bool includeIndexSize = false, CancellationToken cancellationToken = default)
     {
-        _logger.LogInformation("Retrieving index statistics");
+        _logger.LogDebug("Retrieving index statistics (includeIndexSize={IncludeIndexSize})", includeIndexSize);
         
         try
         {
-            var stats = await _store.GetIndexStatsAsync(cancellationToken);
-            _logger.LogInformation(
+            var stats = await _store.GetIndexStatsAsync(includeIndexSize, cancellationToken);
+            _logger.LogDebug(
                 "Index stats retrieved: {DocumentCount} documents, {ChunkCount} chunks, {TotalTokens} tokens",
                 stats.DocumentCount,
                 stats.ChunkCount,
@@ -51,14 +54,22 @@ public sealed class RagManagementService
     /// <summary>
     /// Gets all indexed document sources.
     /// </summary>
-    public async Task<IReadOnlyList<SourceInfo>> ListSourcesAsync(CancellationToken cancellationToken = default)
+    /// <param name="limit">Maximum number of sources to return.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>List of indexed sources ordered by latest index time.</returns>
+    public async Task<IReadOnlyList<SourceInfo>> ListSourcesAsync(int limit = 100, CancellationToken cancellationToken = default)
     {
-        _logger.LogInformation("Listing all indexed sources");
+        if (limit <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(limit), "Limit must be greater than 0.");
+        }
+
+        _logger.LogDebug("Listing indexed sources (limit={Limit})", limit);
         
         try
         {
-            var sources = await _store.ListSourcesAsync(cancellationToken);
-            _logger.LogInformation("Found {SourceCount} indexed sources", sources.Count);
+            var sources = await _store.ListSourcesAsync(limit, cancellationToken);
+            _logger.LogDebug("Found {SourceCount} indexed sources", sources.Count);
             return sources;
         }
         catch (Exception ex) when (!(ex is RagException))
@@ -121,15 +132,17 @@ public sealed class RagManagementService
     /// <summary>
     /// Checks database connectivity and readiness.
     /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Health check result with status and message.</returns>
     public async Task<HealthCheckResult> HealthCheckAsync(CancellationToken cancellationToken = default)
     {
-        _logger.LogInformation("Running health check");
+        _logger.LogDebug("Running health check");
         
         try
         {
             await _store.HealthCheckAsync(cancellationToken);
             var message = "Database connection successful";
-            _logger.LogInformation("Health check passed: {Message}", message);
+            _logger.LogDebug("Health check passed: {Message}", message);
             return new HealthCheckResult(IsHealthy: true, Message: message);
         }
         catch (Exception ex)

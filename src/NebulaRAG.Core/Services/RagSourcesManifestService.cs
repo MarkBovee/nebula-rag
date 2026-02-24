@@ -37,7 +37,7 @@ public sealed class RagSourcesManifestService
     public async Task<RagSourcesManifestSyncResult> SyncAsync(string? contextPath, CancellationToken cancellationToken = default)
     {
         var manifestPath = ResolveManifestPath(contextPath);
-        var sources = await _store.ListSourcesAsync(cancellationToken);
+        var sources = await _store.ListSourcesAsync(cancellationToken: cancellationToken);
         var markdown = BuildMarkdown(sources);
 
         var directory = Path.GetDirectoryName(manifestPath);

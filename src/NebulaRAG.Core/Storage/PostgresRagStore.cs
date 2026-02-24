@@ -228,7 +228,7 @@ public sealed class PostgresRagStore
     /// </summary>
     /// <param name=\"queryEmbedding\">The query vector embedding.</param>
     /// <param name=\"topK\">Maximum number of results to return (must be > 0).</param>
-    /// <param name=\"cancellationToken\">Cancellation token.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>List of search results ranked by relevance (descending score).</returns>
     /// <exception cref=\"ArgumentException\">Thrown if queryEmbedding is empty.</exception>
     /// <exception cref=\"ArgumentOutOfRangeException\">Thrown if topK is not greater than 0.</exception>
@@ -336,9 +336,10 @@ public sealed class PostgresRagStore
     /// <summary>
     /// Gets detailed index statistics including document count, chunk count, token estimates, and date range.
     /// </summary>
+    /// <param name="includeIndexSize">When true, computes relation size bytes; otherwise returns 0 for size.</param>
     /// <param name=\"cancellationToken\">Cancellation token.</param>
     /// <returns>Aggregated index statistics.</returns>
-    public async Task<IndexStats> GetIndexStatsAsync(CancellationToken cancellationToken = default)
+    public async Task<IndexStats> GetIndexStatsAsync(bool includeIndexSize = false, CancellationToken cancellationToken = default)
     {
         const string sql = @"
             SELECT 
@@ -346,17 +347,27 @@ public sealed class PostgresRagStore
                 COUNT(c.id) as chunk_count,
                 COALESCE(SUM(c.token_count), 0) as total_tokens,
                 MIN(d.indexed_at) as oldest,
-                MAX(d.indexed_at) as newest,
-                COALESCE(
-                    (SELECT pg_total_relation_size('rag_documents') + pg_total_relation_size('rag_chunks')),
-                    0
-                ) as index_size_bytes
+                MAX(d.indexed_at) as newest
             FROM rag_documents d
             LEFT JOIN rag_chunks c ON d.id = c.document_id";
+
+        const string sizeSql = @"
+            SELECT COALESCE(
+                (SELECT pg_total_relation_size('rag_documents') + pg_total_relation_size('rag_chunks')),
+                0
+            )";
 
         await using var connection = new NpgsqlConnection(_connectionString);
         await connection.OpenAsync(cancellationToken);
         await using var command = new NpgsqlCommand(sql, connection);
+
+        long indexSizeBytes = 0;
+        if (includeIndexSize)
+        {
+            await using var sizeCommand = new NpgsqlCommand(sizeSql, connection);
+            var sizeValue = await sizeCommand.ExecuteScalarAsync(cancellationToken);
+            indexSizeBytes = sizeValue is null ? 0 : Convert.ToInt64(sizeValue, CultureInfo.InvariantCulture);
+        }
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (await reader.ReadAsync(cancellationToken))
@@ -367,7 +378,7 @@ public sealed class PostgresRagStore
                 TotalTokens: reader.GetInt64(2),
                 OldestIndexedAt: reader.IsDBNull(3) ? null : reader.GetDateTime(3),
                 NewestIndexedAt: reader.IsDBNull(4) ? null : reader.GetDateTime(4),
-                IndexSizeBytes: reader.GetInt64(5));
+                IndexSizeBytes: indexSizeBytes);
         }
 
         return new IndexStats(0, 0, 0, null, null, 0);
@@ -376,20 +387,30 @@ public sealed class PostgresRagStore
     /// <summary>
     /// Gets all indexed document sources with their chunk counts.
     /// </summary>
-    public async Task<IReadOnlyList<SourceInfo>> ListSourcesAsync(CancellationToken cancellationToken = default)
+    /// <param name="limit">Maximum number of sources to return.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Recent sources ordered by index time descending.</returns>
+    public async Task<IReadOnlyList<SourceInfo>> ListSourcesAsync(int limit = 100, CancellationToken cancellationToken = default)
     {
+        if (limit <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(limit), "Limit must be greater than 0.");
+        }
+
         const string sql = @"
             SELECT d.source_path, COUNT(c.id) as chunk_count, d.indexed_at, d.content_hash
             FROM rag_documents d
             LEFT JOIN rag_chunks c ON d.id = c.document_id
             GROUP BY d.id, d.source_path, d.indexed_at, d.content_hash
-            ORDER BY d.indexed_at DESC";
+            ORDER BY d.indexed_at DESC
+            LIMIT @limit";
 
         await using var connection = new NpgsqlConnection(_connectionString);
         await connection.OpenAsync(cancellationToken);
 
         var sources = new List<SourceInfo>();
         await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("limit", limit);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
 
         while (await reader.ReadAsync(cancellationToken))

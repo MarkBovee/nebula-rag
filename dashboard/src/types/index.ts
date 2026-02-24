@@ -87,6 +87,16 @@ export interface ClientErrorReport {
 }
 
 /// <summary>
+/// Aggregated dashboard payload returned by /api/dashboard.
+/// </summary>
+export interface DashboardSnapshot {
+  health: HealthResponse;
+  stats: IndexStats;
+  sources: SourceInfo[];
+  generatedAtUtc: string;
+}
+
+/// <summary>
 /// Performance metrics over a time range.
 /// </summary>
 export interface PerformanceMetric {

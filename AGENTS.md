@@ -30,13 +30,15 @@ If instruction files conflict, prioritize repository-local instruction files and
 
 ## Tool Decision Logic
 
-### Always query RAG first when:
+### Query RAG first when:
 
 - Asked about code, architecture, or project-specific logic
 - Referring to files, classes, or APIs in this project
 - Unsure about a convention or pattern used in this codebase
 
-### Always query Memory first when:
+Avoid repeated RAG calls for the same scope when existing retrieved context is still sufficient.
+
+### Query Memory first when:
 
 - Starting a new session to recall recent context
 - User mentions something they told you before
@@ -55,7 +57,7 @@ If instruction files conflict, prioritize repository-local instruction files and
 
 ## Required Tool Surface
 
-### RAG tools
+### Preferred RAG tools
 
 - `query_project_rag`
 - `rag_health_check`
@@ -65,13 +67,15 @@ If instruction files conflict, prioritize repository-local instruction files and
 - `rag_get_chunk` for chunk-level debug and verification
 - `rag_search_similar` for similarity search without project-context filtering
 
-### Memory tools
+### Preferred Memory tools
 
 - `memory_store` to persist facts/observations with tags and category
 - `memory_recall` for semantic lookup across memories
 - `memory_list` to list recent or tag-filtered memories
 - `memory_delete` to remove a specific memory entry
 - `memory_update` to update an existing memory
+
+If a preferred tool is unavailable in the current runtime, gracefully fall back to available equivalents and continue the task.
 
 ## Memory Write Rules
 

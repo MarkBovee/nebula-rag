@@ -4,6 +4,17 @@ All notable changes to the Nebula RAG Home Assistant add-on are documented in th
 
 The format is inspired by Keep a Changelog and follows semantic versioning.
 
+## [0.2.8] - 2026-02-24
+
+- Refactored add-on REST API endpoints into a dedicated controller (`RagApiController`) to improve maintainability as the API surface grows.
+- Added a dedicated dashboard snapshot service with short-lived caching for health/stats to reduce repeated polling load.
+- Optimized source listing and stats paths:
+	- source limit is now applied in SQL instead of in-memory trimming
+	- expensive index-size calculation is now optional (`/api/stats?includeSize=true`)
+- Setup script efficiency improvements:
+	- skip copying instruction/baseline files when destination content is unchanged
+	- removed unused setup helper code.
+
 ## [0.2.7] - 2026-02-24
 
 - Updated setup script defaults for privacy-first usage: Home Assistant MCP URL now defaults to local network path-base endpoint (`http://homeassistant.local:8099/nebula/mcp`).

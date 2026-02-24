@@ -25,6 +25,7 @@ param(
 
     [switch]$CreateEnvTemplate,
     [switch]$SkipSkill,
+    [switch]$SkipGlobalAgents,
     [switch]$NoBackup,
     [switch]$ForceExternal,
     [switch]$Force
@@ -97,6 +98,15 @@ function Copy-FileSafe {
         return
     }
 
+    if (Test-Path -LiteralPath $Destination) {
+        $sourceHash = (Get-FileHash -LiteralPath $Source -Algorithm SHA256).Hash
+        $destinationHash = (Get-FileHash -LiteralPath $Destination -Algorithm SHA256).Hash
+        if ([System.StringComparer]::OrdinalIgnoreCase.Equals($sourceHash, $destinationHash)) {
+            Write-Host "Skip unchanged file: $Destination"
+            return
+        }
+    }
+
     if ((Test-Path -LiteralPath $Destination) -and -not $ForceWrite) {
         Write-Host "Skip existing file: $Destination"
         return
@@ -162,25 +172,6 @@ function New-ServerDefinition {
     }
 
     return $server
-}
-
-function Build-McpConfigJson {
-    param(
-        [string]$ConfiguredServerName,
-        [string]$ConfiguredImageName,
-        [string]$ConfiguredEnvFile,
-        [string]$WorkspaceFolderScope,
-        [string]$SelectedInstallTarget,
-        [string]$ConfiguredHomeAssistantMcpUrl
-    )
-
-    $server = New-ServerDefinition -ConfiguredImage $ConfiguredImageName -ConfiguredEnvFile $ConfiguredEnvFile -WorkspaceFolderScope $WorkspaceFolderScope -SelectedInstallTarget $SelectedInstallTarget -ConfiguredHomeAssistantMcpUrl $ConfiguredHomeAssistantMcpUrl
-    $root = [ordered]@{
-        mcpServers = [ordered]@{ $ConfiguredServerName = $server }
-        servers = [ordered]@{ $ConfiguredServerName = $server }
-    }
-
-    return ($root | ConvertTo-Json -Depth 10)
 }
 
 function Ensure-GitignoreEnv {
@@ -519,7 +510,12 @@ if ([string]::IsNullOrWhiteSpace($EnvFilePath)) {
 
 if ($Mode -in @("Both", "User")) {
     Setup-User -SelectedChannel $Channel -ExplicitUserConfigPath $UserConfigPath -ConfiguredServerName $ServerName -ConfiguredImageName $ImageName -ConfiguredEnvFilePath $EnvFilePath -SelectedInstallTarget $resolvedInstallTarget -ConfiguredHomeAssistantMcpUrl $resolvedHomeAssistantMcpUrl -WriteEnvTemplate:($CreateEnvTemplate -and $resolvedInstallTarget -eq "LocalContainer") -ForceWrite:$Force -SkipBackup:$NoBackup -TemplateRoot $templateRoot
-    Ensure-GlobalAgentsGuide -TemplateRoot $templateRoot -ForceWrite:$Force
+    if (-not $SkipGlobalAgents) {
+        Ensure-GlobalAgentsGuide -TemplateRoot $templateRoot -ForceWrite:$Force
+    }
+    else {
+        Write-Host "Skip global AGENTS setup by request (-SkipGlobalAgents)."
+    }
 }
 
 if ($Mode -in @("Both", "Project")) {

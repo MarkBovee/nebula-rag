@@ -111,18 +111,14 @@ const App: React.FC = () => {
   const refreshDashboard = async () => {
     setDashboard(prev => ({ ...prev, loading: true, error: undefined }));
     try {
-      const [health, stats, sources] = await Promise.all([
-        apiClient.getHealth(),
-        apiClient.getStats(),
-        apiClient.listSources(50),
-      ]);
+      const snapshot = await apiClient.getDashboard(50);
 
       const activity = apiClient.getActivityLog();
 
       setDashboard({
-        health,
-        stats,
-        sources,
+        health: snapshot.health,
+        stats: snapshot.stats,
+        sources: snapshot.sources,
         recentActivity: activity,
         loading: false,
       });
@@ -137,12 +133,29 @@ const App: React.FC = () => {
   };
 
   /// <summary>
-  /// Fetch dashboard data on component mount and set up auto-refresh every 10 seconds.
+  /// Fetch dashboard data on mount and refresh on a 30-second interval while visible.
   /// </summary>
   useEffect(() => {
     refreshDashboard();
-    const interval = setInterval(refreshDashboard, 10000);
-    return () => clearInterval(interval);
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        refreshDashboard();
+      }
+    };
+
+    const interval = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        refreshDashboard();
+      }
+    }, 30000);
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, []);
 
   const { health, stats, sources, recentActivity, loading, error } = dashboard;
