@@ -4,6 +4,31 @@ All notable changes to the Nebula RAG Home Assistant add-on are documented in th
 
 The format is inspired by Keep a Changelog and follows semantic versioning.
 
+## [0.2.14] - 2026-02-24
+
+- Replaced the root `README.md` with a GitHub-focused system overview that clearly explains architecture, runtime modes, and usage paths.
+- Added a single one-line remote installer command that downloads and runs `scripts/setup-nebula-rag.ps1` for user-level MCP setup.
+
+## [0.2.13] - 2026-02-24
+
+- Added explicit memory routing policy in `AGENTS.md` to separate VS Code user memory from Nebula project memory.
+- Updated `rag.instructions.md` and `copilot-instructions.md` to require memory-assisted retrieval and clear fallback/precedence behavior.
+- Updated `.github/skills/nebularag/SKILL.md` to include `memory_recall` and `memory_store` in the standard workflow.
+- Updated `scripts/setup-nebula-rag.ps1` messaging so global/project setup explicitly indicates memory routing templates are applied.
+
+## [0.2.12] - 2026-02-24
+
+- Consolidated MCP transport and tool execution into a single shared implementation in `NebulaRAG.Core` to eliminate drift between `AddonHost` and `NebulaRAG.Mcp`.
+- Refactored `McpTransportHandler` into focused partial files (routing, tool execution, and JSON-RPC envelope helpers) to improve maintainability.
+- Reworked `NebulaRAG.Mcp` into a thin stdio wrapper that delegates JSON-RPC handling to the shared Core handler.
+- Improved `query_project_rag` UX: empty `arguments.text` now returns a usage hint instead of an error response to reduce noisy repeated failure messages.
+
+## [0.2.11] - 2026-02-24
+
+- Updated dashboard overview layout so `Source Breakdown` sits next to `Index Health` instead of spanning a full-width row.
+- Rebuilt add-on dashboard static assets for deployment parity between local and Home Assistant-hosted UI.
+- Updated repository instruction files to require a Home Assistant add-on version bump and changelog entry after each implemented change.
+
 ## [0.2.10] - 2026-02-24
 
 - Updated source-path normalization to prefix indexed keys with the project folder name (for example `NebulaRAG/src/...`).

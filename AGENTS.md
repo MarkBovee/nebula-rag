@@ -30,6 +30,20 @@ If instruction files conflict, prioritize repository-local instruction files and
 
 ## Tool Decision Logic
 
+## Memory Routing Policy
+
+Use both memory systems with clear scope boundaries:
+
+- VS Code memory tool: user-level assistant behavior and preferences (communication style, recurring personal preferences, cross-project habits).
+- NebulaRAG memory tools (`memory_recall`, `memory_store`, `memory_list`, `memory_update`, `memory_delete`): project/domain memory that should be queryable by MCP clients and retained in Nebula storage.
+
+When a memory is both user-relevant and project-relevant, dual-write:
+
+- short preference note in VS Code memory
+- structured operational/decision note in Nebula memory (with type and tags)
+
+If Nebula memory tools are unavailable in the runtime, fall back to VS Code memory and explicitly note the fallback.
+
 ### Query RAG first when:
 
 - Asked about code, architecture, or project-specific logic
@@ -43,6 +57,11 @@ Avoid repeated RAG calls for the same scope when existing retrieved context is s
 - Starting a new session to recall recent context
 - User mentions something they told you before
 - Asked about preferences, decisions, or history
+
+When querying memory:
+
+- Query Nebula memory first for project decisions, architecture history, and recurring bug patterns.
+- Query VS Code memory first for user preferences and assistant interaction patterns.
 
 ### Query both RAG and Memory when:
 
@@ -114,15 +133,17 @@ Preferred tags: `architecture`, `preference`, `bug`, `convention`, `decision`, `
 
 ### Session Start
 
-1. Run `memory_recall` for recent session context and current project context.
-2. Run `rag_health_check` to verify index availability.
-3. Provide a short summary of retrieved context before implementation.
+1. Run Nebula memory recall (`memory_recall`) for recent project context, decisions, and bug history.
+2. Run VS Code memory recall for user preferences and communication expectations.
+3. Run `rag_health_check` to verify index availability.
+4. Provide a short summary of retrieved context before implementation.
 
 ### Session End
 
-1. Store important decisions and insights.
-2. Store remaining open tasks or questions.
-3. Store any newly agreed conventions.
+1. Store important project decisions and insights in Nebula memory.
+2. Store remaining project open tasks/questions in Nebula memory when they should be queryable later.
+3. Store user preference updates in VS Code memory.
+4. Store any newly agreed conventions in Nebula memory (and VS Code memory when user-specific).
 
 ## Coding Standards
 
@@ -146,10 +167,12 @@ Preferred tags: `architecture`, `preference`, `bug`, `convention`, `decision`, `
 
 Before completing implementation:
 
-1. Build solution with zero errors.
-2. Run tests and keep them passing.
-3. Ensure docs/readmes are updated for behavior changes.
-4. Keep changes scoped; avoid unrelated refactors.
+1. Bump `nebula-rag/config.json` add-on version (default patch bump).
+2. Add a matching `nebula-rag/CHANGELOG.md` entry for the change.
+3. Build solution with zero errors.
+4. Run tests and keep them passing.
+5. Ensure docs/readmes are updated for behavior changes.
+6. Keep changes scoped; avoid unrelated refactors.
 
 ## Documentation Rules
 

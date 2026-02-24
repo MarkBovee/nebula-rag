@@ -483,6 +483,7 @@ function Ensure-GlobalAgentsGuide {
 
     $globalAgentsPath = Join-Path $homeDirectory "AGENTS.md"
     Copy-FileSafe -Source $sourceAgentsPath -Destination $globalAgentsPath -ForceWrite:$ForceWrite
+    Write-Host "Global AGENTS includes memory routing policy (Nebula project memory + VS Code user memory)."
 }
 
 function Resolve-InstallTarget {
@@ -540,6 +541,7 @@ function Setup-Project {
     Copy-FileSafe -Source (Join-Path $TemplateRoot ".github/copilot-instructions.md") -Destination (Join-Path $targetRoot ".github/copilot-instructions.md") -ForceWrite:$ForceWrite
     Copy-FileSafe -Source (Join-Path $TemplateRoot ".github/instructions/rag.instructions.md") -Destination (Join-Path $targetRoot ".github/instructions/rag.instructions.md") -ForceWrite:$ForceWrite
     Copy-FileSafe -Source (Join-Path $TemplateRoot "AGENTS.md") -Destination (Join-Path $targetRoot "AGENTS.md") -ForceWrite:$ForceWrite
+    Write-Host "Applied memory routing templates for project setup (Nebula memory + VS Code memory)."
 
     if (-not $SkipSkillFile) {
         Copy-FileSafe -Source (Join-Path $TemplateRoot ".github/skills/nebularag/SKILL.md") -Destination (Join-Path $targetRoot ".github/skills/nebularag/SKILL.md") -ForceWrite:$ForceWrite

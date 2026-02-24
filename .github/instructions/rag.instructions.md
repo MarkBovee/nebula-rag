@@ -3,13 +3,24 @@
 Prefer `query_project_rag` whenever repository context is needed.
 Use direct file/source exploration only as fallback when RAG is unavailable or insufficient.
 
+## Memory-assisted retrieval
+
+Use memory and RAG together with explicit scope:
+
+- Use Nebula memory tools first for project decision history, recurring bugs, and prior architectural choices.
+- Use VS Code memory tool first for user preferences and assistant interaction behavior.
+- Use `query_project_rag` for current codebase facts and implementation details.
+
+If memory and RAG disagree, treat source code/RAG-backed source snippets as the implementation truth and call out the discrepancy.
+
 ## Expected sequence
 
-1. Query `query_project_rag` with the user intent phrased as a search question.
-2. If needed, run one focused follow-up query for missing terms.
-3. If RAG returns relevant snippets, proceed using those results first.
-4. If RAG returns no matches, low-signal matches, or missing critical details, fall back to source files and instruction files.
-5. Mention whether context came from RAG results, fallback source reads, or both.
+1. Query Nebula memory for related prior decisions/issues when task history matters.
+2. Query `query_project_rag` with the user intent phrased as a search question.
+3. If needed, run one focused follow-up query for missing terms.
+4. If RAG returns relevant snippets, proceed using those results first.
+5. If RAG returns no matches, low-signal matches, or missing critical details, fall back to source files and instruction files.
+6. Mention whether context came from memory, RAG results, fallback source reads, or a combination.
 
 ## Fallback order
 

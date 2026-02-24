@@ -12,6 +12,14 @@ For implementation tasks:
 - Query RAG once before proposing code changes.
 - Re-query only when validating behavior that depends on newly changed files or unresolved uncertainty.
 - Keep changes minimal and scoped to the request.
+- Always bump `nebula-rag/config.json` add-on version after implemented changes (default patch bump).
+- Always add a matching entry to `nebula-rag/CHANGELOG.md` in the same update.
+
+Memory guidance:
+
+- For project-specific decision history, recurring bug patterns, and conventions, prefer Nebula memory tools first (`memory_recall`, `memory_store`, etc.).
+- For user-level preferences and assistant behavior, prefer VS Code memory.
+- When a fact matters to both scopes, dual-write: concise note in VS Code memory plus structured project note in Nebula memory.
 
 Agent setup baseline:
 

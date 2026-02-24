@@ -39,5 +39,7 @@ Only for: complex integration guides (>100 lines), architecture deep-dives, oper
 
 ## When Code Changes
 
-3. Update README if user-visible behavior changes
-4. Update folder structure in README if files move
+1. Bump add-on version in `nebula-rag/config.json`.
+2. Add or update the matching release note in `nebula-rag/CHANGELOG.md`.
+3. Update README if user-visible behavior changes.
+4. Update folder structure in README if files move.

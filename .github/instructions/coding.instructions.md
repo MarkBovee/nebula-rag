@@ -88,12 +88,20 @@ When adding properties that touch many files, prefer optional parameters with de
 - **Lazy loading**: Don't compute values until needed.
 - **Caching**: Cache expensive computations and frequently accessed data.
 
+## Release Versioning Rule
+
+- For every implemented repository change, bump the Home Assistant add-on version in `nebula-rag/config.json`.
+- Default bump level is patch unless the requested scope clearly requires minor/major.
+- Add a matching entry in `nebula-rag/CHANGELOG.md` in the same change.
+
 ## Quality Checklist
 
 After implementing changes, verify:
 - [ ] No code duplication introduced
 - [ ] Performance impact acceptable
 - [ ] Error handling comprehensive
+- [ ] Add-on version bumped in `nebula-rag/config.json`
+- [ ] `nebula-rag/CHANGELOG.md` updated for the change
 - [ ] Build: 0 errors, 0 warnings
 - [ ] All tests passing
 - [ ] Code is self-documenting or has "why" comments where needed

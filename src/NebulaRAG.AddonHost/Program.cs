@@ -2,7 +2,7 @@ using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Http.Json;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
-using NebulaRAG.AddonHost.Mcp;
+using NebulaRAG.Core.Mcp;
 using NebulaRAG.AddonHost.Services;
 using NebulaRAG.Core.Chunking;
 using NebulaRAG.Core.Configuration;

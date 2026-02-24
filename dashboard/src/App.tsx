@@ -294,7 +294,7 @@ const App: React.FC = () => {
                 </div>
               )}
               {sources && (
-                <div className="nb-card-shell nb-fade-up" style={{ ...styles.fullWidth, animationDelay: '120ms' }}>
+                <div className="nb-card-shell nb-fade-up" style={{ animationDelay: '120ms' }}>
                   <SourceBreakdown sources={sources} />
                 </div>
               )}
