@@ -429,14 +429,79 @@ public sealed class PostgresRagStore
 
         while (await reader.ReadAsync(cancellationToken))
         {
+            var sourcePath = reader.GetString(0);
             sources.Add(new SourceInfo(
-                SourcePath: reader.GetString(0),
+                SourcePath: sourcePath,
+                ProjectId: ExtractProjectId(sourcePath),
                 ChunkCount: reader.GetInt32(1),
                 IndexedAt: reader.GetDateTime(2),
                 ContentHash: reader.GetString(3)));
         }
 
         return sources.AsReadOnly();
+    }
+
+    /// <summary>
+    /// Extracts a project identifier from a source path for dashboard grouping.
+    /// </summary>
+    /// <param name="sourcePath">Stored source path or URL.</param>
+    /// <returns>Derived project identifier, or <c>null</c> when unavailable.</returns>
+    private static string? ExtractProjectId(string sourcePath)
+    {
+        if (string.IsNullOrWhiteSpace(sourcePath))
+        {
+            return null;
+        }
+
+        if (Uri.TryCreate(sourcePath, UriKind.Absolute, out var sourceUri) && !sourceUri.IsFile)
+        {
+            return sourceUri.Host;
+        }
+
+        var normalizedPath = sourcePath.Replace('\\', '/');
+        var pathSegments = normalizedPath
+            .Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        if (pathSegments.Length == 0)
+        {
+            return null;
+        }
+
+        var projectBoundarySegments = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ".github",
+            "container",
+            "dashboard",
+            "docs",
+            "nebula-rag",
+            "scripts",
+            "src",
+            "tests"
+        };
+
+        var boundarySegmentIndex = Array.FindIndex(pathSegments, segment => projectBoundarySegments.Contains(segment));
+        if (boundarySegmentIndex > 0)
+        {
+            return pathSegments[boundarySegmentIndex - 1];
+        }
+
+        if (pathSegments.Length > 1 && pathSegments[0].Contains('.', StringComparison.Ordinal))
+        {
+            return pathSegments[1];
+        }
+
+        if (!pathSegments[0].EndsWith(":", StringComparison.Ordinal))
+        {
+            return pathSegments[0];
+        }
+
+        var projectsSegmentIndex = Array.FindIndex(pathSegments, segment => string.Equals(segment, "projects", StringComparison.OrdinalIgnoreCase));
+        if (projectsSegmentIndex >= 0 && projectsSegmentIndex + 1 < pathSegments.Length)
+        {
+            return pathSegments[projectsSegmentIndex + 1];
+        }
+
+        return pathSegments.Length > 2 ? pathSegments[2] : pathSegments.ElementAtOrDefault(1);
     }
 
     /// <summary>

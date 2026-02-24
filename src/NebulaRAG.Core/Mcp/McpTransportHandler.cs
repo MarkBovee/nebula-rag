@@ -202,7 +202,7 @@ public sealed partial class McpTransportHandler
                 new JsonObject
                 {
                     ["sourcePath"] = BuildStringSchema("Source directory path to index."),
-                    ["projectName"] = BuildStringSchema("Optional project name used as the source-key prefix.")
+                    ["projectId"] = BuildStringSchema("Optional project id used as the source-key prefix.")
                 },
                 "sourcePath"),
             RagIndexTextToolName => BuildObjectSchema(
@@ -210,7 +210,7 @@ public sealed partial class McpTransportHandler
                 {
                     ["sourcePath"] = BuildStringSchema("Source key or file path for the text payload."),
                     ["content"] = BuildStringSchema("Text content to chunk and index."),
-                    ["projectName"] = BuildStringSchema("Optional project name used as the source-key prefix.")
+                    ["projectId"] = BuildStringSchema("Optional project id used as the source-key prefix.")
                 },
                 "sourcePath",
                 "content"),
@@ -219,14 +219,14 @@ public sealed partial class McpTransportHandler
                 {
                     ["url"] = BuildStringSchema("HTTP(S) URL to fetch and index."),
                     ["sourcePath"] = BuildStringSchema("Optional source key override for stored content."),
-                    ["projectName"] = BuildStringSchema("Optional project name used as the source-key prefix.")
+                    ["projectId"] = BuildStringSchema("Optional project id used as the source-key prefix.")
                 },
                 "url"),
             RagReindexSourceToolName => BuildObjectSchema(
                 new JsonObject
                 {
                     ["sourcePath"] = BuildStringSchema("Readable local file path to reindex."),
-                    ["projectName"] = BuildStringSchema("Optional project name used as the source-key prefix.")
+                    ["projectId"] = BuildStringSchema("Optional project id used as the source-key prefix.")
                 },
                 "sourcePath"),
             RagGetChunkToolName => BuildObjectSchema(

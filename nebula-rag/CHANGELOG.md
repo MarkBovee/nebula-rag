@@ -4,6 +4,23 @@ All notable changes to the Nebula RAG Home Assistant add-on are documented in th
 
 The format is inspired by Keep a Changelog and follows semantic versioning.
 
+## [0.2.49] - 2026-02-24
+
+- Unified MCP project scoping terminology to `projectId` for indexing tools (`rag_index_path`, `rag_index_text`, `rag_index_url`, `rag_reindex_source`) to match memory tools.
+- Updated indexing tool input schemas and structured outputs to use `projectId` only, removing mixed `projectName` usage.
+- Aligned core indexing/path-prefix method signatures with `projectId` naming for consistent project-scoping semantics across backend services.
+
+## [0.2.48] - 2026-02-24
+
+- Added `projectId` to source API payloads and dashboard source typing so source grouping/filtering can use explicit project identity when available.
+- Updated source grouping logic to prefer explicit `projectId` first and only fall back to source-path extraction when `projectId` is absent.
+- Added dashboard data-test fixture coverage for project-id precedence on workspace-prefixed source keys.
+
+## [0.2.47] - 2026-02-24
+
+- Fixed dashboard project extraction for workspace-prefixed source keys so paths like `Accentry.MiEP/NebulaRAG/src/...` are grouped under `NebulaRAG` instead of the outer workspace segment.
+- Added Playwright data coverage to assert source grouping displays `NebulaRAG` and does not regress to `Accentry.MiEP` for prefixed source paths.
+
 ## [0.2.46] - 2026-02-24
 
 - Improved Memory tab scope visibility by adding a dedicated `Applied Scope` status badge, making it obvious when analytics are in `Global` mode versus `Project`/`Session` filters.

@@ -35,6 +35,7 @@ export interface IndexStats {
 /// </summary>
 export interface SourceInfo {
   sourcePath: string;
+  projectId?: string;
   chunkCount: number;
   indexedAt: string;
   contentHash?: string;

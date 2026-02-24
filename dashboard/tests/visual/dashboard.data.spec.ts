@@ -22,6 +22,13 @@ const dashboardFixture = {
       documentCount: 1,
     },
     {
+      sourcePath: 'Accentry.MiEP/LegacyWorkspace/src/NebulaRAG.Core/Configuration/RagSettings.cs',
+      projectId: 'NebulaRAG',
+      chunkCount: 55,
+      indexedAt: '2026-01-01T10:22:00.000Z',
+      documentCount: 1,
+    },
+    {
       sourcePath: 'E:/Projects/NebulaRAG/src/NebulaRAG.Core/Services/RagQueryService.cs',
       chunkCount: 315,
       indexedAt: '2026-01-01T10:10:00.000Z',
@@ -170,6 +177,8 @@ test('renders overview status and summary metrics from dashboard data', async ({
   await expect(page.getByTestId('metric-total-chunks')).toContainText('1,822');
   await expect(page.getByTestId('source-breakdown-list')).toBeVisible();
   await expect(page.getByTestId('source-breakdown-item')).toHaveCount(1);
+  await expect(page.getByTestId('source-breakdown-list')).toContainText('NebulaRAG');
+  await expect(page.getByTestId('source-breakdown-list')).not.toContainText('Accentry.MiEP');
 });
 
 test('navigates through all tabs and validates key data surfaces', async ({ page }) => {
@@ -179,7 +188,7 @@ test('navigates through all tabs and validates key data surfaces', async ({ page
 
   await page.getByTestId('tab-sources').click();
   await expect(page.getByTestId('panel-sources')).toBeVisible();
-  await expect(page.getByTestId('source-row')).toHaveCount(3);
+  await expect(page.getByTestId('source-row')).toHaveCount(4);
 
   await page.getByTestId('tab-activity').click();
   await expect(page.getByTestId('panel-activity')).toBeVisible();
