@@ -4,6 +4,11 @@ All notable changes to the Nebula RAG Home Assistant add-on are documented in th
 
 The format is inspired by Keep a Changelog and follows semantic versioning.
 
+## [0.2.15] - 2026-02-24
+
+- Add-on host now sets `no-store/no-cache` headers for dashboard `index.html` responses so updated deployments always load the latest hashed JS/CSS bundles instead of stale cached shells.
+- Clarified deployment troubleshooting for stale dashboards: add-on image contents are built from `NEBULARAG_REPO_REF` (`main` by default), so local unpushed changes are not included until pushed or ref-pinned.
+
 ## [0.2.14] - 2026-02-24
 
 - Replaced the root `README.md` with a GitHub-focused system overview that clearly explains architecture, runtime modes, and usage paths.

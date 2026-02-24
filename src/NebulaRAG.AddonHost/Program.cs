@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Http.Json;
+using Microsoft.AspNetCore.StaticFiles;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using NebulaRAG.Core.Mcp;
@@ -81,7 +82,21 @@ app.UseSerilogRequestLogging(options =>
 });
 
 app.UseDefaultFiles();
-app.UseStaticFiles();
+app.UseStaticFiles(new StaticFileOptions
+{
+    OnPrepareResponse = context =>
+    {
+        if (!IsHtmlEntryPoint(context))
+        {
+            return;
+        }
+
+        // Ensure dashboard shell pages always resolve the latest hashed asset manifest.
+        context.Context.Response.Headers["Cache-Control"] = "no-store, no-cache, must-revalidate";
+        context.Context.Response.Headers["Pragma"] = "no-cache";
+        context.Context.Response.Headers["Expires"] = "0";
+    }
+});
 app.MapControllers();
 
 app.MapPost("/mcp", async (JsonObject request, McpTransportHandler handler, CancellationToken cancellationToken) =>
@@ -139,6 +154,17 @@ static string NormalizePathBase(string? rawPathBase)
     }
 
     return trimmed.TrimEnd('/');
+}
+
+/// <summary>
+/// Determines whether the static file response is for an HTML entry page.
+/// </summary>
+/// <param name="context">Static file response context.</param>
+/// <returns>True when the requested file is an index HTML page.</returns>
+static bool IsHtmlEntryPoint(StaticFileResponseContext context)
+{
+    var fileName = Path.GetFileName(context.File.Name);
+    return string.Equals(fileName, "index.html", StringComparison.OrdinalIgnoreCase);
 }
 
 /// <summary>

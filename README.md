@@ -117,12 +117,6 @@ pwsh -File .\scripts\setup-nebula-rag.ps1 -Mode User -InstallTarget LocalContain
 
 Never commit secrets or credential-bearing env files.
 
-## Documentation
-
-- Architecture: `docs/ARCHITECTURE.md`
-- Add-on docs: `nebula-rag/README.md`
-- Add-on operational notes: `nebula-rag/DOCS.md`
-
 ## Contributing
 
 1. Create a branch from `main`.
