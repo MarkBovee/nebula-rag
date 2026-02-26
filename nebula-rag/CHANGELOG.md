@@ -4,6 +4,10 @@ All notable changes to the Nebula RAG Home Assistant add-on are documented in th
 
 The format is inspired by Keep a Changelog and follows semantic versioning.
 
+## [0.2.32] - 2026-02-26
+
+- Updated repository guidance references in `AGENTS.md` to consistently point to `.editorconfig` (dotfile name) instead of `editorconfig`.
+
 ## [0.2.31] - 2026-02-26
 
 - Fixed an MCP `memory_recall` failure where some result sets could surface `Invalid cast from 'DateTime' to 'Double'` during score parsing.

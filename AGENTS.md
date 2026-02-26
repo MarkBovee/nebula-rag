@@ -24,7 +24,7 @@ Always load and follow these instruction files before implementation:
 - `.github/instructions/documentation.instructions.md`
 - `.github/instructions/rag.instructions.md`
 - `.github/copilot-instructions.md`
-- `editorconfig`
+- `.editorconfig`
 
 If instruction files conflict, prioritize repository-local instruction files and preserve existing project conventions.
 
@@ -183,7 +183,7 @@ Preferred tags: `architecture`, `preference`, `bug`, `convention`, `decision`, `
 
 ## Formatting and Style
 
-- Respect `editorconfig` settings.
+- Respect `.editorconfig` settings.
 - Keep C# style and naming consistent with current project files.
 - Use block braces for control flow.
 - Do not introduce formatting churn outside touched files.
