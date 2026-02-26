@@ -44,7 +44,6 @@ const styles = {
   } as React.CSSProperties,
   chartsGrid: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
     gap: nebulaTheme.spacing.lg,
     marginBottom: nebulaTheme.spacing.lg,
   } as React.CSSProperties,
@@ -138,14 +137,18 @@ const MemoryInsights: React.FC<MemoryInsightsProps> = ({ stats }) => {
           <p style={styles.summaryLabel}>Distinct Sessions</p>
           <p style={styles.summaryValue}>{stats.distinctSessionCount.toLocaleString()}</p>
         </div>
+        <div style={styles.summaryTile} data-testid="memory-distinct-projects">
+          <p style={styles.summaryLabel}>Distinct Projects</p>
+          <p style={styles.summaryValue}>{stats.distinctProjectCount.toLocaleString()}</p>
+        </div>
         <div style={styles.summaryTile}>
           <p style={styles.summaryLabel}>Avg Tags Per Memory</p>
           <p style={styles.summaryValue}>{stats.averageTagsPerMemory.toFixed(2)}</p>
         </div>
       </div>
 
-      <div style={styles.chartsGrid}>
-        <div style={styles.chartPanel}>
+      <div style={styles.chartsGrid} className="nb-memory-charts">
+        <div style={styles.chartPanel} className="nb-memory-type">
           <p style={styles.panelTitle}>Type Distribution</p>
           <ResponsiveContainer width="100%" height={260}>
             <PieChart>
@@ -165,7 +168,7 @@ const MemoryInsights: React.FC<MemoryInsightsProps> = ({ stats }) => {
           </ResponsiveContainer>
         </div>
 
-        <div style={styles.chartPanel}>
+        <div style={styles.chartPanel} className="nb-memory-tags">
           <p style={styles.panelTitle}>Top Tags</p>
           <ResponsiveContainer width="100%" height={260}>
             <BarChart data={tagData} layout="vertical" margin={{ top: 8, right: 12, left: 8, bottom: 8 }}>
@@ -185,7 +188,7 @@ const MemoryInsights: React.FC<MemoryInsightsProps> = ({ stats }) => {
           </ResponsiveContainer>
         </div>
 
-        <div style={{ ...styles.chartPanel, gridColumn: '1 / -1' }}>
+        <div style={{ ...styles.chartPanel, gridColumn: '1 / -1' }} className="nb-memory-growth">
           <p style={styles.panelTitle}>Memory Growth (Daily)</p>
           <ResponsiveContainer width="100%" height={260}>
             <LineChart data={dailyData} margin={{ top: 8, right: 12, left: 0, bottom: 12 }}>

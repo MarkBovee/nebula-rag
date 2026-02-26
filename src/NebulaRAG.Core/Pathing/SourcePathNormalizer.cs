@@ -65,29 +65,29 @@ public static class SourcePathNormalizer
     /// Applies an explicit project-name prefix to a normalized storage key.
     /// </summary>
     /// <param name="normalizedSourcePath">Already-normalized source path key.</param>
-    /// <param name="projectName">Optional explicit project name from caller input.</param>
-    /// <returns>Prefixed key when projectName is valid; otherwise original key.</returns>
-    public static string ApplyExplicitProjectPrefix(string normalizedSourcePath, string? projectName)
+    /// <param name="projectId">Optional explicit project id from caller input.</param>
+    /// <returns>Prefixed key when projectId is valid; otherwise original key.</returns>
+    public static string ApplyExplicitProjectPrefix(string normalizedSourcePath, string? projectId)
     {
         if (string.IsNullOrWhiteSpace(normalizedSourcePath))
         {
             return normalizedSourcePath;
         }
 
-        var normalizedProjectName = NormalizeProjectName(projectName);
-        if (string.IsNullOrWhiteSpace(normalizedProjectName))
+        var normalizedProjectId = NormalizeProjectId(projectId);
+        if (string.IsNullOrWhiteSpace(normalizedProjectId))
         {
             return normalizedSourcePath;
         }
 
-        var projectPrefix = $"{normalizedProjectName}/";
-        if (normalizedSourcePath.Equals(normalizedProjectName, StringComparison.OrdinalIgnoreCase)
+        var projectPrefix = $"{normalizedProjectId}/";
+        if (normalizedSourcePath.Equals(normalizedProjectId, StringComparison.OrdinalIgnoreCase)
             || normalizedSourcePath.StartsWith(projectPrefix, StringComparison.OrdinalIgnoreCase))
         {
             return normalizedSourcePath;
         }
 
-        return $"{normalizedProjectName}/{normalizedSourcePath}";
+        return $"{normalizedProjectId}/{normalizedSourcePath}";
     }
 
     /// <summary>
@@ -204,16 +204,16 @@ public static class SourcePathNormalizer
     /// <summary>
     /// Normalizes a user-provided project name to a safe source-key segment.
     /// </summary>
-    /// <param name="projectName">Raw project name.</param>
+    /// <param name="projectId">Raw project id.</param>
     /// <returns>Normalized project segment without path separators.</returns>
-    private static string NormalizeProjectName(string? projectName)
+    private static string NormalizeProjectId(string? projectId)
     {
-        if (string.IsNullOrWhiteSpace(projectName))
+        if (string.IsNullOrWhiteSpace(projectId))
         {
             return string.Empty;
         }
 
-        var normalized = projectName.Trim().Replace('\\', '/').Trim('/');
+        var normalized = projectId.Trim().Replace('\\', '/').Trim('/');
         if (string.IsNullOrWhiteSpace(normalized))
         {
             return string.Empty;

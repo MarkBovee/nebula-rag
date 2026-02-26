@@ -30,8 +30,7 @@ const styles = {
 };
 
 /// <summary>
-/// SourceBreakdown component visualizes document distribution across sources using a pie chart.
-/// Shows the proportion of chunks assigned to each source.
+/// SourceBreakdown component visualizes document distribution across projects using a pie chart.
 /// </summary>
 const SourceBreakdown: React.FC<SourceBreakdownProps> = ({ sources }) => {
   const data = summarizeSourcesByProject(sources).map((projectSummary) => ({

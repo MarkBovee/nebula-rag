@@ -12,14 +12,13 @@ It combines:
 ## One-Line Remote Install (Windows + PowerShell)
 
 ```powershell
-pwsh -NoProfile -ExecutionPolicy Bypass -Command "$u='https://raw.githubusercontent.com/MarkBovee/NebulaRAG/main/scripts/setup-nebula-rag.ps1'; $p=Join-Path $env:TEMP 'setup-nebula-rag.ps1'; Invoke-WebRequest -Uri $u -OutFile $p; & $p -Mode User -ClientTargets Both -InstallTarget HomeAssistantAddon -HomeAssistantMcpUrl 'http://homeassistant.local:8099/nebula/mcp' -Force"
+$scriptUrl='https://raw.githubusercontent.com/MarkBovee/NebulaRAG/main/scripts/setup-nebula-rag.ps1'; $scriptPath=Join-Path ([System.IO.Path]::GetTempPath()) 'setup-nebula-rag.ps1'; Remove-Item -LiteralPath $scriptPath -Force -ErrorAction SilentlyContinue; Invoke-WebRequest -Uri $scriptUrl -OutFile $scriptPath -ErrorAction Stop; & $scriptPath
 ```
 
 What it does:
 
 - Downloads the official setup script from this repository.
 - Configures user-level MCP registration for VS Code and Claude Code.
-- Targets the Home Assistant add-on MCP endpoint by default.
 
 ## Why NebulaRAG
 
@@ -27,6 +26,21 @@ What it does:
 - Clean architecture split into core engine, transport adapters, and host runtime.
 - Built-in operational workflow for RAG indexing, querying, and source management.
 - Agent-ready conventions and instruction templates for RAG-first coding workflows.
+
+## What is RAG?
+
+Retrieval-Augmented Generation (RAG) is a pattern that augments generative models with retrieved context from an indexed corpus. In NebulaRAG, RAG provides fast, code-aware context retrieval from indexed repository content (code, documentation, tests, and architecture notes) so that downstream queries and prompts are grounded in your project's actual sources.
+
+What it provides:
+
+- Retrieval-augmented context from indexed repo content useful for quick context lookup, code-aware Q&A, onboarding, and generating accurate prompts for code changes.
+
+Common uses:
+
+- Investigating high-risk or complex code areas by searching for relevant transport, protocol, or adapter terms and reviewing returned source chunks.
+- Understanding the indexing and storage flow by querying for terms like "indexing flow" or storage adapter names to retrieve explanation and implementation snippets.
+- Auditing registered sources and index health to find which repositories and files are being indexed and to inspect dashboard components that surface index metrics.
+- Auto-assisting pull requests by gathering relevant code and documentation to compose precise PR descriptions, test plans, and migration notes.
 
 ## System Overview
 

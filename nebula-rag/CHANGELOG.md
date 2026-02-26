@@ -4,14 +4,118 @@ All notable changes to the Nebula RAG Home Assistant add-on are documented in th
 
 The format is inspired by Keep a Changelog and follows semantic versioning.
 
-## [0.2.32] - 2026-02-26
+## [0.2.52] - 2026-02-26
 
 - Updated repository guidance references in `AGENTS.md` to consistently point to `.editorconfig` (dotfile name) instead of `editorconfig`.
 
-## [0.2.31] - 2026-02-26
+## [0.2.51] - 2026-02-26
 
 - Fixed an MCP `memory_recall` failure where some result sets could surface `Invalid cast from 'DateTime' to 'Double'` during score parsing.
 - Hardened semantic-score extraction in PostgreSQL search paths by resolving score columns by alias and falling back safely when provider values are non-numeric.
+## [0.2.50] - 2026-02-24
+
+- Added a targeted source-key remediation path to the CLI (`repair-source-prefix`) to rewrite legacy indexed source prefixes and resolve duplicate collisions safely.
+- Patched source project-id extraction heuristics so namespace-prefixed `workspace-notes` and drive-style (`c:`) source keys remain grouped under their explicit top-level project identifier.
+- Fixed memory analytics aggregation where optional session filtering in stats queries incorrectly generated a new session id, causing `/api/memory/stats` to return zero despite existing memories.
+
+## [0.2.49] - 2026-02-24
+
+- Unified MCP project scoping terminology to `projectId` for indexing tools (`rag_index_path`, `rag_index_text`, `rag_index_url`, `rag_reindex_source`) to match memory tools.
+- Updated indexing tool input schemas and structured outputs to use `projectId` only, removing mixed `projectName` usage.
+- Aligned core indexing/path-prefix method signatures with `projectId` naming for consistent project-scoping semantics across backend services.
+
+## [0.2.48] - 2026-02-24
+
+- Added `projectId` to source API payloads and dashboard source typing so source grouping/filtering can use explicit project identity when available.
+- Updated source grouping logic to prefer explicit `projectId` first and only fall back to source-path extraction when `projectId` is absent.
+- Added dashboard data-test fixture coverage for project-id precedence on workspace-prefixed source keys.
+
+## [0.2.47] - 2026-02-24
+
+- Fixed dashboard project extraction for workspace-prefixed source keys so paths like `Accentry.MiEP/NebulaRAG/src/...` are grouped under `NebulaRAG` instead of the outer workspace segment.
+- Added Playwright data coverage to assert source grouping displays `NebulaRAG` and does not regress to `Accentry.MiEP` for prefixed source paths.
+
+## [0.2.46] - 2026-02-24
+
+- Improved Memory tab scope visibility by adding a dedicated `Applied Scope` status badge, making it obvious when analytics are in `Global` mode versus `Project`/`Session` filters.
+- Kept global-all-memories as the default applied view, with scope changes only taking effect when users click `Apply Scope`.
+
+## [0.2.45] - 2026-02-24
+
+- Restored project-aware source views in the dashboard (`Source Breakdown` and `Source Management` project filter) using a generic project-key extraction strategy without hardcoded segment lists like `workspace-notes`, `notes`, or `docs`.
+- Updated index stats project counting to compute distinct project keys from stored source-path prefixes/URLs, so the top KPI reports projects again.
+- Fixed memory-scope UX so global memory analytics remain the default overall view; project/session filtering only applies after clicking `Apply Scope`.
+
+## [0.2.44] - 2026-02-24
+
+- Fixed stale `Indexing Rate (docs/sec)` values in the performance timeline by expiring old explicit indexing samples and combining them with live document-delta throughput.
+- Updated telemetry sampling so indexing throughput decays back to zero when indexing is idle instead of remaining pinned from historical non-zero averages.
+
+## [0.2.43] - 2026-02-24
+
+- Removed dashboard snapshot source limiting: `/api/dashboard` now returns the full indexed source set instead of truncating by a limit parameter.
+- Removed backend source-path project inference from index stats; the status counter now reflects distinct indexed source paths without heuristic grouping logic.
+- Simplified dashboard source views to operate on direct source data (no project-name extraction/grouping rules in source breakdown and source manager).
+
+## [0.2.42] - 2026-02-24
+
+- Added scope-aware memory REST APIs in AddonHost: `GET /api/memory/stats`, `GET /api/memory/list`, and `POST /api/memory/search` now support `global`, `project`, and `session` filters with backward-compatible global defaults.
+- Extended core management/storage flows to apply optional `sessionId`/`projectId` filters to memory analytics, list retrieval, and semantic memory search.
+- Added dashboard memory scope controls (Global/Project/Session) so operators can switch memory insights to scoped views without losing the default global behavior.
+
+## [0.2.41] - 2026-02-24
+
+- Added additive project-scoping groundwork for memories in PostgreSQL storage by introducing optional `project_id`, index support, and backward-compatible memory store/list/recall overloads.
+- Expanded MCP memory tool input contracts (`memory_store`, `memory_recall`, `memory_list`) with optional `projectId`, and propagated project scope through tool execution and structured outputs.
+- Added dashboard memory visibility for project scope with a new `Distinct Projects` KPI in `Memory Insights` and updated dashboard fixtures/types accordingly.
+
+## [0.2.40] - 2026-02-24
+
+- Updated the README one-line installer to a PowerShell-native command intended for users already running PowerShell, avoiding nested `pwsh -Command` quoting pitfalls.
+- Added stale temp-script cleanup and explicit download failure handling in the one-liner (`Remove-Item` + `Invoke-WebRequest -ErrorAction Stop`).
+
+## [0.2.37] - 2026-02-24
+
+- Cleaned invalid indexed workspace-note sources that surfaced as separate dashboard projects (`operations` and `retrieval-probe.md`).
+- Updated `Memory Insights` chart layout so full-width screens render `Type Distribution` at one-third width and `Top Tags` at two-thirds width, while preserving stacked behavior on smaller breakpoints.
+
+## [0.2.39] - 2026-02-24
+
+- Expanded MCP `tools/list` input schemas to cover previously under-specified tools: `rag_list_sources`, `rag_normalize_source_paths`, `rag_delete_source`, `rag_purge_all`, `memory_delete`, and `memory_update`.
+- Added stronger schema metadata (enum/const/boolean/integer constraints) so MCP clients can generate safer calls with fewer trial-and-error failures.
+- Improved `rag_list_sources` usability with optional `limit` input and richer response metadata (`returnedCount`, `totalCount`, `limit`) for better paging/inspection workflows.
+
+## [0.2.37] - 2026-02-24
+
+- Fixed MCP tool discoverability for `rag_get_chunk` by publishing an explicit input schema with required `chunkId` so clients stop issuing empty argument calls.
+- Added explicit input schemas for `query_project_rag` and `rag_search_similar` to improve argument guidance in `tools/list`.
+- Improved `rag_get_chunk` argument handling to accept numeric-string values and return a clearer validation message with a usage example when `chunkId` is missing/invalid.
+
+## [0.2.36] - 2026-02-24
+
+- Fixed remote `setup-nebula-rag.ps1` behavior when launched from a downloaded temp script by adding template-file fallback downloads from GitHub raw for required setup assets (`AGENTS.md`, `.github/copilot-instructions.md`, `.github/instructions/rag.instructions.md`, and skill templates).
+- Added a configurable installer parameter `-TemplateRawBaseUrl` (defaulting to the NebulaRAG `main` raw URL) used to resolve missing template files in user/project setup paths.
+- Updated env-template and global/project scaffold flows to use the shared template resolver so setup no longer fails with local "Source file not found" errors in remote-only installs.
+
+## [0.2.35] - 2026-02-24
+
+- Updated MCP `memory_store` behavior so `sessionId` is optional; when omitted, NebulaRAG now generates a session identifier automatically.
+- Removed store-level hard validation that rejected empty `sessionId` during memory creation, while preserving required `type` and `content` validation.
+- Added explicit `memory_store` input schema in MCP `tools/list` so clients can discover required fields (`type`, `content`) and optional fields (`sessionId`, `tags`).
+
+## [0.2.34] - 2026-02-24
+
+- Updated the README one-line PowerShell installer to run `setup-nebula-rag.ps1` without hardcoded setup arguments, so the script uses its own defaults/prompts.
+
+## [0.2.32] - 2026-02-24
+
+- Simplified the README one-line PowerShell installer flow to only download `setup-nebula-rag.ps1` and execute it.
+- Kept the quoting-safe `-Command` pattern so the command works reliably when launched from an existing PowerShell session.
+
+## [0.2.31] - 2026-02-24
+
+- Fixed the README remote one-line installer command for PowerShell sessions by switching to quoting-safe `-Command` usage that prevents parent-session `$variable` expansion.
+- Hardened the one-line installer flow with download retry behavior and `try/finally` cleanup of the temporary script file.
 
 ## [0.2.30] - 2026-02-24
 

@@ -35,6 +35,7 @@ export interface IndexStats {
 /// </summary>
 export interface SourceInfo {
   sourcePath: string;
+  projectId?: string;
   chunkCount: number;
   indexedAt: string;
   contentHash?: string;
@@ -104,10 +105,16 @@ export interface DashboardSnapshot {
 /// <summary>
 /// Aggregated memory analytics for dashboard visualizations.
 /// </summary>
+export type MemoryScopeType = 'global' | 'project' | 'session';
+
+/// <summary>
+/// Aggregated memory analytics for dashboard visualizations.
+/// </summary>
 export interface MemoryDashboardStats {
   totalMemories: number;
   recent24HoursCount: number;
   distinctSessionCount: number;
+  distinctProjectCount: number;
   averageTagsPerMemory: number;
   firstMemoryAtUtc?: string | null;
   lastMemoryAtUtc?: string | null;

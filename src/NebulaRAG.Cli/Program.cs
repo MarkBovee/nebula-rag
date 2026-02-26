@@ -138,7 +138,7 @@ internal static class ProgramMain
                 case "stats":
                     {
                         var mgmtLogger = loggerFactory.CreateLogger<RagManagementService>();
-                        var mgmtService = new RagManagementService(store, mgmtLogger);
+                           var mgmtService = new RagManagementService(store, embeddingGenerator, settings, mgmtLogger);
                         var stats = await mgmtService.GetStatsAsync();
                         Console.WriteLine($"✓ Index Statistics:");
                         Console.WriteLine($"  Documents: {stats.DocumentCount}");
@@ -154,7 +154,7 @@ internal static class ProgramMain
                 case "list-sources":
                     {
                         var mgmtLogger = loggerFactory.CreateLogger<RagManagementService>();
-                        var mgmtService = new RagManagementService(store, mgmtLogger);
+                           var mgmtService = new RagManagementService(store, embeddingGenerator, settings, mgmtLogger);
                         var sources = await mgmtService.ListSourcesAsync();
                         if (sources.Count == 0)
                         {
@@ -177,7 +177,7 @@ internal static class ProgramMain
                             return 1;
                         }
                         var mgmtLogger = loggerFactory.CreateLogger<RagManagementService>();
-                        var mgmtService = new RagManagementService(store, mgmtLogger);
+                           var mgmtService = new RagManagementService(store, embeddingGenerator, settings, mgmtLogger);
                         var result = await mgmtService.DeleteSourceAsync(deleteSource);
                         if (result > 0)
                         {
@@ -198,7 +198,7 @@ internal static class ProgramMain
                         if (confirmation == "yes")
                         {
                             var mgmtLogger = loggerFactory.CreateLogger<RagManagementService>();
-                            var mgmtService = new RagManagementService(store, mgmtLogger);
+                               var mgmtService = new RagManagementService(store, embeddingGenerator, settings, mgmtLogger);
                             await mgmtService.PurgeAllAsync();
                             await TrySyncRagSourcesManifestAsync(sourcesManifestService, null, logger);
                             Console.WriteLine("✓ Database purged successfully.");
@@ -213,7 +213,7 @@ internal static class ProgramMain
                 case "health-check":
                     {
                         var mgmtLogger = loggerFactory.CreateLogger<RagManagementService>();
-                        var mgmtService = new RagManagementService(store, mgmtLogger);
+                           var mgmtService = new RagManagementService(store, embeddingGenerator, settings, mgmtLogger);
                         var health = await mgmtService.HealthCheckAsync();
                         if (health.IsHealthy)
                         {
@@ -225,6 +225,27 @@ internal static class ProgramMain
                             Console.Error.WriteLine($"✗ {health.Message}");
                             return 1;
                         }
+                    }
+
+                case "repair-source-prefix":
+                    {
+                        if (!options.TryGetValue("from", out var fromPrefix) || string.IsNullOrWhiteSpace(fromPrefix))
+                        {
+                            Console.Error.WriteLine("✗ Missing required option --from for repair-source-prefix command.");
+                            return 1;
+                        }
+
+                        if (!options.TryGetValue("to", out var toPrefix) || string.IsNullOrWhiteSpace(toPrefix))
+                        {
+                            Console.Error.WriteLine("✗ Missing required option --to for repair-source-prefix command.");
+                            return 1;
+                        }
+
+                        var rewriteResult = await store.RewriteSourcePathPrefixAsync(fromPrefix, toPrefix);
+                        await TrySyncRagSourcesManifestAsync(sourcesManifestService, null, logger);
+                        Console.WriteLine(
+                            $"✓ Source prefix repair complete: {rewriteResult.UpdatedCount} updated, {rewriteResult.DuplicatesRemoved} duplicates removed.");
+                        return 0;
                     }
 
                 default:
@@ -374,6 +395,7 @@ internal static class ProgramMain
         Console.WriteLine("  delete --source <path>                Delete documents by source path");
         Console.WriteLine("  purge-all                             Clear entire index (with confirmation)");
         Console.WriteLine("  health-check                          Verify database connectivity");
+        Console.WriteLine("  repair-source-prefix --from <p> --to <p>  Rewrite stored source-path prefixes");
         Console.WriteLine();
         Console.WriteLine("Options:");
         Console.WriteLine("  --config <path>                       Path to configuration file");

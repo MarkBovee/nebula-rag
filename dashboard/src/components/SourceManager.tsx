@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { nebulaTheme } from '@/styles/theme';
 import { apiClient } from '@/api/client';
 import type { SourceInfo } from '@/types';
-import { extractProjectName } from '@/utils/projectGrouping';
+import { getProjectNameForSource } from '@/utils/projectGrouping';
 
 interface SourceManagerProps {
   sources: SourceInfo[];
@@ -98,7 +98,7 @@ const SourceManager: React.FC<SourceManagerProps> = ({ sources, onRefresh }) => 
   const [selectedProject, setSelectedProject] = useState<string>('ALL_PROJECTS');
 
   const projectNames = useMemo(() => {
-    const distinctProjectNames = [...new Set(sources.map((source) => extractProjectName(source.sourcePath)))];
+    const distinctProjectNames = [...new Set(sources.map((source) => getProjectNameForSource(source)))];
     return distinctProjectNames.sort((left, right) => left.localeCompare(right));
   }, [sources]);
 
@@ -106,7 +106,7 @@ const SourceManager: React.FC<SourceManagerProps> = ({ sources, onRefresh }) => 
     const projectCountMap = new Map<string, number>();
 
     for (const source of sources) {
-      const projectName = extractProjectName(source.sourcePath);
+      const projectName = getProjectNameForSource(source);
       projectCountMap.set(projectName, (projectCountMap.get(projectName) ?? 0) + 1);
     }
 
@@ -118,7 +118,7 @@ const SourceManager: React.FC<SourceManagerProps> = ({ sources, onRefresh }) => 
       return sources;
     }
 
-    return sources.filter((source) => extractProjectName(source.sourcePath) === selectedProject);
+    return sources.filter((source) => getProjectNameForSource(source) === selectedProject);
   }, [selectedProject, sources]);
 
   const handleDelete = async (sourcePath: string) => {

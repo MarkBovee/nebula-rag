@@ -11,6 +11,7 @@ public sealed class DashboardSnapshotService : IRuntimeTelemetrySink
 {
     private const int MaxQueryLatencySamples = 240;
     private const int MaxIndexingRateSamples = 240;
+    private static readonly TimeSpan IndexingRateRetention = TimeSpan.FromSeconds(90);
     private const int MaxPerformanceSamples = 2880;
     private const int MaxActivityEntries = 500;
     private readonly RagManagementService _managementService;
@@ -20,7 +21,7 @@ public sealed class DashboardSnapshotService : IRuntimeTelemetrySink
     private readonly TimedCache<MemoryDashboardStats> _memoryStatsCache;
     private readonly object _performanceSync = new();
     private readonly Queue<double> _queryLatenciesMs;
-    private readonly Queue<double> _indexingRatesDocsPerSec;
+    private readonly Queue<IndexingRateSample> _indexingRatesDocsPerSec;
     private readonly Queue<PerformanceMetricPoint> _performanceHistory;
     private readonly Queue<DashboardActivityEvent> _activityHistory;
     private DateTime _lastSampleAtUtc;
@@ -39,7 +40,7 @@ public sealed class DashboardSnapshotService : IRuntimeTelemetrySink
         _statsWithSizeCache = new TimedCache<IndexStats>(TimeSpan.FromMinutes(2));
         _memoryStatsCache = new TimedCache<MemoryDashboardStats>(TimeSpan.FromSeconds(30));
         _queryLatenciesMs = new Queue<double>();
-        _indexingRatesDocsPerSec = new Queue<double>();
+        _indexingRatesDocsPerSec = new Queue<IndexingRateSample>();
         _performanceHistory = new Queue<PerformanceMetricPoint>();
         _activityHistory = new Queue<DashboardActivityEvent>();
         _lastSampleAtUtc = DateTime.MinValue;
@@ -81,11 +82,8 @@ public sealed class DashboardSnapshotService : IRuntimeTelemetrySink
 
         lock (_performanceSync)
         {
-            _indexingRatesDocsPerSec.Enqueue(documentsPerSecond);
-            while (_indexingRatesDocsPerSec.Count > MaxIndexingRateSamples)
-            {
-                _indexingRatesDocsPerSec.Dequeue();
-            }
+            _indexingRatesDocsPerSec.Enqueue(new IndexingRateSample(DateTime.UtcNow, documentsPerSecond));
+            TrimIndexingRateSamples(DateTime.UtcNow);
         }
     }
 
@@ -179,18 +177,16 @@ public sealed class DashboardSnapshotService : IRuntimeTelemetrySink
     /// <summary>
     /// Builds one consolidated dashboard payload in a single orchestration call.
     /// </summary>
-    /// <param name="limit">Maximum number of sources to include.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Dashboard payload with health, stats, and sources.</returns>
-    public async Task<DashboardSnapshotResponse> GetDashboardAsync(int limit, CancellationToken cancellationToken = default)
+    public async Task<DashboardSnapshotResponse> GetDashboardAsync(CancellationToken cancellationToken = default)
     {
-        var normalizedLimit = Math.Clamp(limit, 1, 500);
         var health = await GetHealthAsync(cancellationToken);
         var stats = await GetStatsAsync(includeIndexSize: true, cancellationToken);
         var memoryStats = await GetMemoryStatsAsync(cancellationToken);
         var performanceMetrics = CapturePerformanceSample(stats);
         var activity = GetRecentActivity(limit: 200);
-        var sources = await _managementService.ListSourcesAsync(normalizedLimit, cancellationToken);
+        var sources = await _managementService.ListSourcesAsync(int.MaxValue, cancellationToken);
 
         return new DashboardSnapshotResponse(health, stats, sources, memoryStats, activity, performanceMetrics, DateTime.UtcNow);
     }
@@ -236,14 +232,6 @@ public sealed class DashboardSnapshotService : IRuntimeTelemetrySink
                 {
                     var documentDelta = stats.DocumentCount - _lastDocumentCount;
                     indexingRateDocsPerSec = Math.Max(0, documentDelta / elapsedSeconds);
-                    if (indexingRateDocsPerSec > 0)
-                    {
-                        _indexingRatesDocsPerSec.Enqueue(indexingRateDocsPerSec);
-                        while (_indexingRatesDocsPerSec.Count > MaxIndexingRateSamples)
-                        {
-                            _indexingRatesDocsPerSec.Dequeue();
-                        }
-                    }
 
                     var cpuDeltaSeconds = (processCpuTime - _lastProcessCpuTime).TotalSeconds;
                     var cpuCapacitySeconds = elapsedSeconds * Environment.ProcessorCount;
@@ -254,11 +242,12 @@ public sealed class DashboardSnapshotService : IRuntimeTelemetrySink
                 }
             }
 
-            // Prefer event-driven throughput when available so short indexing bursts remain visible.
-            if (_indexingRatesDocsPerSec.Count > 0)
-            {
-                indexingRateDocsPerSec = _indexingRatesDocsPerSec.Average();
-            }
+            // Blend short-lived explicit indexing events with sampled document-delta throughput.
+            TrimIndexingRateSamples(sampleAtUtc);
+            var eventDrivenRate = _indexingRatesDocsPerSec.Count == 0
+                ? 0d
+                : _indexingRatesDocsPerSec.Average(sample => sample.DocumentsPerSecond);
+            indexingRateDocsPerSec = Math.Max(indexingRateDocsPerSec, eventDrivenRate);
 
             var sample = new PerformanceMetricPoint(sampleAtUtc, queryLatencyAverageMs, indexingRateDocsPerSec, cpuUsagePercent);
             _performanceHistory.Enqueue(sample);
@@ -268,6 +257,23 @@ public sealed class DashboardSnapshotService : IRuntimeTelemetrySink
 
             TrimPerformanceHistory(sampleAtUtc);
             return _performanceHistory.ToList().AsReadOnly();
+        }
+    }
+
+    /// <summary>
+    /// Trims indexing rate samples to recent values so idle periods decay back to zero.
+    /// </summary>
+    /// <param name="nowUtc">Current UTC timestamp.</param>
+    private void TrimIndexingRateSamples(DateTime nowUtc)
+    {
+        while (_indexingRatesDocsPerSec.Count > 0 && (nowUtc - _indexingRatesDocsPerSec.Peek().CapturedAtUtc) > IndexingRateRetention)
+        {
+            _indexingRatesDocsPerSec.Dequeue();
+        }
+
+        while (_indexingRatesDocsPerSec.Count > MaxIndexingRateSamples)
+        {
+            _indexingRatesDocsPerSec.Dequeue();
         }
     }
 
@@ -318,6 +324,13 @@ public sealed record DashboardActivityEvent(DateTime Timestamp, string EventType
 /// <param name="IndexingRateDocsPerSec">Observed indexing throughput in documents per second.</param>
 /// <param name="CpuUsagePercent">Observed process CPU utilization percentage across available cores.</param>
 public sealed record PerformanceMetricPoint(DateTime TimestampUtc, double QueryLatencyMs, double IndexingRateDocsPerSec, double CpuUsagePercent);
+
+/// <summary>
+/// One explicit indexing throughput sample captured from indexing operations.
+/// </summary>
+/// <param name="CapturedAtUtc">UTC timestamp when the sample was captured.</param>
+/// <param name="DocumentsPerSecond">Observed indexing throughput.</param>
+internal sealed record IndexingRateSample(DateTime CapturedAtUtc, double DocumentsPerSecond);
 
 /// <summary>
 /// Thread-safe in-memory cache with fixed TTL.

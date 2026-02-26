@@ -25,6 +25,8 @@ public sealed record IndexStats(
 public sealed record SourceInfo(
     /// <summary>The path or identifier for the indexed source document.</summary>
     string SourcePath,
+    /// <summary>Optional explicit project identifier derived from source metadata.</summary>
+    string? ProjectId,
     /// <summary>Number of chunks currently stored for this source.</summary>
     int ChunkCount,
     /// <summary>UTC timestamp when this source was last indexed.</summary>

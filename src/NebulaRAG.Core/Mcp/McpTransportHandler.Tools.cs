@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Diagnostics;
+using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -32,7 +33,7 @@ public sealed partial class McpTransportHandler
                 RagHealthCheckToolName => await ExecuteHealthCheckToolAsync(cancellationToken),
                 RagServerInfoToolName => ExecuteServerInfoTool(),
                 RagIndexStatsToolName => await ExecuteIndexStatsToolAsync(cancellationToken),
-                RagListSourcesToolName => await ExecuteListSourcesToolAsync(cancellationToken),
+                RagListSourcesToolName => await ExecuteListSourcesToolAsync(arguments, cancellationToken),
                 RagIndexPathToolName => await ExecuteIndexPathToolAsync(arguments, cancellationToken),
                 RagIndexTextToolName => await ExecuteIndexTextToolAsync(arguments, cancellationToken),
                 RagIndexUrlToolName => await ExecuteIndexUrlToolAsync(arguments, cancellationToken),
@@ -233,13 +234,16 @@ public sealed partial class McpTransportHandler
     /// <summary>
     /// Executes indexed source listing.
     /// </summary>
+    /// <param name="arguments">Tool arguments.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Tool result payload.</returns>
-    private async Task<JsonObject> ExecuteListSourcesToolAsync(CancellationToken cancellationToken)
+    private async Task<JsonObject> ExecuteListSourcesToolAsync(JsonObject? arguments, CancellationToken cancellationToken)
     {
+        var limit = Math.Clamp(arguments?["limit"]?.GetValue<int?>() ?? 200, 1, 1000);
         var sources = await _managementService.ListSourcesAsync(cancellationToken: cancellationToken);
+        var limitedSources = sources.Take(limit).ToList();
         var items = new JsonArray();
-        foreach (var source in sources)
+        foreach (var source in limitedSources)
         {
             items.Add(new JsonObject
             {
@@ -249,7 +253,13 @@ public sealed partial class McpTransportHandler
             });
         }
 
-        return BuildToolResult("Indexed sources.", new JsonObject { ["items"] = items });
+        return BuildToolResult("Indexed sources.", new JsonObject
+        {
+            ["items"] = items,
+            ["limit"] = limit,
+            ["returnedCount"] = limitedSources.Count,
+            ["totalCount"] = sources.Count
+        });
     }
 
     /// <summary>
@@ -261,20 +271,20 @@ public sealed partial class McpTransportHandler
     private async Task<JsonObject> ExecuteIndexPathToolAsync(JsonObject? arguments, CancellationToken cancellationToken)
     {
         var sourcePath = arguments?["sourcePath"]?.GetValue<string>();
-        var projectName = arguments?["projectName"]?.GetValue<string>();
+        var projectId = arguments?["projectId"]?.GetValue<string>();
         if (string.IsNullOrWhiteSpace(sourcePath))
         {
             return BuildToolResult("Missing required argument: sourcePath", isError: true);
         }
 
-        var summary = await _indexer.IndexDirectoryAsync(sourcePath, projectName, cancellationToken);
+        var summary = await _indexer.IndexDirectoryAsync(sourcePath, projectId, cancellationToken);
         var manifestSyncResult = await TrySyncRagSourcesManifestAsync(sourcePath, cancellationToken);
         return BuildToolResult("Index complete.", new JsonObject
         {
             ["documentsIndexed"] = summary.DocumentsIndexed,
             ["documentsSkipped"] = summary.DocumentsSkipped,
             ["chunksIndexed"] = summary.ChunksIndexed,
-            ["projectName"] = string.IsNullOrWhiteSpace(projectName) ? null : projectName,
+            ["projectId"] = string.IsNullOrWhiteSpace(projectId) ? null : projectId,
             ["sourcesManifestPath"] = manifestSyncResult?.ManifestPath,
             ["sourcesManifestSourceCount"] = manifestSyncResult?.SourceCount
         });
@@ -289,7 +299,7 @@ public sealed partial class McpTransportHandler
     private async Task<JsonObject> ExecuteIndexTextToolAsync(JsonObject? arguments, CancellationToken cancellationToken)
     {
         var sourcePath = arguments?["sourcePath"]?.GetValue<string>();
-        var projectName = arguments?["projectName"]?.GetValue<string>();
+        var projectId = arguments?["projectId"]?.GetValue<string>();
         var content = arguments?["content"]?.GetValue<string>();
         if (string.IsNullOrWhiteSpace(sourcePath) || string.IsNullOrWhiteSpace(content))
         {
@@ -305,14 +315,14 @@ public sealed partial class McpTransportHandler
         var chunkEmbeddings = chunks.Select(chunk => new ChunkEmbedding(chunk.Index, chunk.Text, chunk.TokenCount, _embeddingGenerator.GenerateEmbedding(chunk.Text, _settings.Ingestion.VectorDimensions))).ToList();
         var contentHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(content)));
         var normalizedSourcePath = SourcePathNormalizer.NormalizeForStorage(sourcePath, Directory.GetCurrentDirectory());
-        var prefixedSourcePath = SourcePathNormalizer.ApplyExplicitProjectPrefix(normalizedSourcePath, projectName);
+        var prefixedSourcePath = SourcePathNormalizer.ApplyExplicitProjectPrefix(normalizedSourcePath, projectId);
         var updated = await _store.UpsertDocumentAsync(prefixedSourcePath, contentHash, chunkEmbeddings, cancellationToken);
         var manifestSyncResult = await TrySyncRagSourcesManifestAsync(prefixedSourcePath, cancellationToken);
 
         return BuildToolResult(updated ? "Source text indexed." : "Source text unchanged.", new JsonObject
         {
             ["sourcePath"] = prefixedSourcePath,
-            ["projectName"] = string.IsNullOrWhiteSpace(projectName) ? null : projectName,
+            ["projectId"] = string.IsNullOrWhiteSpace(projectId) ? null : projectId,
             ["updated"] = updated,
             ["chunkCount"] = chunkEmbeddings.Count,
             ["contentHash"] = contentHash,
@@ -331,7 +341,7 @@ public sealed partial class McpTransportHandler
     {
         var url = arguments?["url"]?.GetValue<string>();
         var sourcePath = arguments?["sourcePath"]?.GetValue<string>();
-        var projectName = arguments?["projectName"]?.GetValue<string>();
+        var projectId = arguments?["projectId"]?.GetValue<string>();
         if (string.IsNullOrWhiteSpace(url))
         {
             return BuildToolResult("url is required.", isError: true);
@@ -343,7 +353,7 @@ public sealed partial class McpTransportHandler
         {
             ["sourcePath"] = targetSourcePath,
             ["content"] = fetchedContent,
-            ["projectName"] = projectName
+            ["projectId"] = projectId
         };
 
         return await ExecuteIndexTextToolAsync(indexArgs, cancellationToken);
@@ -358,7 +368,7 @@ public sealed partial class McpTransportHandler
     private async Task<JsonObject> ExecuteReindexSourceToolAsync(JsonObject? arguments, CancellationToken cancellationToken)
     {
         var sourcePath = arguments?["sourcePath"]?.GetValue<string>();
-        var projectName = arguments?["projectName"]?.GetValue<string>();
+        var projectId = arguments?["projectId"]?.GetValue<string>();
         if (string.IsNullOrWhiteSpace(sourcePath))
         {
             return BuildToolResult("sourcePath is required.", isError: true);
@@ -370,7 +380,7 @@ public sealed partial class McpTransportHandler
         }
 
         var content = await File.ReadAllTextAsync(sourcePath, cancellationToken);
-        var reindexArgs = new JsonObject { ["sourcePath"] = sourcePath, ["content"] = content, ["projectName"] = projectName };
+        var reindexArgs = new JsonObject { ["sourcePath"] = sourcePath, ["content"] = content, ["projectId"] = projectId };
         return await ExecuteIndexTextToolAsync(reindexArgs, cancellationToken);
     }
 
@@ -382,13 +392,12 @@ public sealed partial class McpTransportHandler
     /// <returns>Tool result payload.</returns>
     private async Task<JsonObject> ExecuteGetChunkToolAsync(JsonObject? arguments, CancellationToken cancellationToken)
     {
-        var chunkId = arguments?["chunkId"]?.GetValue<long?>();
-        if (chunkId is null || chunkId.Value <= 0)
+        if (!TryGetLongArgument(arguments, "chunkId", out var chunkId) || chunkId <= 0)
         {
-            return BuildToolResult("chunkId is required and must be > 0.", isError: true);
+            return BuildToolResult("chunkId is required and must be a positive integer. Example: { \"chunkId\": 123 }", isError: true);
         }
 
-        var chunk = await _store.GetChunkByIdAsync(chunkId.Value, cancellationToken);
+        var chunk = await _store.GetChunkByIdAsync(chunkId, cancellationToken);
         if (chunk is null)
         {
             return BuildToolResult("Chunk not found.", isError: true);
@@ -403,6 +412,48 @@ public sealed partial class McpTransportHandler
             ["indexedAtUtc"] = chunk.IndexedAtUtc.ToUniversalTime().ToString("O"),
             ["chunkText"] = chunk.ChunkText
         });
+    }
+
+    /// <summary>
+    /// Tries to read a long argument from tool arguments, accepting numeric and numeric-string JSON values.
+    /// </summary>
+    /// <param name="arguments">Tool arguments object.</param>
+    /// <param name="argumentName">Argument name to read.</param>
+    /// <param name="value">Parsed long value when successful.</param>
+    /// <returns><c>true</c> when parsing succeeds; otherwise <c>false</c>.</returns>
+    private static bool TryGetLongArgument(JsonObject? arguments, string argumentName, out long value)
+    {
+        value = 0;
+
+        var argumentNode = arguments?[argumentName];
+        if (argumentNode is null)
+        {
+            return false;
+        }
+
+        if (argumentNode is not JsonValue jsonValue)
+        {
+            return false;
+        }
+
+        if (jsonValue.TryGetValue<long>(out var longValue))
+        {
+            value = longValue;
+            return true;
+        }
+
+        if (jsonValue.TryGetValue<int>(out var intValue))
+        {
+            value = intValue;
+            return true;
+        }
+
+        if (!jsonValue.TryGetValue<string>(out var stringValue) || string.IsNullOrWhiteSpace(stringValue))
+        {
+            return false;
+        }
+
+        return long.TryParse(stringValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out value);
     }
 
     /// <summary>
@@ -522,20 +573,27 @@ public sealed partial class McpTransportHandler
     private async Task<JsonObject> ExecuteMemoryStoreToolAsync(JsonObject? arguments, CancellationToken cancellationToken)
     {
         var sessionId = arguments?["sessionId"]?.GetValue<string>();
+        var explicitProjectId = arguments?["projectId"]?.GetValue<string>();
         var type = arguments?["type"]?.GetValue<string>();
         var content = arguments?["content"]?.GetValue<string>();
-        if (string.IsNullOrWhiteSpace(sessionId) || string.IsNullOrWhiteSpace(type) || string.IsNullOrWhiteSpace(content))
+        if (string.IsNullOrWhiteSpace(type) || string.IsNullOrWhiteSpace(content))
         {
-            return BuildToolResult("sessionId, type and content are required.", isError: true);
+            return BuildToolResult("type and content are required.", isError: true);
         }
 
+        // Keep session affinity available without forcing clients to provide one.
+        var resolvedSessionId = string.IsNullOrWhiteSpace(sessionId)
+            ? $"session-{Guid.NewGuid():N}"
+            : sessionId;
         var tags = ParseTags(arguments?["tags"]);
+        var resolvedProjectId = ResolveProjectId(explicitProjectId, tags);
         var embedding = _embeddingGenerator.GenerateEmbedding(content, _settings.Ingestion.VectorDimensions);
-        var memoryId = await _store.CreateMemoryAsync(sessionId, type, content, tags, embedding, cancellationToken);
+        var memoryId = await _store.CreateMemoryAsync(resolvedSessionId, resolvedProjectId, type, content, tags, embedding, cancellationToken);
         return BuildToolResult("Memory stored.", new JsonObject
         {
             ["memoryId"] = memoryId,
-            ["sessionId"] = sessionId,
+            ["sessionId"] = resolvedSessionId,
+            ["projectId"] = resolvedProjectId,
             ["type"] = type,
             ["tags"] = JsonSerializer.SerializeToNode(tags)
         });
@@ -559,15 +617,16 @@ public sealed partial class McpTransportHandler
         var type = arguments?["type"]?.GetValue<string>();
         var tag = arguments?["tag"]?.GetValue<string>();
         var sessionId = arguments?["sessionId"]?.GetValue<string>();
+        var projectId = ResolveProjectId(arguments?["projectId"]?.GetValue<string>(), tags: null);
         var queryEmbedding = _embeddingGenerator.GenerateEmbedding(text, _settings.Ingestion.VectorDimensions);
-        var memories = await _store.SearchMemoriesAsync(queryEmbedding, limit, type, tag, sessionId, cancellationToken);
+        var memories = await _store.SearchMemoriesAsync(queryEmbedding, limit, type, tag, sessionId, projectId, cancellationToken);
         var usedFallback = false;
         if (memories.Count == 0)
         {
             // Fallback to recent-memory listing so recall remains useful when semantic ranking returns no hits.
-            var listedMemories = await _store.ListMemoriesAsync(limit, type, tag, sessionId, cancellationToken);
+            var listedMemories = await _store.ListMemoriesAsync(limit, type, tag, sessionId, projectId, cancellationToken);
             memories = listedMemories
-                .Select(memory => new MemorySearchResult(memory.Id, memory.SessionId, memory.Type, memory.Content, memory.Tags, memory.CreatedAtUtc, 0d))
+                .Select(memory => new MemorySearchResult(memory.Id, memory.SessionId, memory.ProjectId, memory.Type, memory.Content, memory.Tags, memory.CreatedAtUtc, 0d))
                 .ToList();
             usedFallback = memories.Count > 0;
         }
@@ -579,6 +638,7 @@ public sealed partial class McpTransportHandler
             {
                 ["id"] = memory.Id,
                 ["sessionId"] = memory.SessionId,
+                ["projectId"] = memory.ProjectId,
                 ["type"] = memory.Type,
                 ["content"] = memory.Content,
                 ["tags"] = JsonSerializer.SerializeToNode(memory.Tags),
@@ -591,6 +651,7 @@ public sealed partial class McpTransportHandler
         {
             ["items"] = items,
             ["sessionId"] = sessionId,
+            ["projectId"] = projectId,
             ["fallbackUsed"] = usedFallback
         });
     }
@@ -607,7 +668,8 @@ public sealed partial class McpTransportHandler
         var type = arguments?["type"]?.GetValue<string>();
         var tag = arguments?["tag"]?.GetValue<string>();
         var sessionId = arguments?["sessionId"]?.GetValue<string>();
-        var memories = await _store.ListMemoriesAsync(limit, type, tag, sessionId, cancellationToken);
+        var projectId = ResolveProjectId(arguments?["projectId"]?.GetValue<string>(), tags: null);
+        var memories = await _store.ListMemoriesAsync(limit, type, tag, sessionId, projectId, cancellationToken);
         var items = new JsonArray();
         foreach (var memory in memories)
         {
@@ -615,6 +677,7 @@ public sealed partial class McpTransportHandler
             {
                 ["id"] = memory.Id,
                 ["sessionId"] = memory.SessionId,
+                ["projectId"] = memory.ProjectId,
                 ["type"] = memory.Type,
                 ["content"] = memory.Content,
                 ["tags"] = JsonSerializer.SerializeToNode(memory.Tags),
@@ -625,7 +688,8 @@ public sealed partial class McpTransportHandler
         return BuildToolResult($"Listed {memories.Count} memories.", new JsonObject
         {
             ["items"] = items,
-            ["sessionId"] = sessionId
+            ["sessionId"] = sessionId,
+            ["projectId"] = projectId
         });
     }
 
@@ -748,6 +812,41 @@ public sealed partial class McpTransportHandler
         }
 
         return tags;
+    }
+
+    /// <summary>
+    /// Resolves an optional project id, with tag-based fallback for project-scoped memory writes.
+    /// </summary>
+    /// <param name="explicitProjectId">Project id explicitly provided by caller.</param>
+    /// <param name="tags">Optional memory tags to inspect for project:* conventions.</param>
+    /// <returns>Resolved project id or <c>null</c> when no project scope is provided.</returns>
+    private static string? ResolveProjectId(string? explicitProjectId, IReadOnlyList<string>? tags)
+    {
+        if (!string.IsNullOrWhiteSpace(explicitProjectId))
+        {
+            return explicitProjectId.Trim();
+        }
+
+        if (tags is null)
+        {
+            return null;
+        }
+
+        foreach (var tag in tags)
+        {
+            if (string.IsNullOrWhiteSpace(tag) || !tag.StartsWith("project:", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var projectFromTag = tag["project:".Length..].Trim();
+            if (!string.IsNullOrWhiteSpace(projectFromTag))
+            {
+                return projectFromTag;
+            }
+        }
+
+        return null;
     }
 
     /// <summary>

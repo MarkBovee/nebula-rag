@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Mvc;
 using NebulaRAG.AddonHost.Services;
 using NebulaRAG.Core.Configuration;
@@ -70,13 +71,92 @@ public sealed class RagApiController : ControllerBase
     /// <summary>
     /// Returns aggregated memory analytics.
     /// </summary>
+    /// <param name="scope">Optional memory scope: global, project, or session.</param>
+    /// <param name="projectId">Optional project-id filter.</param>
+    /// <param name="sessionId">Optional session-id filter.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Memory stats payload.</returns>
     [HttpGet("memory/stats")]
-    public async Task<ActionResult<MemoryDashboardStats>> GetMemoryStatsAsync(CancellationToken cancellationToken)
+    public async Task<ActionResult<MemoryDashboardStats>> GetMemoryStatsAsync([FromQuery] string? scope, [FromQuery] string? projectId, [FromQuery] string? sessionId, CancellationToken cancellationToken)
     {
-        var memoryStats = await _dashboardSnapshotService.GetMemoryStatsAsync(cancellationToken);
+        if (!TryResolveMemoryScope(scope, sessionId, projectId, out var resolvedSessionId, out var resolvedProjectId, out var error))
+        {
+            return BadRequest(new { error });
+        }
+
+        // Keep cache behavior for the common global view while allowing explicit scoped views.
+        var memoryStats = string.IsNullOrWhiteSpace(resolvedSessionId) && string.IsNullOrWhiteSpace(resolvedProjectId)
+            ? await _dashboardSnapshotService.GetMemoryStatsAsync(cancellationToken)
+            : await _managementService.GetMemoryStatsAsync(sessionId: resolvedSessionId, projectId: resolvedProjectId, cancellationToken: cancellationToken);
+
         return Ok(memoryStats);
+    }
+
+    /// <summary>
+    /// Lists memories with optional filters and scope.
+    /// </summary>
+    /// <param name="scope">Optional memory scope: global, project, or session.</param>
+    /// <param name="projectId">Optional project-id filter.</param>
+    /// <param name="sessionId">Optional session-id filter.</param>
+    /// <param name="type">Optional memory type filter.</param>
+    /// <param name="tag">Optional tag filter.</param>
+    /// <param name="limit">Maximum number of rows to return.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Memory rows ordered by most recent first.</returns>
+    [HttpGet("memory/list")]
+    public async Task<ActionResult<IReadOnlyList<MemoryRecord>>> ListMemoriesAsync([FromQuery] string? scope, [FromQuery] string? projectId, [FromQuery] string? sessionId, [FromQuery] string? type, [FromQuery] string? tag, [FromQuery] int? limit, CancellationToken cancellationToken)
+    {
+        if (!TryResolveMemoryScope(scope, sessionId, projectId, out var resolvedSessionId, out var resolvedProjectId, out var error))
+        {
+            return BadRequest(new { error });
+        }
+
+        var memories = await _managementService.ListMemoriesAsync(
+            limit: Math.Clamp(limit ?? 100, 1, 500),
+            type: type,
+            tag: tag,
+            sessionId: resolvedSessionId,
+            projectId: resolvedProjectId,
+            cancellationToken: cancellationToken);
+
+        return Ok(memories);
+    }
+
+    /// <summary>
+    /// Performs semantic search over stored memories with optional filters and scope.
+    /// </summary>
+    /// <param name="request">Memory search request payload.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Semantically ranked memory matches.</returns>
+    [HttpPost("memory/search")]
+    public async Task<ActionResult<IReadOnlyList<MemorySearchResult>>> SearchMemoriesAsync([FromBody] ApiMemorySearchRequest request, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(request.Text))
+        {
+            return BadRequest(new { error = "text is required" });
+        }
+
+        if (!TryResolveMemoryScope(request.Scope, request.SessionId, request.ProjectId, out var resolvedSessionId, out var resolvedProjectId, out var error))
+        {
+            return BadRequest(new { error });
+        }
+
+        var matches = await _managementService.SearchMemoriesAsync(
+            text: request.Text,
+            limit: Math.Clamp(request.Limit ?? 20, 1, 100),
+            type: request.Type,
+            tag: request.Tag,
+            sessionId: resolvedSessionId,
+            projectId: resolvedProjectId,
+            cancellationToken: cancellationToken);
+
+        _telemetrySink.RecordActivity("query", "API memory search", new Dictionary<string, string?>
+        {
+            ["matches"] = matches.Count.ToString(),
+            ["scope"] = request.Scope ?? "global"
+        });
+
+        return Ok(matches);
     }
 
     /// <summary>
@@ -95,13 +175,12 @@ public sealed class RagApiController : ControllerBase
     /// <summary>
     /// Returns an aggregated dashboard payload in one request.
     /// </summary>
-    /// <param name="limit">Maximum number of sources included in snapshot.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Combined dashboard snapshot.</returns>
     [HttpGet("dashboard")]
-    public async Task<ActionResult<DashboardSnapshotResponse>> GetDashboardAsync([FromQuery] int? limit, CancellationToken cancellationToken)
+    public async Task<ActionResult<DashboardSnapshotResponse>> GetDashboardAsync(CancellationToken cancellationToken)
     {
-        var snapshot = await _dashboardSnapshotService.GetDashboardAsync(limit ?? 50, cancellationToken);
+        var snapshot = await _dashboardSnapshotService.GetDashboardAsync(cancellationToken);
         return Ok(snapshot);
     }
 
@@ -249,6 +328,69 @@ public sealed class RagApiController : ControllerBase
 
         return value.Length <= maxLength ? value : $"{value[..maxLength]}...";
     }
+
+    /// <summary>
+    /// Resolves memory scope values into normalized project/session filters.
+    /// </summary>
+    /// <param name="scope">Optional scope value.</param>
+    /// <param name="sessionId">Optional session-id input.</param>
+    /// <param name="projectId">Optional project-id input.</param>
+    /// <param name="resolvedSessionId">Resolved session-id filter.</param>
+    /// <param name="resolvedProjectId">Resolved project-id filter.</param>
+    /// <param name="error">Validation error message when input is invalid.</param>
+    /// <returns><c>true</c> when scope resolution is valid; otherwise <c>false</c>.</returns>
+    private static bool TryResolveMemoryScope(string? scope, string? sessionId, string? projectId, out string? resolvedSessionId, out string? resolvedProjectId, out string? error)
+    {
+        resolvedSessionId = string.IsNullOrWhiteSpace(sessionId) ? null : sessionId.Trim();
+        resolvedProjectId = string.IsNullOrWhiteSpace(projectId) ? null : projectId.Trim();
+        error = null;
+
+        var normalizedScope = string.IsNullOrWhiteSpace(scope)
+            ? MemoryScopeType.Global
+            : scope.Trim().ToLowerInvariant();
+
+        switch (normalizedScope)
+        {
+            case MemoryScopeType.Global:
+                return true;
+            case MemoryScopeType.Project:
+                if (string.IsNullOrWhiteSpace(resolvedProjectId))
+                {
+                    error = "projectId is required when scope=project.";
+                    return false;
+                }
+
+                resolvedSessionId = null;
+                return true;
+            case MemoryScopeType.Session:
+                if (string.IsNullOrWhiteSpace(resolvedSessionId))
+                {
+                    error = "sessionId is required when scope=session.";
+                    return false;
+                }
+
+                resolvedProjectId = null;
+                return true;
+            default:
+                error = "scope must be one of: global, project, session.";
+                return false;
+        }
+    }
+}
+
+/// <summary>
+/// Supported memory scope values for API filtering.
+/// </summary>
+public static class MemoryScopeType
+{
+    /// <summary>Global unfiltered scope.</summary>
+    public const string Global = "global";
+
+    /// <summary>Project-specific scope.</summary>
+    public const string Project = "project";
+
+    /// <summary>Session-specific scope.</summary>
+    public const string Session = "session";
 }
 
 /// <summary>
@@ -271,6 +413,25 @@ public sealed record QueryResponse(string Query, int Limit, IReadOnlyList<RagSea
 /// </summary>
 /// <param name="SourcePath">Directory path to index.</param>
 public sealed record ApiIndexRequest(string SourcePath);
+
+/// <summary>
+/// Memory semantic search API request model.
+/// </summary>
+/// <param name="Text">Memory search text.</param>
+/// <param name="Limit">Optional max number of matches to return.</param>
+/// <param name="Scope">Optional scope value: global, project, or session.</param>
+/// <param name="SessionId">Optional session-id filter.</param>
+/// <param name="ProjectId">Optional project-id filter.</param>
+/// <param name="Type">Optional memory type filter.</param>
+/// <param name="Tag">Optional memory tag filter.</param>
+public sealed record ApiMemorySearchRequest(
+    string Text,
+    int? Limit,
+    [property: JsonPropertyName("scope")] string? Scope,
+    [property: JsonPropertyName("sessionId")] string? SessionId,
+    [property: JsonPropertyName("projectId")] string? ProjectId,
+    string? Type,
+    string? Tag);
 
 /// <summary>
 /// Delete source API request model.
