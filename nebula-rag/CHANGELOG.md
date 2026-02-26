@@ -4,6 +4,11 @@ All notable changes to the Nebula RAG Home Assistant add-on are documented in th
 
 The format is inspired by Keep a Changelog and follows semantic versioning.
 
+## [0.2.31] - 2026-02-26
+
+- Fixed an MCP `memory_recall` failure where some result sets could surface `Invalid cast from 'DateTime' to 'Double'` during score parsing.
+- Hardened semantic-score extraction in PostgreSQL search paths by resolving score columns by alias and falling back safely when provider values are non-numeric.
+
 ## [0.2.30] - 2026-02-24
 
 - Improved MCP memory retrieval reliability: `memory_recall` now falls back to recent-memory listing when semantic recall returns zero matches, so stored entries remain discoverable.

@@ -270,13 +270,11 @@ public sealed class PostgresRagStore
         command.Parameters.AddWithValue("topK", topK);
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var scoreOrdinal = ResolveScoreOrdinal(reader);
         while (await reader.ReadAsync(cancellationToken))
         {
-            var scoreValue = reader.GetValue(3);
-            // Convert distance to similarity (1 - distance for cosine)
-            var score = scoreValue is double d
-                ? d
-                : Convert.ToDouble(scoreValue, CultureInfo.InvariantCulture);
+            // Convert distance to similarity (1 - distance for cosine).
+            var score = TryReadScore(reader, scoreOrdinal, fallbackOrdinal: 3);
 
             results.Add(new RagSearchResult(
                 reader.GetString(0),
@@ -809,12 +807,10 @@ public sealed class PostgresRagStore
 
         var rows = new List<MemorySearchResult>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var scoreOrdinal = ResolveScoreOrdinal(reader);
         while (await reader.ReadAsync(cancellationToken))
         {
-            var scoreValue = reader.GetValue(6);
-            var score = scoreValue is double d
-                ? d
-                : Convert.ToDouble(scoreValue, CultureInfo.InvariantCulture);
+            var score = TryReadScore(reader, scoreOrdinal, fallbackOrdinal: 6);
 
             rows.Add(new MemorySearchResult(
                 Id: reader.GetInt64(0),
@@ -1184,6 +1180,62 @@ public sealed class PostgresRagStore
         return new NpgsqlParameter(name, NpgsqlDbType.Text)
         {
             Value = value is null ? DBNull.Value : value
+        };
+    }
+
+    /// <summary>
+    /// Resolves the ordinal for a projected <c>score</c> column when present.
+    /// </summary>
+    /// <param name="reader">Active data reader for the current query.</param>
+    /// <returns>Resolved ordinal, or <c>null</c> when no <c>score</c> column exists.</returns>
+    private static int? ResolveScoreOrdinal(NpgsqlDataReader reader)
+    {
+        try
+        {
+            return reader.GetOrdinal("score");
+        }
+        catch (IndexOutOfRangeException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Reads a score value from a result row with safe fallbacks for schema drift.
+    /// </summary>
+    /// <param name="reader">Active data reader for the current row.</param>
+    /// <param name="scoreOrdinal">Optional ordinal resolved from the <c>score</c> alias.</param>
+    /// <param name="fallbackOrdinal">Known positional fallback when alias lookup is unavailable.</param>
+    /// <returns>Parsed score value, or <c>0</c> when no numeric score can be read.</returns>
+    private static double TryReadScore(NpgsqlDataReader reader, int? scoreOrdinal, int fallbackOrdinal)
+    {
+        var ordinal = scoreOrdinal ?? fallbackOrdinal;
+        if (ordinal < 0 || ordinal >= reader.FieldCount || reader.IsDBNull(ordinal))
+        {
+            return 0d;
+        }
+
+        return ConvertToScore(reader.GetValue(ordinal));
+    }
+
+    /// <summary>
+    /// Converts known provider score value types to <see cref="double"/>.
+    /// </summary>
+    /// <param name="value">Raw provider value from the score column.</param>
+    /// <returns>Converted score value, or <c>0</c> when the value is not numeric.</returns>
+    private static double ConvertToScore(object value)
+    {
+        return value switch
+        {
+            double number => number,
+            float number => number,
+            decimal number => (double)number,
+            short number => number,
+            int number => number,
+            long number => number,
+            byte number => number,
+            string text when double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed) => parsed,
+            _ => 0d
         };
     }
 
