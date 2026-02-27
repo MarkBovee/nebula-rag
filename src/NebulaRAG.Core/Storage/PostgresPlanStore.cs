@@ -361,6 +361,227 @@ public sealed class PostgresPlanStore
         return plans;
     }
 
+    /// <summary>
+    /// Retrieves all tasks for a given plan identifier.
+    /// </summary>
+    /// <param name="planId">The plan identifier.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A read-only list of task records ordered by creation date.</returns>
+    public async Task<IReadOnlyList<PlanTaskRecord>> GetTasksByPlanIdAsync(long planId, CancellationToken cancellationToken = default)
+    {
+        const string sql = @"
+            SELECT id, plan_id, title, description, priority, status, created_at, updated_at, metadata
+            FROM tasks
+            WHERE plan_id = @planId
+            ORDER BY created_at";
+
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await using var command = new NpgsqlCommand(sql, connection);
+
+        command.Parameters.AddWithValue("planId", planId);
+
+        await connection.OpenAsync(cancellationToken);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+
+        var tasks = new List<PlanTaskRecord>();
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            tasks.Add(ReadTaskFromReader(reader));
+        }
+
+        return tasks;
+    }
+
+    /// <summary>
+    /// Retrieves a task by its unique identifier.
+    /// </summary>
+    /// <param name="taskId">The task identifier.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The task record.</returns>
+    /// <exception cref="PlanNotFoundException">Thrown when the task is not found.</exception>
+    public async Task<PlanTaskRecord> GetTaskByIdAsync(long taskId, CancellationToken cancellationToken = default)
+    {
+        const string sql = @"
+            SELECT id, plan_id, title, description, priority, status, created_at, updated_at, metadata
+            FROM tasks
+            WHERE id = @taskId";
+
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await using var command = new NpgsqlCommand(sql, connection);
+
+        command.Parameters.AddWithValue("taskId", taskId);
+
+        await connection.OpenAsync(cancellationToken);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+
+        if (await reader.ReadAsync(cancellationToken))
+        {
+            return ReadTaskFromReader(reader);
+        }
+
+        throw new PlanNotFoundException(0, taskId);
+    }
+
+    /// <summary>
+    /// Creates a new task for the specified plan.
+    /// </summary>
+    /// <param name="planId">The parent plan identifier.</param>
+    /// <param name="request">The task creation request.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The created task identifier.</returns>
+    /// <exception cref="PlanNotFoundException">Thrown when the plan is not found.</exception>
+    public async Task<long> CreateTaskAsync(long planId, CreateTaskRequest request, CancellationToken cancellationToken = default)
+    {
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+
+        try
+        {
+            await GetPlanByIdAsync(planId, cancellationToken);
+
+            const string insertTaskSql = @"
+                INSERT INTO tasks (plan_id, title, description, priority, status, created_at, updated_at, metadata)
+                VALUES (@planId, @title, @description, @priority, @status, NOW(), NOW(), '{}'::jsonb)
+                RETURNING id";
+
+            var taskId = await ExecuteScalarAsync<long>(
+                connection, insertTaskSql,
+                new Dictionary<string, object?>
+                {
+                    { "planId", planId },
+                    { "title", request.Title },
+                    { "description", request.Description },
+                    { "priority", request.Priority },
+                    { "status", Models.TaskStatus.Pending.ToString().ToLowerInvariant() }
+                },
+                cancellationToken);
+
+            const string insertHistorySql = @"
+                INSERT INTO task_history (task_id, old_status, new_status, changed_by, changed_at, reason)
+                VALUES (@taskId, NULL, @newStatus, @changedBy, NOW(), @reason)";
+
+            await ExecuteNonQueryAsync(
+                connection, insertHistorySql,
+                new Dictionary<string, object?>
+                {
+                    { "taskId", taskId },
+                    { "newStatus", Models.TaskStatus.Pending.ToString().ToLowerInvariant() },
+                    { "changedBy", request.ChangedBy },
+                    { "reason", null }
+                },
+                cancellationToken);
+
+            await transaction.CommitAsync(cancellationToken);
+            return taskId;
+        }
+        catch (PlanNotFoundException)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            throw;
+        }
+        catch
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Updates task details.
+    /// </summary>
+    /// <param name="taskId">The task identifier.</param>
+    /// <param name="request">The task update request.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <exception cref="PlanNotFoundException">Thrown when the task is not found.</exception>
+    public async Task UpdateTaskAsync(long taskId, UpdateTaskRequest request, CancellationToken cancellationToken = default)
+    {
+        const string sql = @"
+            UPDATE tasks
+            SET title = COALESCE(@title, title),
+                description = @description,
+                priority = COALESCE(@priority, priority),
+                updated_at = NOW()
+            WHERE id = @taskId";
+
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await using var command = new NpgsqlCommand(sql, connection);
+
+        command.Parameters.AddWithValue("taskId", taskId);
+        command.Parameters.AddWithValue("title", request.Title ?? (object)DBNull.Value);
+        command.Parameters.AddWithValue("description", request.Description ?? (object)DBNull.Value);
+        command.Parameters.AddWithValue("priority", request.Priority ?? (object)DBNull.Value);
+
+        await connection.OpenAsync(cancellationToken);
+        var rowsAffected = await command.ExecuteNonQueryAsync(cancellationToken);
+
+        if (rowsAffected == 0)
+        {
+            throw new PlanNotFoundException(0, taskId);
+        }
+    }
+
+    /// <summary>
+    /// Marks a task as completed and records the history.
+    /// </summary>
+    /// <param name="taskId">The task identifier.</param>
+    /// <param name="changedBy">Identifier of who made the change.</param>
+    /// <param name="reason">Optional reason for the change.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <exception cref="PlanNotFoundException">Thrown when the task is not found.</exception>
+    public async Task CompleteTaskAsync(long taskId, string changedBy, string? reason, CancellationToken cancellationToken = default)
+    {
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+
+        try
+        {
+            var currentTask = await GetTaskByIdAsync(taskId, cancellationToken);
+            var oldStatus = currentTask.Status.ToString().ToLowerInvariant();
+
+            const string updateSql = @"
+                UPDATE tasks
+                SET status = 'completed', updated_at = NOW()
+                WHERE id = @taskId";
+
+            await ExecuteNonQueryAsync(
+                connection, updateSql,
+                new Dictionary<string, object?> { { "taskId", taskId } },
+                cancellationToken);
+
+            const string historySql = @"
+                INSERT INTO task_history (task_id, old_status, new_status, changed_by, changed_at, reason)
+                VALUES (@taskId, @oldStatus, @newStatus, @changedBy, NOW(), @reason)";
+
+            await ExecuteNonQueryAsync(
+                connection, historySql,
+                new Dictionary<string, object?>
+                {
+                    { "taskId", taskId },
+                    { "oldStatus", oldStatus },
+                    { "newStatus", "completed" },
+                    { "changedBy", changedBy },
+                    { "reason", reason }
+                },
+                cancellationToken);
+
+            await transaction.CommitAsync(cancellationToken);
+        }
+        catch (PlanNotFoundException)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            throw;
+        }
+        catch
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            throw;
+        }
+    }
+
     private static PlanRecord ReadPlanFromReader(NpgsqlDataReader reader)
     {
         var id = reader.GetInt64(reader.GetOrdinal("id"));
@@ -416,6 +637,26 @@ public sealed class PostgresPlanStore
 
         return await command.ExecuteNonQueryAsync(cancellationToken);
     }
+
+    private static PlanTaskRecord ReadTaskFromReader(NpgsqlDataReader reader)
+    {
+        var id = reader.GetInt64(reader.GetOrdinal("id"));
+        var planId = reader.GetInt64(reader.GetOrdinal("plan_id"));
+        var title = reader.GetString(reader.GetOrdinal("title"));
+        var description = reader.IsDBNull(reader.GetOrdinal("description"))
+            ? null
+            : reader.GetString(reader.GetOrdinal("description"));
+        var priority = reader.GetString(reader.GetOrdinal("priority"));
+        var statusString = reader.GetString(reader.GetOrdinal("status"));
+        var status = Enum.Parse<Models.TaskStatus>(statusString, ignoreCase: true);
+        var createdAt = reader.GetDateTime(reader.GetOrdinal("created_at"));
+        var updatedAt = reader.GetDateTime(reader.GetOrdinal("updated_at"));
+        var metadataJson = reader.GetString(reader.GetOrdinal("metadata"));
+        var metadata = JsonDocument.Parse(metadataJson);
+
+        return new PlanTaskRecord(
+            id, planId, title, description, priority, status, createdAt, updatedAt, metadata);
+    }
 }
 
 /// <summary>
@@ -459,4 +700,17 @@ public sealed record CreateTaskRequest(
     string Title,
     string? Description,
     string Priority,
+    string ChangedBy);
+
+/// <summary>
+/// Request object for updating a task.
+/// </summary>
+/// <param name="Title">Optional new title.</param>
+/// <param name="Description">Optional new description.</param>
+/// <param name="Priority">Optional new priority.</param>
+/// <param name="ChangedBy">Identifier of who is updating the task.</param>
+public sealed record UpdateTaskRequest(
+    string? Title,
+    string? Description,
+    string? Priority,
     string ChangedBy);
