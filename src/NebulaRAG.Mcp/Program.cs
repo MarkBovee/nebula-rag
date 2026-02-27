@@ -32,6 +32,13 @@ var loggerFactory = LoggerFactory.Create(builder =>
     builder.SetMinimumLevel(LogLevel.Information);
 });
 
+// Initialize services for plan management
+var planService = new PlanService(store, loggerFactory.CreateLogger<PlanService>());
+var taskService = new TaskService(store, loggerFactory.CreateLogger<TaskService>());
+var planValidator = new PlanValidator();
+var sessionValidator = new SessionValidator(planService);
+var planMcpTool = new PlanMcpTool(planService, taskService, planValidator, sessionValidator);
+
 var queryService = new RagQueryService(store, embeddingGenerator, settings, loggerFactory.CreateLogger<RagQueryService>());
 var managementService = new RagManagementService(store, embeddingGenerator, settings, loggerFactory.CreateLogger<RagManagementService>());
 var sourcesManifestService = new RagSourcesManifestService(store, settings, loggerFactory.CreateLogger<RagSourcesManifestService>());
@@ -46,7 +53,9 @@ var handler = new McpTransportHandler(
     indexer,
     settings,
     new HttpClient(),
-    loggerFactory.CreateLogger<McpTransportHandler>());
+    loggerFactory.CreateLogger<McpTransportHandler>(),
+    planMcpTool,
+    sessionValidator);
 
 await RunServerAsync(handler);
 

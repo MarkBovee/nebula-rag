@@ -45,6 +45,8 @@ public sealed partial class McpTransportHandler
     private readonly HttpClient _httpClient;
     private readonly IRuntimeTelemetrySink _telemetrySink;
     private readonly ILogger<McpTransportHandler> _logger;
+    private readonly PlanMcpTool _planMcpTool;
+    private readonly SessionValidator _sessionValidator;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="McpTransportHandler"/> class.
@@ -59,7 +61,7 @@ public sealed partial class McpTransportHandler
     /// <param name="settings">Runtime settings.</param>
     /// <param name="httpClient">HTTP client for URL ingestion.</param>
     /// <param name="logger">Handler logger.</param>
-    public McpTransportHandler(RagQueryService queryService, RagManagementService managementService, RagSourcesManifestService sourcesManifestService, PostgresRagStore store, TextChunker chunker, IEmbeddingGenerator embeddingGenerator, RagIndexer indexer, RagSettings settings, HttpClient httpClient, ILogger<McpTransportHandler> logger, IRuntimeTelemetrySink? telemetrySink = null)
+    public McpTransportHandler(RagQueryService queryService, RagManagementService managementService, RagSourcesManifestService sourcesManifestService, PostgresRagStore store, TextChunker chunker, IEmbeddingGenerator embeddingGenerator, RagIndexer indexer, RagSettings settings, HttpClient httpClient, ILogger<McpTransportHandler> logger, PlanMcpTool planMcpTool, SessionValidator sessionValidator, IRuntimeTelemetrySink? telemetrySink = null)
     {
         _queryService = queryService;
         _managementService = managementService;
@@ -72,6 +74,8 @@ public sealed partial class McpTransportHandler
         _httpClient = httpClient;
         _telemetrySink = telemetrySink ?? new NullRuntimeTelemetrySink();
         _logger = logger;
+        _planMcpTool = planMcpTool;
+        _sessionValidator = sessionValidator;
     }
 
     /// <summary>
@@ -161,7 +165,14 @@ public sealed partial class McpTransportHandler
                 BuildToolDefinition(MemoryRecallToolName, "Recall semantically similar memories."),
                 BuildToolDefinition(MemoryListToolName, "List recent memories with optional filters."),
                 BuildToolDefinition(MemoryDeleteToolName, "Delete one memory by id."),
-                BuildToolDefinition(MemoryUpdateToolName, "Update one memory entry.")
+                BuildToolDefinition(MemoryUpdateToolName, "Update one memory entry."),
+                BuildToolDefinition("create_plan", "Create a new plan with initial tasks."),
+                BuildToolDefinition("get_plan", "Get a specific plan by ID."),
+                BuildToolDefinition("list_plans", "List all plans for the current session."),
+                BuildToolDefinition("update_plan", "Update plan details or status."),
+                BuildToolDefinition("complete_task", "Complete a specific task."),
+                BuildToolDefinition("update_task", "Update a specific task."),
+                BuildToolDefinition("archive_plan", "Archive a plan.")
             }
         };
     }
@@ -322,7 +333,77 @@ public sealed partial class McpTransportHandler
                     }
                 },
                 "memoryId"),
-            _ => BuildObjectSchema(new JsonObject())
+            "create_plan" => BuildObjectSchema(
+                    new JsonObject
+                    {
+                        ["sessionId"] = BuildStringSchema("Session ID for the plan."),
+                        ["planName"] = BuildStringSchema("Name of the new plan."),
+                        ["projectId"] = BuildStringSchema("Project ID for the plan."),
+                        ["initialTasks"] = new JsonObject
+                        {
+                            ["type"] = "array",
+                            ["description"] = "Initial tasks for the plan.",
+                            ["items"] = BuildStringSchema("Task name.")
+                        }
+                    },
+                    "sessionId",
+                    "planName",
+                    "projectId"),
+                "get_plan" => BuildObjectSchema(
+                    new JsonObject
+                    {
+                        ["sessionId"] = BuildStringSchema("Session ID for the plan."),
+                        ["planId"] = BuildStringSchema("ID of the plan to retrieve.")
+                    },
+                    "sessionId",
+                    "planId"),
+                "list_plans" => BuildObjectSchema(
+                    new JsonObject
+                    {
+                        ["sessionId"] = BuildStringSchema("Session ID to list plans for.")
+                    },
+                    "sessionId"),
+                "update_plan" => BuildObjectSchema(
+                    new JsonObject
+                    {
+                        ["sessionId"] = BuildStringSchema("Session ID for the plan."),
+                        ["planId"] = BuildStringSchema("ID of the plan to update."),
+                        ["planName"] = BuildStringSchema("New name for the plan (optional)."),
+                        ["status"] = BuildStringSchema("New status for the plan (optional).")
+                    },
+                    "sessionId",
+                    "planId"),
+                "complete_task" => BuildObjectSchema(
+                    new JsonObject
+                    {
+                        ["sessionId"] = BuildStringSchema("Session ID for the plan."),
+                        ["planId"] = BuildStringSchema("ID of the plan containing the task."),
+                        ["taskId"] = BuildStringSchema("ID of the task to complete.")
+                    },
+                    "sessionId",
+                    "planId",
+                    "taskId"),
+                "update_task" => BuildObjectSchema(
+                    new JsonObject
+                    {
+                        ["sessionId"] = BuildStringSchema("Session ID for the plan."),
+                        ["planId"] = BuildStringSchema("ID of the plan containing the task."),
+                        ["taskId"] = BuildStringSchema("ID of the task to update."),
+                        ["taskName"] = BuildStringSchema("New name for the task (optional)."),
+                        ["status"] = BuildStringSchema("New status for the task (optional).")
+                    },
+                    "sessionId",
+                    "planId",
+                    "taskId"),
+                "archive_plan" => BuildObjectSchema(
+                    new JsonObject
+                    {
+                        ["sessionId"] = BuildStringSchema("Session ID for the plan."),
+                        ["planId"] = BuildStringSchema("ID of the plan to archive.")
+                    },
+                    "sessionId",
+                    "planId"),
+                _ => BuildObjectSchema(new JsonObject())
         };
     }
 
@@ -447,4 +528,157 @@ public sealed partial class McpTransportHandler
 
         return schema;
     }
+
+    /// <summary>
+    /// Executes a tool by name with the provided arguments.
+    /// </summary>
+    /// <param name="toolName">Name of the tool to execute.</param>
+    /// <param name="arguments">Tool arguments as JSON object.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Tool execution result as JSON object.</returns>
+    private async Task<JsonObject> ExecuteToolAsync(string toolName, JsonObject? arguments, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return toolName switch
+            {
+                "create_plan" => await _planMcpTool.HandleCreatePlanAsync(arguments ?? new JsonObject()),
+                "get_plan" => await _planMcpTool.HandleGetPlanAsync(arguments ?? new JsonObject()),
+                "list_plans" => await _planMcpTool.HandleListPlansAsync(arguments ?? new JsonObject()),
+                "update_plan" => await _planMcpTool.HandleUpdatePlanAsync(arguments ?? new JsonObject()),
+                "complete_task" => await _planMcpTool.HandleCompleteTaskAsync(arguments ?? new JsonObject()),
+                "update_task" => await _planMcpTool.HandleUpdateTaskAsync(arguments ?? new JsonObject()),
+                "archive_plan" => await _planMcpTool.HandleArchivePlanAsync(arguments ?? new JsonObject()),
+                _ => throw new InvalidOperationException($"Unknown tool: {toolName}")
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Tool execution failed: {ToolName}", toolName);
+            throw;
+        }
+    }
+}
+
+/// <summary>
+/// Builds a JSON object schema node.
+/// </summary>
+/// <param name="properties">Schema properties.</param>
+/// <param name="required">Optional required property names.</param>
+/// <returns>Object schema node.</returns>
+private static JsonObject BuildObjectSchema(JsonObject properties, params string[] required)
+{
+    var schema = new JsonObject
+    {
+        ["type"] = "object",
+        ["properties"] = properties
+    };
+
+    if (required.Length > 0)
+    {
+        var requiredArray = new JsonArray();
+        foreach (var item in required)
+        {
+            requiredArray.Add(item);
+        }
+
+        schema["required"] = requiredArray;
+    }
+
+    return schema;
+}
+
+/// <summary>
+/// Builds a string-property schema node with description.
+/// </summary>
+/// <param name="description">Property description.</param>
+/// <returns>String schema node.</returns>
+private static JsonObject BuildStringSchema(string description)
+{
+    return new JsonObject
+    {
+        ["type"] = "string",
+        ["description"] = description
+    };
+}
+
+/// <summary>
+/// Builds a string-property schema node with enum constraints.
+/// </summary>
+/// <param name="description">Property description.</param>
+/// <param name="values">Allowed string values.</param>
+/// <returns>String enum schema node.</returns>
+private static JsonObject BuildEnumStringSchema(string description, params string[] values)
+{
+    var enumValues = new JsonArray();
+    foreach (var value in values)
+    {
+        enumValues.Add(value);
+    }
+
+    return new JsonObject
+    {
+        ["type"] = "string",
+        ["description"] = description,
+        ["enum"] = enumValues
+    };
+}
+
+/// <summary>
+/// Builds a string-property schema node constrained to one constant value.
+/// </summary>
+/// <param name="description">Property description.</param>
+/// <param name="value">Required constant string value.</param>
+/// <returns>Constant string schema node.</returns>
+private static JsonObject BuildConstStringSchema(string description, string value)
+{
+    return new JsonObject
+    {
+        ["type"] = "string",
+        ["description"] = description,
+        ["const"] = value
+    };
+}
+
+/// <summary>
+/// Builds a boolean-property schema node with description.
+/// </summary>
+/// <param name="description">Property description.</param>
+/// <returns>Boolean schema node.</returns>
+private static JsonObject BuildBooleanSchema(string description)
+{
+    return new JsonObject
+    {
+        ["type"] = "boolean",
+        ["description"] = description
+    };
+}
+
+/// <summary>
+/// Builds an integer-property schema node with description and optional bounds.
+/// </summary>
+/// <param name="description">Property description.</param>
+/// <param name="minimum">Optional inclusive minimum.</param>
+/// <param name="maximum">Optional inclusive maximum.</param>
+/// <returns>Integer schema node.</returns>
+private static JsonObject BuildIntegerSchema(string description, int? minimum = null, int? maximum = null)
+{
+    var schema = new JsonObject
+    {
+        ["type"] = "integer",
+        ["description"] = description
+    };
+
+    if (minimum.HasValue)
+    {
+        schema["minimum"] = minimum.Value;
+    }
+
+    if (maximum.HasValue)
+    {
+        schema["maximum"] = maximum.Value;
+    }
+
+    return schema;
+}
 }

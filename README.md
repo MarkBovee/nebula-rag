@@ -4,7 +4,7 @@
 
 **Production-oriented RAG for code and project knowledge — local, agentic, self-hosted**
 
-[![.NET](https://img.shields.io/badge/.NET-8+-512BD4?style=flat-square&logo=dotnet)](https://dotnet.microsoft.com)
+[![.NET](https://img.shields.io/badge/.NET-8+-512BD4?style=flat-square&logo=dotnet)](https://dotnet.microsoft.com) [![Version](https://img.shields.io/badge/version-1.1.0-06b6d4?style=flat-square)](https://github.com/MarkBovee/NebulaRAG/releases)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-pgvector-4169E1?style=flat-square&logo=postgresql)](https://github.com/pgvector/pgvector)
 [![MCP](https://img.shields.io/badge/MCP-compatible-06b6d4?style=flat-square)](https://modelcontextprotocol.io)
 [![Home Assistant](https://img.shields.io/badge/Home%20Assistant-add--on-41BDF5?style=flat-square&logo=homeassistant)](https://www.home-assistant.io)
@@ -17,6 +17,73 @@
 ## What is NebulaRAG?
 
 NebulaRAG is a self-hosted Retrieval-Augmented Generation platform that gives AI agents fast, code-aware context from your actual project sources — without sending anything to the cloud.
+
+## MCP Integration for Plan Management
+
+NebulaRAG now includes comprehensive MCP (Model Context Protocol) integration for plan lifecycle management. AI agents can create, manage, and track plans with full session validation and security enforcement.
+
+### Available MCP Tools
+
+- `create_plan`: Create a new plan with initial tasks
+- `get_plan`: Retrieve a specific plan by ID
+- `list_plans`: List all plans for the current session
+- `update_plan`: Update plan details or status
+- `complete_task`: Complete a specific task
+- `update_task`: Update a specific task
+- `archive_plan`: Archive a plan
+
+### Session Validation
+
+All MCP tools enforce session ownership validation, ensuring that agents can only access plans belonging to their session. Session validation is performed before any plan operation, providing robust security and data integrity.
+
+### Usage Examples
+
+```bash
+# Create a new plan
+curl -X POST http://localhost:8099/mcp -d '{
+  "method": "tools/call",
+  "params": {
+    "name": "create_plan",
+    "arguments": {
+      "sessionId": "agent-session-1",
+      "planName": "Project Planning",
+      "projectId": "project-123",
+      "initialTasks": ["Research requirements", "Design architecture", "Implement features"]
+    }
+  }
+}'
+
+# Get a specific plan
+curl -X POST http://localhost:8099/mcp -d '{
+  "method": "tools/call",
+  "params": {
+    "name": "get_plan",
+    "arguments": {
+      "sessionId": "agent-session-1",
+      "planId": "plan-123"
+    }
+  }
+}'
+
+# List all plans for a session
+curl -X POST http://localhost:8099/mcp -d '{
+  "method": "tools/call",
+  "params": {
+    "name": "list_plans",
+    "arguments": {
+      "sessionId": "agent-session-1"
+    }
+  }
+}'
+```
+
+### Security Features
+
+- Session-based access control
+- One active plan per session enforcement
+- Proper error handling for invalid sessions
+- JSON-RPC compliance
+- Comprehensive logging and error reporting
 
 It combines:
 - A **.NET core retrieval engine** — chunking, embeddings, pgvector storage

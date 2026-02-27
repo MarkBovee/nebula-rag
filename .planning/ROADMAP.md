@@ -86,7 +86,7 @@
 5. All MCP tools validate session ownership (caller cannot access other sessions' plans)
 6. Attempting to modify another session's plan throws PlanException with clear error
 
-**Plans:** TBD
+**Plans:** 4/4 complete (04-01, 04-02, 04-03, 04-04)
 
 ---
 
@@ -97,7 +97,7 @@
 |1. Database Schema & Domain Models | 2/2 | Complete | ✓ |
 |2. Storage Layer | 1/1 | Complete   | 2026-02-27 |
 |3. Service Layer | 0/0 | Not started | - |
-|4. MCP Integration | 0/0 | Not started | - |
+|4. MCP Integration | 4/4 | Complete | 2026-02-27 |
 
 ---
 *Roadmap created: 2026-02-27*
