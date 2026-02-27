@@ -6,6 +6,18 @@ The format is inspired by Keep a Changelog and follows semantic versioning.
 
 ## [0.3.0] - 2026-02-27
 
+## [0.3.1] - 2026-02-27
+
+- **Fix / Revert**: Reverted a dashboard version bump to keep the add-on manifest focused on the add-on versioning and deploy stability (commit ab3a02e).
+- **Packaging**: Clarified add-on version entries after several version bump attempts in the repo (commits 9a2e1db, c5db1fe).
+- **Plans & Storage (Postgres)**: Added core Plan lifecycle storage and schema work for plans and tasks:
+	- Plan CRUD operations and Task CRUD operations (commits 6562ff5, f0e7efd)
+	- PostgreSQL schema initialization for plan storage (commit bd66f12)
+	- History query and aggregated query support for PostgresPlanStore (commits ad66713, 97a1cf3)
+	- Added `PlanNotFoundException` and domain models for plan lifecycle (commits 479b69b, 25fff7c)
+- **Docs**: Completed storage layer CRUD operations plan documentation (commit ff12240)
+
+
 - **MCP Integration**: Added comprehensive Model Context Protocol (MCP) tools for plan lifecycle management
   - 7 MCP tool handlers: create_plan, get_plan, list_plans, update_plan, complete_task, update_task, archive_plan
   - Session validation middleware with ownership enforcement
