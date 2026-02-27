@@ -93,16 +93,6 @@ public static class PlanValidator
     }
 
     /// <summary>
-    /// Validates that only one active plan can exist per session.
-    /// </summary>
-    /// <param name="plans">The list of plans for the session.</param>
-    /// <returns>True if the session can create a new plan, false if an active plan already exists.</returns>
-    public static bool CanCreatePlan(IEnumerable<PlanRecord> plans)
-    {
-        return !plans.Any(p => p.Status == PlanStatus.Active);
-    }
-
-    /// <summary>
     /// Validates that a plan can be archived.
     /// </summary>
     /// <param name="plan">The plan to validate.</param>

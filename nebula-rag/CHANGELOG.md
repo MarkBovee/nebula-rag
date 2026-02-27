@@ -4,6 +4,12 @@ All notable changes to the Nebula RAG Home Assistant add-on are documented in th
 
 The format is inspired by Keep a Changelog and follows semantic versioning.
 
+## [0.3.5] - 2026-02-27
+
+- Removed the "only one active plan per session" rule from plan creation flow so multiple active plans can coexist in a session when needed.
+- Removed obsolete validator/exception artifacts tied to the old active-plan constraint.
+- Kept lifecycle transition and history-tracking behavior intact for status/task updates.
+
 ## [0.3.4] - 2026-02-27
 
 - Expanded plan lifecycle behavior in core MCP transport so `update_plan` can apply valid lifecycle statuses (`draft`, `active`, `completed`, `archived`) instead of archive-only status updates.

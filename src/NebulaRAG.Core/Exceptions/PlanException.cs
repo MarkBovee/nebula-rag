@@ -13,7 +13,6 @@ public sealed class PlanException : Exception
     public static class SessionValidation
     {
         public const string SessionOwnership = "session_ownership_violation";
-        public const string MultipleActivePlans = "multiple_active_plans_violation";
         public const string SessionRequired = "session_required";
     }
 

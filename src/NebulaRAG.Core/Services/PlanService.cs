@@ -22,7 +22,7 @@ public sealed class PlanService
 
     /// <summary>
     /// Creates a new plan with the specified details.
-    /// Enforces business rules including active plan constraint.
+    /// Enforces business rules such as name uniqueness within the session scope.
     /// </summary>
     /// <param name="request">The plan creation request.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
@@ -30,16 +30,6 @@ public sealed class PlanService
     /// <exception cref="PlanException">Thrown when business rules are violated.</exception>
     public async Task<(long planId, IReadOnlyList<long> taskIds)> CreatePlanAsync(CreatePlanRequest request, CancellationToken cancellationToken = default)
     {
-        // Check for existing active plan in the session
-        var existingPlans = await _planStore.ListPlansBySessionAsync(request.SessionId, cancellationToken);
-        if (!PlanValidator.CanCreatePlan(existingPlans))
-        {
-            throw new PlanException(
-                violationType: "ActivePlanExists",
-                message: $"An active plan already exists for session {request.SessionId}. Only one active plan is allowed per session.",
-                context: new { SessionId = request.SessionId });
-        }
-
         // Validate plan name uniqueness within project
         var projectPlans = await _planStore.ListPlansBySessionAsync(request.SessionId, cancellationToken);
         if (!PlanValidator.IsPlanNameUnique(projectPlans, request.Name))
