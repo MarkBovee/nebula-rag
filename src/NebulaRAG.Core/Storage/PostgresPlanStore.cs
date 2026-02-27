@@ -582,6 +582,68 @@ public sealed class PostgresPlanStore
         }
     }
 
+    /// <summary>
+    /// Retrieves the history of status changes for a plan.
+    /// </summary>
+    /// <param name="planId">The plan identifier.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A read-only list of plan history records ordered by change date descending.</returns>
+    public async Task<IReadOnlyList<PlanHistoryRecord>> GetPlanHistoryAsync(long planId, CancellationToken cancellationToken = default)
+    {
+        const string sql = @"
+            SELECT id, plan_id, old_status, new_status, changed_by, changed_at, reason
+            FROM plan_history
+            WHERE plan_id = @planId
+            ORDER BY changed_at DESC";
+
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await using var command = new NpgsqlCommand(sql, connection);
+
+        command.Parameters.AddWithValue("planId", planId);
+
+        await connection.OpenAsync(cancellationToken);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+
+        var history = new List<PlanHistoryRecord>();
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            history.Add(ReadPlanHistoryFromReader(reader));
+        }
+
+        return history;
+    }
+
+    /// <summary>
+    /// Retrieves the history of status changes for a task.
+    /// </summary>
+    /// <param name="taskId">The task identifier.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A read-only list of task history records ordered by change date descending.</returns>
+    public async Task<IReadOnlyList<TaskHistoryRecord>> GetTaskHistoryAsync(long taskId, CancellationToken cancellationToken = default)
+    {
+        const string sql = @"
+            SELECT id, task_id, old_status, new_status, changed_by, changed_at, reason
+            FROM task_history
+            WHERE task_id = @taskId
+            ORDER BY changed_at DESC";
+
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await using var command = new NpgsqlCommand(sql, connection);
+
+        command.Parameters.AddWithValue("taskId", taskId);
+
+        await connection.OpenAsync(cancellationToken);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+
+        var history = new List<TaskHistoryRecord>();
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            history.Add(ReadTaskHistoryFromReader(reader));
+        }
+
+        return history;
+    }
+
     private static PlanRecord ReadPlanFromReader(NpgsqlDataReader reader)
     {
         var id = reader.GetInt64(reader.GetOrdinal("id"));
@@ -656,6 +718,40 @@ public sealed class PostgresPlanStore
 
         return new PlanTaskRecord(
             id, planId, title, description, priority, status, createdAt, updatedAt, metadata);
+    }
+
+    private static PlanHistoryRecord ReadPlanHistoryFromReader(NpgsqlDataReader reader)
+    {
+        var id = reader.GetInt64(reader.GetOrdinal("id"));
+        var planId = reader.GetInt64(reader.GetOrdinal("plan_id"));
+        var oldStatus = reader.IsDBNull(reader.GetOrdinal("old_status"))
+            ? null
+            : reader.GetString(reader.GetOrdinal("old_status"));
+        var newStatus = reader.GetString(reader.GetOrdinal("new_status"));
+        var changedBy = reader.GetString(reader.GetOrdinal("changed_by"));
+        var changedAt = reader.GetDateTime(reader.GetOrdinal("changed_at"));
+        var reason = reader.IsDBNull(reader.GetOrdinal("reason"))
+            ? null
+            : reader.GetString(reader.GetOrdinal("reason"));
+
+        return new PlanHistoryRecord(id, planId, oldStatus, newStatus, changedBy, changedAt, reason);
+    }
+
+    private static TaskHistoryRecord ReadTaskHistoryFromReader(NpgsqlDataReader reader)
+    {
+        var id = reader.GetInt64(reader.GetOrdinal("id"));
+        var taskId = reader.GetInt64(reader.GetOrdinal("task_id"));
+        var oldStatus = reader.IsDBNull(reader.GetOrdinal("old_status"))
+            ? null
+            : reader.GetString(reader.GetOrdinal("old_status"));
+        var newStatus = reader.GetString(reader.GetOrdinal("new_status"));
+        var changedBy = reader.GetString(reader.GetOrdinal("changed_by"));
+        var changedAt = reader.GetDateTime(reader.GetOrdinal("changed_at"));
+        var reason = reader.IsDBNull(reader.GetOrdinal("reason"))
+            ? null
+            : reader.GetString(reader.GetOrdinal("reason"));
+
+        return new TaskHistoryRecord(id, taskId, oldStatus, newStatus, changedBy, changedAt, reason);
     }
 }
 
