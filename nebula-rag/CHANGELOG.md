@@ -4,6 +4,11 @@ All notable changes to the Nebula RAG Home Assistant add-on are documented in th
 
 The format is inspired by Keep a Changelog and follows semantic versioning.
 
+## [0.3.6] - 2026-02-27
+
+- Made MCP plan-by-id operations session-agnostic in execution handlers (`get_plan`, `update_plan`, `complete_task`, `update_task`, `archive_plan`) to prevent unnecessary "plan does not belong to provided sessionId" failures.
+- Updated MCP tool input schemas so `sessionId` is optional for plan-by-id operations and used as an audit metadata override when supplied.
+
 ## [0.3.5] - 2026-02-27
 
 - Removed the "only one active plan per session" rule from plan creation flow so multiple active plans can coexist in a session when needed.

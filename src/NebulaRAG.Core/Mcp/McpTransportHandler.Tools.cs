@@ -780,18 +780,13 @@ public sealed partial class McpTransportHandler
     /// <returns>Tool result payload.</returns>
     private async Task<JsonObject> ExecuteGetPlanToolAsync(JsonObject? arguments, CancellationToken cancellationToken)
     {
-        var sessionId = arguments?["sessionId"]?.GetValue<string>()?.Trim();
-        if (string.IsNullOrWhiteSpace(sessionId) || !TryReadLongArgument(arguments, "planId", out var planId))
+        if (!TryReadLongArgument(arguments, "planId", out var planId))
         {
-            return BuildToolResult("sessionId and numeric planId are required.", isError: true);
+            return BuildToolResult("numeric planId is required.", isError: true);
         }
 
         await EnsurePlanSchemaInitializedAsync(cancellationToken);
         var (plan, tasks) = await _planService.GetPlanWithTasksByIdAsync(planId, cancellationToken);
-        if (!string.Equals(plan.SessionId, sessionId, StringComparison.Ordinal))
-        {
-            return BuildToolResult("Access denied: plan does not belong to the provided sessionId.", isError: true);
-        }
 
         return BuildToolResult("Plan retrieved.", new JsonObject
         {
@@ -839,9 +834,9 @@ public sealed partial class McpTransportHandler
         var sessionId = arguments?["sessionId"]?.GetValue<string>()?.Trim();
         var planName = arguments?["planName"]?.GetValue<string>()?.Trim();
         var status = arguments?["status"]?.GetValue<string>()?.Trim();
-        if (string.IsNullOrWhiteSpace(sessionId) || !TryReadLongArgument(arguments, "planId", out var planId))
+        if (!TryReadLongArgument(arguments, "planId", out var planId))
         {
-            return BuildToolResult("sessionId and numeric planId are required.", isError: true);
+            return BuildToolResult("numeric planId is required.", isError: true);
         }
 
         if (string.IsNullOrWhiteSpace(planName) && string.IsNullOrWhiteSpace(status))
@@ -851,12 +846,7 @@ public sealed partial class McpTransportHandler
 
         await EnsurePlanSchemaInitializedAsync(cancellationToken);
         var existingPlan = await _planService.GetPlanByIdAsync(planId, cancellationToken);
-        if (!string.Equals(existingPlan.SessionId, sessionId, StringComparison.Ordinal))
-        {
-            return BuildToolResult("Access denied: plan does not belong to the provided sessionId.", isError: true);
-        }
-
-        var changedBy = $"mcp:{sessionId}";
+        var changedBy = BuildPlanChangedByActor(sessionId, existingPlan.SessionId);
         if (!string.IsNullOrWhiteSpace(planName))
         {
             var request = new UpdatePlanRequest(planName, existingPlan.Description, changedBy);
@@ -889,19 +879,14 @@ public sealed partial class McpTransportHandler
     private async Task<JsonObject> ExecuteCompleteTaskToolAsync(JsonObject? arguments, CancellationToken cancellationToken)
     {
         var sessionId = arguments?["sessionId"]?.GetValue<string>()?.Trim();
-        if (string.IsNullOrWhiteSpace(sessionId)
-            || !TryReadLongArgument(arguments, "planId", out var planId)
+        if (!TryReadLongArgument(arguments, "planId", out var planId)
             || !TryReadLongArgument(arguments, "taskId", out var taskId))
         {
-            return BuildToolResult("sessionId and numeric planId/taskId are required.", isError: true);
+            return BuildToolResult("numeric planId and taskId are required.", isError: true);
         }
 
         await EnsurePlanSchemaInitializedAsync(cancellationToken);
         var plan = await _planService.GetPlanByIdAsync(planId, cancellationToken);
-        if (!string.Equals(plan.SessionId, sessionId, StringComparison.Ordinal))
-        {
-            return BuildToolResult("Access denied: plan does not belong to the provided sessionId.", isError: true);
-        }
 
         var task = await _taskService.GetTaskByIdAsync(taskId, cancellationToken);
         if (task.PlanId != planId)
@@ -909,7 +894,7 @@ public sealed partial class McpTransportHandler
             return BuildToolResult("taskId does not belong to the specified planId.", isError: true);
         }
 
-        var changedBy = $"mcp:{sessionId}";
+        var changedBy = BuildPlanChangedByActor(sessionId, plan.SessionId);
         await _taskService.CompleteTaskAsync(taskId, changedBy, "Completed via MCP", cancellationToken);
         var updatedTask = await _taskService.GetTaskByIdAsync(taskId, cancellationToken);
         return BuildToolResult("Task completed.", new JsonObject
@@ -929,11 +914,10 @@ public sealed partial class McpTransportHandler
         var sessionId = arguments?["sessionId"]?.GetValue<string>()?.Trim();
         var taskName = arguments?["taskName"]?.GetValue<string>()?.Trim();
         var status = arguments?["status"]?.GetValue<string>()?.Trim();
-        if (string.IsNullOrWhiteSpace(sessionId)
-            || !TryReadLongArgument(arguments, "planId", out var planId)
+        if (!TryReadLongArgument(arguments, "planId", out var planId)
             || !TryReadLongArgument(arguments, "taskId", out var taskId))
         {
-            return BuildToolResult("sessionId and numeric planId/taskId are required.", isError: true);
+            return BuildToolResult("numeric planId and taskId are required.", isError: true);
         }
 
         if (string.IsNullOrWhiteSpace(taskName) && string.IsNullOrWhiteSpace(status))
@@ -943,18 +927,13 @@ public sealed partial class McpTransportHandler
 
         await EnsurePlanSchemaInitializedAsync(cancellationToken);
         var plan = await _planService.GetPlanByIdAsync(planId, cancellationToken);
-        if (!string.Equals(plan.SessionId, sessionId, StringComparison.Ordinal))
-        {
-            return BuildToolResult("Access denied: plan does not belong to the provided sessionId.", isError: true);
-        }
-
         var task = await _taskService.GetTaskByIdAsync(taskId, cancellationToken);
         if (task.PlanId != planId)
         {
             return BuildToolResult("taskId does not belong to the specified planId.", isError: true);
         }
 
-        var changedBy = $"mcp:{sessionId}";
+        var changedBy = BuildPlanChangedByActor(sessionId, plan.SessionId);
         if (!string.IsNullOrWhiteSpace(taskName))
         {
             var request = new UpdateTaskRequest(taskName, task.Description, task.Priority, changedBy);
@@ -987,19 +966,14 @@ public sealed partial class McpTransportHandler
     private async Task<JsonObject> ExecuteArchivePlanToolAsync(JsonObject? arguments, CancellationToken cancellationToken)
     {
         var sessionId = arguments?["sessionId"]?.GetValue<string>()?.Trim();
-        if (string.IsNullOrWhiteSpace(sessionId) || !TryReadLongArgument(arguments, "planId", out var planId))
+        if (!TryReadLongArgument(arguments, "planId", out var planId))
         {
-            return BuildToolResult("sessionId and numeric planId are required.", isError: true);
+            return BuildToolResult("numeric planId is required.", isError: true);
         }
 
         await EnsurePlanSchemaInitializedAsync(cancellationToken);
         var plan = await _planService.GetPlanByIdAsync(planId, cancellationToken);
-        if (!string.Equals(plan.SessionId, sessionId, StringComparison.Ordinal))
-        {
-            return BuildToolResult("Access denied: plan does not belong to the provided sessionId.", isError: true);
-        }
-
-        var changedBy = $"mcp:{sessionId}";
+        var changedBy = BuildPlanChangedByActor(sessionId, plan.SessionId);
         await _planService.ArchivePlanAsync(planId, changedBy, "Archived via MCP archive_plan", cancellationToken);
         var (archivedPlan, tasks) = await _planService.GetPlanWithTasksByIdAsync(planId, cancellationToken);
         return BuildToolResult("Plan archived.", new JsonObject
@@ -1085,6 +1059,21 @@ public sealed partial class McpTransportHandler
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// Builds the audit actor for plan/task mutations with a stable fallback when session-id is omitted.
+    /// </summary>
+    /// <param name="providedSessionId">Optional caller-provided session-id.</param>
+    /// <param name="planSessionId">Session-id stored on the target plan.</param>
+    /// <returns>Audit actor identifier.</returns>
+    private static string BuildPlanChangedByActor(string? providedSessionId, string? planSessionId)
+    {
+        var sessionId = string.IsNullOrWhiteSpace(providedSessionId)
+            ? (string.IsNullOrWhiteSpace(planSessionId) ? "global" : planSessionId)
+            : providedSessionId.Trim();
+
+        return $"mcp:{sessionId}";
     }
 
     /// <summary>

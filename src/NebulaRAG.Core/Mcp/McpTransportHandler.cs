@@ -363,10 +363,9 @@ public sealed partial class McpTransportHandler
                 GetPlanToolName => BuildObjectSchema(
                     new JsonObject
                     {
-                        ["sessionId"] = BuildStringSchema("Session ID for the plan."),
+                        ["sessionId"] = BuildStringSchema("Optional session ID override for audit metadata."),
                         ["planId"] = BuildIntegerSchema("ID of the plan to retrieve.", minimum: 1)
                     },
-                    "sessionId",
                     "planId"),
                 ListPlansToolName => BuildObjectSchema(
                     new JsonObject
@@ -377,42 +376,38 @@ public sealed partial class McpTransportHandler
                 UpdatePlanToolName => BuildObjectSchema(
                     new JsonObject
                     {
-                        ["sessionId"] = BuildStringSchema("Session ID for the plan."),
+                        ["sessionId"] = BuildStringSchema("Optional session ID override for audit metadata."),
                         ["planId"] = BuildIntegerSchema("ID of the plan to update.", minimum: 1),
                         ["planName"] = BuildStringSchema("New name for the plan (optional)."),
                         ["status"] = BuildStringSchema("New status for the plan (optional).")
                     },
-                    "sessionId",
                     "planId"),
                 CompleteTaskToolName => BuildObjectSchema(
                     new JsonObject
                     {
-                        ["sessionId"] = BuildStringSchema("Session ID for the plan."),
+                        ["sessionId"] = BuildStringSchema("Optional session ID override for audit metadata."),
                         ["planId"] = BuildIntegerSchema("ID of the plan containing the task.", minimum: 1),
                         ["taskId"] = BuildIntegerSchema("ID of the task to complete.", minimum: 1)
                     },
-                    "sessionId",
                     "planId",
                     "taskId"),
                 UpdateTaskToolName => BuildObjectSchema(
                     new JsonObject
                     {
-                        ["sessionId"] = BuildStringSchema("Session ID for the plan."),
+                        ["sessionId"] = BuildStringSchema("Optional session ID override for audit metadata."),
                         ["planId"] = BuildIntegerSchema("ID of the plan containing the task.", minimum: 1),
                         ["taskId"] = BuildIntegerSchema("ID of the task to update.", minimum: 1),
                         ["taskName"] = BuildStringSchema("New name for the task (optional)."),
                         ["status"] = BuildStringSchema("New status for the task (optional).")
                     },
-                    "sessionId",
                     "planId",
                     "taskId"),
                 ArchivePlanToolName => BuildObjectSchema(
                     new JsonObject
                     {
-                        ["sessionId"] = BuildStringSchema("Session ID for the plan."),
+                        ["sessionId"] = BuildStringSchema("Optional session ID override for audit metadata."),
                         ["planId"] = BuildIntegerSchema("ID of the plan to archive.", minimum: 1)
                     },
-                    "sessionId",
                     "planId"),
                 _ => BuildObjectSchema(new JsonObject())
         };
