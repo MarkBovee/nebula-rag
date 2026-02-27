@@ -4,7 +4,26 @@ All notable changes to the Nebula RAG Home Assistant add-on are documented in th
 
 The format is inspired by Keep a Changelog and follows semantic versioning.
 
-## [0.3.0] - 2026-02-27
+## [0.3.3] - 2026-02-27
+
+- Refactored plan MCP integration to use the shared `NebulaRAG.Core` transport path directly (`McpTransportHandler`) instead of disconnected generated wrappers.
+- Implemented executable handlers for all advertised plan tools (`create_plan`, `get_plan`, `list_plans`, `update_plan`, `complete_task`, `update_task`, `archive_plan`) with:
+	- session ownership checks,
+	- numeric id validation (accepting numeric strings safely),
+	- plan/task JSON shaping for structured responses,
+	- one-time plan schema initialization guard.
+- Removed stale generated artifacts that drifted from current core contracts:
+	- `src/NebulaRAG.Mcp/Services/PlanMcpTool.cs`,
+	- `src/NebulaRAG.Mcp/Services/SessionValidator.cs`,
+	- outdated MCP plan tests that targeted removed wrappers.
+- Normalized MCP tool input schemas for plan/task ids to integer types to match storage/service contracts and reduce runtime conversion issues.
+
+## [0.3.2] - 2026-02-27
+
+- Fixed `CS1519` build failure in `src/NebulaRAG.Core/Mcp/McpTransportHandler.cs` caused by duplicated helper methods and an extra closing brace appended outside the class.
+- Removed duplicate `SessionValidation` nested type declarations in `src/NebulaRAG.Core/Exceptions/PlanException.cs` that caused `CS0102` duplicate-definition failures.
+- Resolved `TaskStatus` ambiguity in `src/NebulaRAG.Core/Services/PlanValidator.cs` by using an explicit alias for `NebulaRAG.Core.Models.TaskStatus`.
+- Stabilized solution build by excluding non-integrated plan MCP service sources and related stale tests from compilation until service contracts are aligned.
 
 ## [0.3.1] - 2026-02-27
 
@@ -17,15 +36,16 @@ The format is inspired by Keep a Changelog and follows semantic versioning.
 	- Added `PlanNotFoundException` and domain models for plan lifecycle (commits 479b69b, 25fff7c)
 - **Docs**: Completed storage layer CRUD operations plan documentation (commit ff12240)
 
+## [0.3.0] - 2026-02-27
 
-- **MCP Integration**: Added comprehensive Model Context Protocol (MCP) tools for plan lifecycle management
-  - 7 MCP tool handlers: create_plan, get_plan, list_plans, update_plan, complete_task, update_task, archive_plan
-  - Session validation middleware with ownership enforcement
-  - One active plan per session constraint
-  - Robust error handling and business rule validation
-- **Service Layer**: Implemented core business logic for plan and task management
-- **Testing**: Added 31 comprehensive tests covering all MCP operations and session validation
-- **Documentation**: Updated MCP integration guide and usage examples
+- **MCP Integration**: Added comprehensive Model Context Protocol (MCP) tools for plan lifecycle management.
+	- 7 MCP tool handlers: create_plan, get_plan, list_plans, update_plan, complete_task, update_task, archive_plan.
+	- Session validation middleware with ownership enforcement.
+	- One active plan per session constraint.
+	- Robust error handling and business rule validation.
+- **Service Layer**: Implemented core business logic for plan and task management.
+- **Testing**: Added 31 comprehensive tests covering all MCP operations and session validation.
+- **Documentation**: Updated MCP integration guide and usage examples.
 
 ## [0.2.52] - 2026-02-26
 

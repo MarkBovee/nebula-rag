@@ -8,6 +8,7 @@ using Microsoft.Extensions.Logging;
 using NebulaRAG.Core.Models;
 using NebulaRAG.Core.Pathing;
 using NebulaRAG.Core.Services;
+using NebulaRAG.Core.Storage;
 
 namespace NebulaRAG.Core.Mcp;
 
@@ -48,6 +49,13 @@ public sealed partial class McpTransportHandler
                 MemoryListToolName => await ExecuteMemoryListToolAsync(arguments, cancellationToken),
                 MemoryDeleteToolName => await ExecuteMemoryDeleteToolAsync(arguments, cancellationToken),
                 MemoryUpdateToolName => await ExecuteMemoryUpdateToolAsync(arguments, cancellationToken),
+                CreatePlanToolName => await ExecuteCreatePlanToolAsync(arguments, cancellationToken),
+                GetPlanToolName => await ExecuteGetPlanToolAsync(arguments, cancellationToken),
+                ListPlansToolName => await ExecuteListPlansToolAsync(arguments, cancellationToken),
+                UpdatePlanToolName => await ExecuteUpdatePlanToolAsync(arguments, cancellationToken),
+                CompleteTaskToolName => await ExecuteCompleteTaskToolAsync(arguments, cancellationToken),
+                UpdateTaskToolName => await ExecuteUpdateTaskToolAsync(arguments, cancellationToken),
+                ArchivePlanToolName => await ExecuteArchivePlanToolAsync(arguments, cancellationToken),
                 _ => BuildToolResult($"Unknown tool: {toolName}", isError: true)
             };
 
@@ -732,6 +740,411 @@ public sealed partial class McpTransportHandler
         var embedding = string.IsNullOrWhiteSpace(content) ? null : _embeddingGenerator.GenerateEmbedding(content, _settings.Ingestion.VectorDimensions);
         var updated = await _store.UpdateMemoryAsync(memoryId.Value, type, content, tags, embedding, cancellationToken);
         return BuildToolResult(updated ? "Memory updated." : "Memory not found.", new JsonObject { ["updated"] = updated });
+    }
+
+    /// <summary>
+    /// Executes plan creation.
+    /// </summary>
+    /// <param name="arguments">Tool arguments.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Tool result payload.</returns>
+    private async Task<JsonObject> ExecuteCreatePlanToolAsync(JsonObject? arguments, CancellationToken cancellationToken)
+    {
+        var sessionId = arguments?["sessionId"]?.GetValue<string>()?.Trim();
+        var planName = arguments?["planName"]?.GetValue<string>()?.Trim();
+        var projectId = arguments?["projectId"]?.GetValue<string>()?.Trim();
+        if (string.IsNullOrWhiteSpace(sessionId) || string.IsNullOrWhiteSpace(planName) || string.IsNullOrWhiteSpace(projectId))
+        {
+            return BuildToolResult("sessionId, planName, and projectId are required.", isError: true);
+        }
+
+        await EnsurePlanSchemaInitializedAsync(cancellationToken);
+
+        var changedBy = $"mcp:{sessionId}";
+        var initialTasks = ParseInitialPlanTasks(arguments?["initialTasks"], changedBy);
+        var createRequest = new CreatePlanRequest(projectId, sessionId, planName, null, initialTasks, changedBy);
+        var (planId, _) = await _planService.CreatePlanAsync(createRequest, cancellationToken);
+        var (plan, tasks) = await _planService.GetPlanWithTasksByIdAsync(planId, cancellationToken);
+
+        return BuildToolResult("Plan created.", new JsonObject
+        {
+            ["plan"] = ToPlanJson(plan, tasks)
+        });
+    }
+
+    /// <summary>
+    /// Executes plan retrieval by id.
+    /// </summary>
+    /// <param name="arguments">Tool arguments.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Tool result payload.</returns>
+    private async Task<JsonObject> ExecuteGetPlanToolAsync(JsonObject? arguments, CancellationToken cancellationToken)
+    {
+        var sessionId = arguments?["sessionId"]?.GetValue<string>()?.Trim();
+        if (string.IsNullOrWhiteSpace(sessionId) || !TryReadLongArgument(arguments, "planId", out var planId))
+        {
+            return BuildToolResult("sessionId and numeric planId are required.", isError: true);
+        }
+
+        await EnsurePlanSchemaInitializedAsync(cancellationToken);
+        var (plan, tasks) = await _planService.GetPlanWithTasksByIdAsync(planId, cancellationToken);
+        if (!string.Equals(plan.SessionId, sessionId, StringComparison.Ordinal))
+        {
+            return BuildToolResult("Access denied: plan does not belong to the provided sessionId.", isError: true);
+        }
+
+        return BuildToolResult("Plan retrieved.", new JsonObject
+        {
+            ["plan"] = ToPlanJson(plan, tasks)
+        });
+    }
+
+    /// <summary>
+    /// Executes session-scoped plan listing.
+    /// </summary>
+    /// <param name="arguments">Tool arguments.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Tool result payload.</returns>
+    private async Task<JsonObject> ExecuteListPlansToolAsync(JsonObject? arguments, CancellationToken cancellationToken)
+    {
+        var sessionId = arguments?["sessionId"]?.GetValue<string>()?.Trim();
+        if (string.IsNullOrWhiteSpace(sessionId))
+        {
+            return BuildToolResult("sessionId is required.", isError: true);
+        }
+
+        await EnsurePlanSchemaInitializedAsync(cancellationToken);
+        var plans = await _planService.ListPlansBySessionAsync(sessionId, cancellationToken);
+        var items = new JsonArray();
+        foreach (var plan in plans)
+        {
+            items.Add(ToPlanJson(plan));
+        }
+
+        return BuildToolResult($"Listed {plans.Count} plans.", new JsonObject
+        {
+            ["plans"] = items,
+            ["sessionId"] = sessionId
+        });
+    }
+
+    /// <summary>
+    /// Executes plan update (name change and/or archive transition).
+    /// </summary>
+    /// <param name="arguments">Tool arguments.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Tool result payload.</returns>
+    private async Task<JsonObject> ExecuteUpdatePlanToolAsync(JsonObject? arguments, CancellationToken cancellationToken)
+    {
+        var sessionId = arguments?["sessionId"]?.GetValue<string>()?.Trim();
+        var planName = arguments?["planName"]?.GetValue<string>()?.Trim();
+        var status = arguments?["status"]?.GetValue<string>()?.Trim();
+        if (string.IsNullOrWhiteSpace(sessionId) || !TryReadLongArgument(arguments, "planId", out var planId))
+        {
+            return BuildToolResult("sessionId and numeric planId are required.", isError: true);
+        }
+
+        if (string.IsNullOrWhiteSpace(planName) && string.IsNullOrWhiteSpace(status))
+        {
+            return BuildToolResult("Provide planName and/or status for update_plan.", isError: true);
+        }
+
+        await EnsurePlanSchemaInitializedAsync(cancellationToken);
+        var existingPlan = await _planService.GetPlanByIdAsync(planId, cancellationToken);
+        if (!string.Equals(existingPlan.SessionId, sessionId, StringComparison.Ordinal))
+        {
+            return BuildToolResult("Access denied: plan does not belong to the provided sessionId.", isError: true);
+        }
+
+        var changedBy = $"mcp:{sessionId}";
+        if (!string.IsNullOrWhiteSpace(planName))
+        {
+            var request = new UpdatePlanRequest(planName, existingPlan.Description, changedBy);
+            await _planService.UpdatePlanAsync(planId, request, changedBy, cancellationToken);
+        }
+
+        if (!string.IsNullOrWhiteSpace(status))
+        {
+            if (!string.Equals(status, "archived", StringComparison.OrdinalIgnoreCase))
+            {
+                return BuildToolResult("Only status='archived' is currently supported by update_plan.", isError: true);
+            }
+
+            await _planService.ArchivePlanAsync(planId, changedBy, "Archived via MCP update_plan", cancellationToken);
+        }
+
+        var (updatedPlan, tasks) = await _planService.GetPlanWithTasksByIdAsync(planId, cancellationToken);
+        return BuildToolResult("Plan updated.", new JsonObject
+        {
+            ["plan"] = ToPlanJson(updatedPlan, tasks)
+        });
+    }
+
+    /// <summary>
+    /// Executes task completion for a plan task.
+    /// </summary>
+    /// <param name="arguments">Tool arguments.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Tool result payload.</returns>
+    private async Task<JsonObject> ExecuteCompleteTaskToolAsync(JsonObject? arguments, CancellationToken cancellationToken)
+    {
+        var sessionId = arguments?["sessionId"]?.GetValue<string>()?.Trim();
+        if (string.IsNullOrWhiteSpace(sessionId)
+            || !TryReadLongArgument(arguments, "planId", out var planId)
+            || !TryReadLongArgument(arguments, "taskId", out var taskId))
+        {
+            return BuildToolResult("sessionId and numeric planId/taskId are required.", isError: true);
+        }
+
+        await EnsurePlanSchemaInitializedAsync(cancellationToken);
+        var plan = await _planService.GetPlanByIdAsync(planId, cancellationToken);
+        if (!string.Equals(plan.SessionId, sessionId, StringComparison.Ordinal))
+        {
+            return BuildToolResult("Access denied: plan does not belong to the provided sessionId.", isError: true);
+        }
+
+        var task = await _taskService.GetTaskByIdAsync(taskId, cancellationToken);
+        if (task.PlanId != planId)
+        {
+            return BuildToolResult("taskId does not belong to the specified planId.", isError: true);
+        }
+
+        var changedBy = $"mcp:{sessionId}";
+        await _taskService.CompleteTaskAsync(taskId, changedBy, "Completed via MCP", cancellationToken);
+        var updatedTask = await _taskService.GetTaskByIdAsync(taskId, cancellationToken);
+        return BuildToolResult("Task completed.", new JsonObject
+        {
+            ["task"] = ToTaskJson(updatedTask)
+        });
+    }
+
+    /// <summary>
+    /// Executes task update (name update and/or completion transition).
+    /// </summary>
+    /// <param name="arguments">Tool arguments.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Tool result payload.</returns>
+    private async Task<JsonObject> ExecuteUpdateTaskToolAsync(JsonObject? arguments, CancellationToken cancellationToken)
+    {
+        var sessionId = arguments?["sessionId"]?.GetValue<string>()?.Trim();
+        var taskName = arguments?["taskName"]?.GetValue<string>()?.Trim();
+        var status = arguments?["status"]?.GetValue<string>()?.Trim();
+        if (string.IsNullOrWhiteSpace(sessionId)
+            || !TryReadLongArgument(arguments, "planId", out var planId)
+            || !TryReadLongArgument(arguments, "taskId", out var taskId))
+        {
+            return BuildToolResult("sessionId and numeric planId/taskId are required.", isError: true);
+        }
+
+        if (string.IsNullOrWhiteSpace(taskName) && string.IsNullOrWhiteSpace(status))
+        {
+            return BuildToolResult("Provide taskName and/or status for update_task.", isError: true);
+        }
+
+        await EnsurePlanSchemaInitializedAsync(cancellationToken);
+        var plan = await _planService.GetPlanByIdAsync(planId, cancellationToken);
+        if (!string.Equals(plan.SessionId, sessionId, StringComparison.Ordinal))
+        {
+            return BuildToolResult("Access denied: plan does not belong to the provided sessionId.", isError: true);
+        }
+
+        var task = await _taskService.GetTaskByIdAsync(taskId, cancellationToken);
+        if (task.PlanId != planId)
+        {
+            return BuildToolResult("taskId does not belong to the specified planId.", isError: true);
+        }
+
+        var changedBy = $"mcp:{sessionId}";
+        if (!string.IsNullOrWhiteSpace(taskName))
+        {
+            var request = new UpdateTaskRequest(taskName, task.Description, task.Priority, changedBy);
+            await _taskService.UpdateTaskAsync(taskId, request, changedBy, cancellationToken);
+        }
+
+        if (!string.IsNullOrWhiteSpace(status))
+        {
+            if (!string.Equals(status, "completed", StringComparison.OrdinalIgnoreCase))
+            {
+                return BuildToolResult("Only status='completed' is currently supported by update_task.", isError: true);
+            }
+
+            await _taskService.CompleteTaskAsync(taskId, changedBy, "Completed via MCP update_task", cancellationToken);
+        }
+
+        var updatedTask = await _taskService.GetTaskByIdAsync(taskId, cancellationToken);
+        return BuildToolResult("Task updated.", new JsonObject
+        {
+            ["task"] = ToTaskJson(updatedTask)
+        });
+    }
+
+    /// <summary>
+    /// Executes plan archiving.
+    /// </summary>
+    /// <param name="arguments">Tool arguments.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Tool result payload.</returns>
+    private async Task<JsonObject> ExecuteArchivePlanToolAsync(JsonObject? arguments, CancellationToken cancellationToken)
+    {
+        var sessionId = arguments?["sessionId"]?.GetValue<string>()?.Trim();
+        if (string.IsNullOrWhiteSpace(sessionId) || !TryReadLongArgument(arguments, "planId", out var planId))
+        {
+            return BuildToolResult("sessionId and numeric planId are required.", isError: true);
+        }
+
+        await EnsurePlanSchemaInitializedAsync(cancellationToken);
+        var plan = await _planService.GetPlanByIdAsync(planId, cancellationToken);
+        if (!string.Equals(plan.SessionId, sessionId, StringComparison.Ordinal))
+        {
+            return BuildToolResult("Access denied: plan does not belong to the provided sessionId.", isError: true);
+        }
+
+        var changedBy = $"mcp:{sessionId}";
+        await _planService.ArchivePlanAsync(planId, changedBy, "Archived via MCP archive_plan", cancellationToken);
+        var (archivedPlan, tasks) = await _planService.GetPlanWithTasksByIdAsync(planId, cancellationToken);
+        return BuildToolResult("Plan archived.", new JsonObject
+        {
+            ["plan"] = ToPlanJson(archivedPlan, tasks)
+        });
+    }
+
+    /// <summary>
+    /// Ensures plan storage schema is initialized exactly once per process.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    private async Task EnsurePlanSchemaInitializedAsync(CancellationToken cancellationToken)
+    {
+        if (_planSchemaInitialized)
+        {
+            return;
+        }
+
+        await _planSchemaLock.WaitAsync(cancellationToken);
+        try
+        {
+            if (_planSchemaInitialized)
+            {
+                return;
+            }
+
+            await _planStore.InitializeSchemaAsync(cancellationToken);
+            _planSchemaInitialized = true;
+        }
+        finally
+        {
+            _planSchemaLock.Release();
+        }
+    }
+
+    /// <summary>
+    /// Parses an integer identifier argument that may be passed as JSON number or numeric string.
+    /// </summary>
+    /// <param name="arguments">Tool arguments.</param>
+    /// <param name="argumentName">Argument name.</param>
+    /// <param name="value">Parsed positive value.</param>
+    /// <returns>True when a valid positive integer was provided.</returns>
+    private static bool TryReadLongArgument(JsonObject? arguments, string argumentName, out long value)
+    {
+        value = 0;
+        var node = arguments?[argumentName];
+        if (node is null)
+        {
+            return false;
+        }
+
+        if (node is JsonValue numeric && numeric.TryGetValue<long>(out value) && value > 0)
+        {
+            return true;
+        }
+
+        if (node is JsonValue textValue && textValue.TryGetValue<string>(out var text) && long.TryParse(text, NumberStyles.None, CultureInfo.InvariantCulture, out value) && value > 0)
+        {
+            return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Parses initial task strings for plan creation.
+    /// </summary>
+    /// <param name="initialTasksNode">Optional initial task array node.</param>
+    /// <param name="changedBy">Operator identifier for audit metadata.</param>
+    /// <returns>Normalized initial task requests.</returns>
+    private static IReadOnlyList<CreateTaskRequest> ParseInitialPlanTasks(JsonNode? initialTasksNode, string changedBy)
+    {
+        if (initialTasksNode is not JsonArray initialTasksArray)
+        {
+            return [];
+        }
+
+        var tasks = new List<CreateTaskRequest>();
+        foreach (var item in initialTasksArray)
+        {
+            var title = item?.GetValue<string>()?.Trim();
+            if (string.IsNullOrWhiteSpace(title))
+            {
+                continue;
+            }
+
+            tasks.Add(new CreateTaskRequest(title, null, "normal", changedBy));
+        }
+
+        return tasks;
+    }
+
+    /// <summary>
+    /// Converts a plan record to MCP JSON representation.
+    /// </summary>
+    /// <param name="plan">Plan record.</param>
+    /// <param name="tasks">Optional task list.</param>
+    /// <returns>JSON object.</returns>
+    private static JsonObject ToPlanJson(PlanRecord plan, IReadOnlyList<PlanTaskRecord>? tasks = null)
+    {
+        var json = new JsonObject
+        {
+            ["planId"] = plan.Id,
+            ["projectId"] = plan.ProjectId,
+            ["sessionId"] = plan.SessionId,
+            ["name"] = plan.Name,
+            ["description"] = plan.Description,
+            ["status"] = plan.Status.ToString(),
+            ["createdAtUtc"] = plan.CreatedAt.ToUniversalTime().ToString("O"),
+            ["updatedAtUtc"] = plan.UpdatedAt.ToUniversalTime().ToString("O")
+        };
+
+        if (tasks is not null)
+        {
+            var taskItems = new JsonArray();
+            foreach (var task in tasks)
+            {
+                taskItems.Add(ToTaskJson(task));
+            }
+
+            json["tasks"] = taskItems;
+        }
+
+        return json;
+    }
+
+    /// <summary>
+    /// Converts a task record to MCP JSON representation.
+    /// </summary>
+    /// <param name="task">Task record.</param>
+    /// <returns>JSON object.</returns>
+    private static JsonObject ToTaskJson(PlanTaskRecord task)
+    {
+        return new JsonObject
+        {
+            ["taskId"] = task.Id,
+            ["planId"] = task.PlanId,
+            ["name"] = task.Title,
+            ["description"] = task.Description,
+            ["priority"] = task.Priority,
+            ["status"] = task.Status.ToString(),
+            ["createdAtUtc"] = task.CreatedAt.ToUniversalTime().ToString("O"),
+            ["updatedAtUtc"] = task.UpdatedAt.ToUniversalTime().ToString("O")
+        };
     }
 
     /// <summary>

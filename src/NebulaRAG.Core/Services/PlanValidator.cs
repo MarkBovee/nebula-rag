@@ -1,4 +1,5 @@
 using NebulaRAG.Core.Models;
+using TaskLifecycleStatus = NebulaRAG.Core.Models.TaskStatus;
 
 namespace NebulaRAG.Core.Services;
 
@@ -54,7 +55,7 @@ public static class PlanValidator
     /// <param name="currentStatus">The current status of the task.</param>
     /// <param name="newStatus">The desired new status.</param>
     /// <returns>True if the transition is valid, false otherwise.</returns>
-    public static bool CanTransition(TaskStatus currentStatus, TaskStatus newStatus)
+    public static bool CanTransition(TaskLifecycleStatus currentStatus, TaskLifecycleStatus newStatus)
     {
         // Valid transitions:
         // Pending → InProgress
@@ -74,16 +75,16 @@ public static class PlanValidator
 
         switch (currentStatus)
         {
-            case TaskStatus.Pending:
-                return newStatus == TaskStatus.InProgress;
+            case TaskLifecycleStatus.Pending:
+                return newStatus == TaskLifecycleStatus.InProgress;
 
-            case TaskStatus.InProgress:
-                return newStatus == TaskStatus.Completed || newStatus == TaskStatus.Failed;
+            case TaskLifecycleStatus.InProgress:
+                return newStatus == TaskLifecycleStatus.Completed || newStatus == TaskLifecycleStatus.Failed;
 
-            case TaskStatus.Completed:
-                return newStatus == TaskStatus.Failed; // Optional: allow failed transition
+            case TaskLifecycleStatus.Completed:
+                return newStatus == TaskLifecycleStatus.Failed; // Optional: allow failed transition
 
-            case TaskStatus.Failed:
+            case TaskLifecycleStatus.Failed:
                 return false;
 
             default:
@@ -118,7 +119,7 @@ public static class PlanValidator
     /// <returns>True if the task can be completed, false otherwise.</returns>
     public static bool CanCompleteTask(PlanTaskRecord task)
     {
-        return task.Status == TaskStatus.InProgress;
+        return task.Status == TaskLifecycleStatus.InProgress;
     }
 
     /// <summary>

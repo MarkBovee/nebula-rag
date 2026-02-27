@@ -8,34 +8,24 @@ namespace NebulaRAG.Core.Exceptions;
 public sealed class PlanException : Exception
 {
     /// <summary>
+    /// Session validation violation types.
+    /// </summary>
+    public static class SessionValidation
+    {
+        public const string SessionOwnership = "session_ownership_violation";
+        public const string MultipleActivePlans = "multiple_active_plans_violation";
+        public const string SessionRequired = "session_required";
+    }
+
+    /// <summary>
     /// The type of business rule violation.
     /// </summary>
     public string? ViolationType { get; }
 
     /// <summary>
-    /// Session validation violation types.
-    /// </summary>
-    public static class SessionValidation
-    {
-        public const string SessionOwnership = "session_ownership_violation";
-        public const string MultipleActivePlans = "multiple_active_plans_violation";
-        public const string SessionRequired = "session_required";
-    }
-
-    /// <summary>
     /// Additional context about the violation.
     /// </summary>
     public object? Context { get; }
-
-    /// <summary>
-    /// Session validation violation types.
-    /// </summary>
-    public static class SessionValidation
-    {
-        public const string SessionOwnership = "session_ownership_violation";
-        public const string MultipleActivePlans = "multiple_active_plans_violation";
-        public const string SessionRequired = "session_required";
-    }
 
     /// <summary>
     /// Initializes a new instance of the <see cref="PlanException"/> class.
@@ -46,32 +36,12 @@ public sealed class PlanException : Exception
     }
 
     /// <summary>
-    /// Session validation violation types.
-    /// </summary>
-    public static class SessionValidation
-    {
-        public const string SessionOwnership = "session_ownership_violation";
-        public const string MultipleActivePlans = "multiple_active_plans_violation";
-        public const string SessionRequired = "session_required";
-    }
-
-    /// <summary>
     /// Initializes a new instance of the <see cref="PlanException"/> class with a specified error message.
     /// </summary>
     /// <param name="message">The message that describes the error.</param>
     public PlanException(string message)
         : base(message)
     {
-    }
-
-    /// <summary>
-    /// Session validation violation types.
-    /// </summary>
-    public static class SessionValidation
-    {
-        public const string SessionOwnership = "session_ownership_violation";
-        public const string MultipleActivePlans = "multiple_active_plans_violation";
-        public const string SessionRequired = "session_required";
     }
 
     /// <summary>
@@ -85,16 +55,6 @@ public sealed class PlanException : Exception
     }
 
     /// <summary>
-    /// Session validation violation types.
-    /// </summary>
-    public static class SessionValidation
-    {
-        public const string SessionOwnership = "session_ownership_violation";
-        public const string MultipleActivePlans = "multiple_active_plans_violation";
-        public const string SessionRequired = "session_required";
-    }
-
-    /// <summary>
     /// Initializes a new instance of the <see cref="PlanException"/> class with a violation type and message.
     /// </summary>
     /// <param name="violationType">The type of business rule violation.</param>
@@ -103,16 +63,6 @@ public sealed class PlanException : Exception
         : base(message)
     {
         ViolationType = violationType;
-    }
-
-    /// <summary>
-    /// Session validation violation types.
-    /// </summary>
-    public static class SessionValidation
-    {
-        public const string SessionOwnership = "session_ownership_violation";
-        public const string MultipleActivePlans = "multiple_active_plans_violation";
-        public const string SessionRequired = "session_required";
     }
 
     /// <summary>
@@ -129,16 +79,6 @@ public sealed class PlanException : Exception
     }
 
     /// <summary>
-    /// Session validation violation types.
-    /// </summary>
-    public static class SessionValidation
-    {
-        public const string SessionOwnership = "session_ownership_violation";
-        public const string MultipleActivePlans = "multiple_active_plans_violation";
-        public const string SessionRequired = "session_required";
-    }
-
-    /// <summary>
     /// Initializes a new instance of the <see cref="PlanException"/> class with a violation type, message, context, and inner exception.
     /// </summary>
     /// <param name="violationType">The type of business rule violation.</param>
@@ -151,24 +91,4 @@ public sealed class PlanException : Exception
         ViolationType = violationType;
         Context = context;
     }
-
-    /// <summary>
-    /// Session validation violation types.
-    /// </summary>
-    public static class SessionValidation
-    {
-        public const string SessionOwnership = "session_ownership_violation";
-        public const string MultipleActivePlans = "multiple_active_plans_violation";
-        public const string SessionRequired = "session_required";
-    }
 }
-
-    /// <summary>
-    /// Session validation violation types.
-    /// </summary>
-    public static class SessionValidation
-    {
-        public const string SessionOwnership = "session_ownership_violation";
-        public const string MultipleActivePlans = "multiple_active_plans_violation";
-        public const string SessionRequired = "session_required";
-    }
