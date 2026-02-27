@@ -280,24 +280,43 @@ public sealed class PostgresPlanStore
     /// <exception cref="PlanNotFoundException">Thrown when the plan is not found.</exception>
     public async Task ArchivePlanAsync(long planId, string changedBy, string? reason, CancellationToken cancellationToken = default)
     {
+        await UpdatePlanStatusAsync(planId, PlanStatus.Archived, changedBy, reason, cancellationToken);
+    }
+
+    /// <summary>
+    /// Updates a plan status and records the status transition in plan history.
+    /// </summary>
+    /// <param name="planId">The plan identifier.</param>
+    /// <param name="newStatus">The new status to apply.</param>
+    /// <param name="changedBy">Identifier of who made the change.</param>
+    /// <param name="reason">Optional reason for the transition.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <exception cref="PlanNotFoundException">Thrown when the plan is not found.</exception>
+    public async Task UpdatePlanStatusAsync(long planId, PlanStatus newStatus, string changedBy, string? reason, CancellationToken cancellationToken = default)
+    {
         await using var connection = new NpgsqlConnection(_connectionString);
         await connection.OpenAsync(cancellationToken);
 
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
-
         try
         {
             var currentPlan = await GetPlanByIdAsync(planId, cancellationToken);
             var oldStatus = currentPlan.Status.ToString().ToLowerInvariant();
+            var newStatusText = newStatus.ToString().ToLowerInvariant();
 
             const string updateSql = @"
                 UPDATE plans
-                SET status = 'archived', updated_at = NOW()
+                SET status = @newStatus, updated_at = NOW()
                 WHERE id = @planId";
 
             await ExecuteNonQueryAsync(
-                connection, updateSql,
-                new Dictionary<string, object?> { { "planId", planId } },
+                connection,
+                updateSql,
+                new Dictionary<string, object?>
+                {
+                    { "planId", planId },
+                    { "newStatus", newStatusText }
+                },
                 cancellationToken);
 
             const string historySql = @"
@@ -305,12 +324,13 @@ public sealed class PostgresPlanStore
                 VALUES (@planId, @oldStatus, @newStatus, @changedBy, NOW(), @reason)";
 
             await ExecuteNonQueryAsync(
-                connection, historySql,
+                connection,
+                historySql,
                 new Dictionary<string, object?>
                 {
                     { "planId", planId },
                     { "oldStatus", oldStatus },
-                    { "newStatus", "archived" },
+                    { "newStatus", newStatusText },
                     { "changedBy", changedBy },
                     { "reason", reason }
                 },

@@ -4,6 +4,16 @@ All notable changes to the Nebula RAG Home Assistant add-on are documented in th
 
 The format is inspired by Keep a Changelog and follows semantic versioning.
 
+## [0.3.4] - 2026-02-27
+
+- Expanded plan lifecycle behavior in core MCP transport so `update_plan` can apply valid lifecycle statuses (`draft`, `active`, `completed`, `archived`) instead of archive-only status updates.
+- Added generic plan status transition persistence (`UpdatePlanStatusAsync`) with history tracking in `PostgresPlanStore` and validated transitions in `PlanService`.
+- Updated task-completion validation to allow completing tasks from `Pending` as well as `InProgress` for direct MCP `complete_task` execution flow.
+- Updated project instruction files to standardize Nebula plan usage for multi-step work across:
+	- `nebula-rag`,
+	- `dot-claw`,
+	- `dot-claw-setup-test`.
+
 ## [0.3.3] - 2026-02-27
 
 - Refactored plan MCP integration to use the shared `NebulaRAG.Core` transport path directly (`McpTransportHandler`) instead of disconnected generated wrappers.

@@ -865,12 +865,12 @@ public sealed partial class McpTransportHandler
 
         if (!string.IsNullOrWhiteSpace(status))
         {
-            if (!string.Equals(status, "archived", StringComparison.OrdinalIgnoreCase))
+            if (!TryParsePlanStatus(status, out var parsedStatus))
             {
-                return BuildToolResult("Only status='archived' is currently supported by update_plan.", isError: true);
+                return BuildToolResult("status must be one of: draft, active, completed, archived.", isError: true);
             }
 
-            await _planService.ArchivePlanAsync(planId, changedBy, "Archived via MCP update_plan", cancellationToken);
+            await _planService.UpdatePlanStatusAsync(planId, parsedStatus, changedBy, $"Status updated to {parsedStatus} via MCP update_plan", cancellationToken);
         }
 
         var (updatedPlan, tasks) = await _planService.GetPlanWithTasksByIdAsync(planId, cancellationToken);
@@ -1059,6 +1059,28 @@ public sealed partial class McpTransportHandler
 
         if (node is JsonValue textValue && textValue.TryGetValue<string>(out var text) && long.TryParse(text, NumberStyles.None, CultureInfo.InvariantCulture, out value) && value > 0)
         {
+            return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Parses a plan status string into the enum representation.
+    /// </summary>
+    /// <param name="status">Incoming status text.</param>
+    /// <param name="planStatus">Parsed status value when successful.</param>
+    /// <returns>True when parsing succeeds.</returns>
+    private static bool TryParsePlanStatus(string status, out PlanStatus planStatus)
+    {
+        if (Enum.TryParse<PlanStatus>(status, true, out planStatus))
+        {
+            return true;
+        }
+
+        if (status.Equals("in_progress", StringComparison.OrdinalIgnoreCase))
+        {
+            planStatus = PlanStatus.Active;
             return true;
         }
 

@@ -119,7 +119,7 @@ public static class PlanValidator
     /// <returns>True if the task can be completed, false otherwise.</returns>
     public static bool CanCompleteTask(PlanTaskRecord task)
     {
-        return task.Status == TaskLifecycleStatus.InProgress;
+        return task.Status == TaskLifecycleStatus.Pending || task.Status == TaskLifecycleStatus.InProgress;
     }
 
     /// <summary>

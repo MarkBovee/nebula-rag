@@ -65,17 +65,31 @@ public sealed class PlanService
     /// <exception cref="PlanNotFoundException">Thrown when the plan is not found.</exception>
     public async Task ArchivePlanAsync(long planId, string changedBy, string? reason, CancellationToken cancellationToken = default)
     {
-        var plan = await _planStore.GetPlanByIdAsync(planId, cancellationToken);
+        await UpdatePlanStatusAsync(planId, PlanStatus.Archived, changedBy, reason, cancellationToken);
+    }
 
-        if (!PlanValidator.CanArchivePlan(plan))
+    /// <summary>
+    /// Updates the plan lifecycle status after validating transition rules.
+    /// </summary>
+    /// <param name="planId">The plan identifier.</param>
+    /// <param name="newStatus">The new status to apply.</param>
+    /// <param name="changedBy">Identifier of who made the change.</param>
+    /// <param name="reason">Optional reason for the status transition.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <exception cref="PlanException">Thrown when transition rules are violated.</exception>
+    /// <exception cref="PlanNotFoundException">Thrown when the plan is not found.</exception>
+    public async Task UpdatePlanStatusAsync(long planId, PlanStatus newStatus, string changedBy, string? reason, CancellationToken cancellationToken = default)
+    {
+        var plan = await _planStore.GetPlanByIdAsync(planId, cancellationToken);
+        if (!PlanValidator.CanTransition(plan.Status, newStatus))
         {
             throw new PlanException(
-                violationType: "InvalidPlanStatusForArchive",
-                message: $"Plan {planId} cannot be archived in its current status {plan.Status}.",
-                context: new { PlanId = planId, CurrentStatus = plan.Status });
+                violationType: "InvalidPlanStatusTransition",
+                message: $"Plan {planId} cannot transition from {plan.Status} to {newStatus}.",
+                context: new { PlanId = planId, CurrentStatus = plan.Status, NewStatus = newStatus });
         }
 
-        await _planStore.ArchivePlanAsync(planId, changedBy, reason, cancellationToken);
+        await _planStore.UpdatePlanStatusAsync(planId, newStatus, changedBy, reason, cancellationToken);
     }
 
     /// <summary>

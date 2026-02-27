@@ -18,6 +18,7 @@ If memory and RAG disagree, treat source code/RAG-backed source snippets as the 
 
 ## Expected sequence
 
+0. For multi-step implementation work, initialize or load a Nebula plan (`create_plan` or `list_plans`/`get_plan`) before coding.
 1. Query Nebula memory for related prior decisions/issues when task history matters.
 2. Query `query_project_rag` with the user intent phrased as a search question.
 3. If needed, run one focused follow-up query for missing terms.
@@ -25,6 +26,7 @@ If memory and RAG disagree, treat source code/RAG-backed source snippets as the 
 5. If RAG returns no matches, low-signal matches, or missing critical details, fall back to source files and instruction files.
 6. Mention whether context came from memory, RAG results, fallback source reads, or a combination.
 7. Before finishing non-trivial tasks, persist essential project insights with `memory_store`.
+8. Before finishing non-trivial tasks, update plan progress using `update_plan` and `complete_task` where applicable.
 
 ## Fallback order
 

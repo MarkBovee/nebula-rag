@@ -24,6 +24,14 @@ Memory guidance:
 - For multi-step tasks, store multiple concise Nebula memories that capture decisions, fixes, and operational conventions.
 - Never store secret values in memory; store only secret-source references (for example `.nebula.env`).
 
+Planning guidance:
+
+- For multi-step implementation tasks, create a Nebula plan before writing code.
+- Use plan tools in this order: `create_plan` -> `get_plan`/`list_plans` -> `update_plan`/`complete_task`.
+- Keep `projectId` explicit (for example `dot-claw`, `NebulaRAG`) and use stable `sessionId` values per workstream.
+- Keep plan tasks concrete and execution-oriented (one outcome per task).
+- Before ending a non-trivial session, update plan status/task completion to reflect real progress.
+
 Agent setup baseline:
 
 - Keep `AGENTS.md`, `.github/copilot-instructions.md`, `.github/instructions/rag.instructions.md`, and `.github/skills/nebularag/SKILL.md` in target projects.
