@@ -1,9 +1,0 @@
-# Require maintainer review on all changes.
-* @MarkBovee
-
-# Security-sensitive areas.
-.github/workflows/* @MarkBovee
-SECURITY.md @MarkBovee
-src/NebulaRAG.Core/* @MarkBovee
-src/NebulaRAG.Mcp/* @MarkBovee
-nebula-rag/* @MarkBovee
