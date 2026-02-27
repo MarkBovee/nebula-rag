@@ -4,6 +4,17 @@ All notable changes to the Nebula RAG Home Assistant add-on are documented in th
 
 The format is inspired by Keep a Changelog and follows semantic versioning.
 
+## [0.3.0] - 2026-02-27
+
+- **MCP Integration**: Added comprehensive Model Context Protocol (MCP) tools for plan lifecycle management
+  - 7 MCP tool handlers: create_plan, get_plan, list_plans, update_plan, complete_task, update_task, archive_plan
+  - Session validation middleware with ownership enforcement
+  - One active plan per session constraint
+  - Robust error handling and business rule validation
+- **Service Layer**: Implemented core business logic for plan and task management
+- **Testing**: Added 31 comprehensive tests covering all MCP operations and session validation
+- **Documentation**: Updated MCP integration guide and usage examples
+
 ## [0.2.52] - 2026-02-26
 
 - Updated repository guidance references in `AGENTS.md` to consistently point to `.editorconfig` (dotfile name) instead of `editorconfig`.
