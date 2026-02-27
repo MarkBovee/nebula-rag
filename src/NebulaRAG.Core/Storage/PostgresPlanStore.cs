@@ -644,6 +644,37 @@ public sealed class PostgresPlanStore
         return history;
     }
 
+    /// <summary>
+    /// Retrieves a plan with all its tasks by plan identifier.
+    /// Convenience method combining plan and task queries.
+    /// </summary>
+    /// <param name="planId">The plan identifier.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A tuple containing the plan record and its tasks.</returns>
+    /// <exception cref="PlanNotFoundException">Thrown when the plan is not found.</exception>
+    public async Task<(PlanRecord plan, IReadOnlyList<PlanTaskRecord> tasks)> GetPlanWithTasksByIdAsync(long planId, CancellationToken cancellationToken = default)
+    {
+        var plan = await GetPlanByIdAsync(planId, cancellationToken);
+        var tasks = await GetTasksByPlanIdAsync(planId, cancellationToken);
+        return (plan, tasks);
+    }
+
+    /// <summary>
+    /// Retrieves a plan with all its tasks by project identifier and name.
+    /// Convenience method combining plan and task queries.
+    /// </summary>
+    /// <param name="projectId">The project identifier.</param>
+    /// <param name="name">The plan name.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A tuple containing the plan record and its tasks.</returns>
+    /// <exception cref="PlanNotFoundException">Thrown when the plan is not found.</exception>
+    public async Task<(PlanRecord plan, IReadOnlyList<PlanTaskRecord> tasks)> GetPlanWithTasksByProjectAndNameAsync(string projectId, string name, CancellationToken cancellationToken = default)
+    {
+        var plan = await GetPlanByProjectAndNameAsync(projectId, name, cancellationToken);
+        var tasks = await GetTasksByPlanIdAsync(plan.Id, cancellationToken);
+        return (plan, tasks);
+    }
+
     private static PlanRecord ReadPlanFromReader(NpgsqlDataReader reader)
     {
         var id = reader.GetInt64(reader.GetOrdinal("id"));
