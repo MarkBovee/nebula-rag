@@ -1,0 +1,170 @@
+@using System.Globalization
+@using NebulaRAG.AddonHost.Services
+@using NebulaRAG.Core.Models
+@inject DashboardSnapshotService SnapshotService
+
+<section class="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+    <article class="rounded-xl border border-nebula-border bg-nebula-surface p-4">
+        <p class="text-xs uppercase tracking-[0.16em] text-nebula-muted">Projects</p>
+        <p class="mt-2 text-2xl font-semibold">@_projects.Count</p>
+    </article>
+    <article class="rounded-xl border border-nebula-border bg-nebula-surface p-4">
+        <p class="text-xs uppercase tracking-[0.16em] text-nebula-muted">Plans</p>
+        <p class="mt-2 text-2xl font-semibold">@_projects.Sum(project => project.Plans.PlanCount)</p>
+    </article>
+    <article class="rounded-xl border border-nebula-border bg-nebula-surface p-4">
+        <p class="text-xs uppercase tracking-[0.16em] text-nebula-muted">Chunks</p>
+        <p class="mt-2 text-2xl font-semibold">@(_dashboardSnapshot?.Stats.ChunkCount ?? 0)</p>
+    </article>
+    <article class="rounded-xl border border-nebula-border bg-nebula-surface p-4">
+        <p class="text-xs uppercase tracking-[0.16em] text-nebula-muted">Memories</p>
+        <p class="mt-2 text-2xl font-semibold">@(_dashboardSnapshot?.MemoryStats.TotalMemories ?? 0)</p>
+    </article>
+</section>
+
+<section class="mb-6 rounded-2xl border border-nebula-border bg-nebula-surface p-4 md:p-6">
+    <div class="mb-4 flex items-center justify-between">
+        <h2 class="text-xl font-semibold">Performance Metrics</h2>
+        <span class="text-xs uppercase tracking-[0.16em] text-nebula-muted">Last @GetPerformancePoints().Count samples</span>
+    </div>
+    @RenderPerformanceCard()
+</section>
+
+<section class="rounded-2xl border border-nebula-border bg-nebula-surface p-4 md:p-6">
+    <div class="mb-4 flex items-center justify-between">
+        <h2 class="text-xl font-semibold">Project Breakdown</h2>
+        @if (_loading)
+        {
+            <span class="text-xs uppercase tracking-[0.16em] text-nebula-ok">loading</span>
+        }
+    </div>
+    <div class="overflow-x-auto">
+        <table class="w-full border-collapse text-sm">
+            <thead>
+                <tr class="text-left text-xs uppercase tracking-[0.13em] text-nebula-muted">
+                    <th class="border-b border-nebula-border px-3 py-3">Project</th>
+                    <th class="border-b border-nebula-border px-3 py-3">Plans</th>
+                    <th class="border-b border-nebula-border px-3 py-3">RAG</th>
+                    <th class="border-b border-nebula-border px-3 py-3">Memory</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var project in _projects)
+                {
+                    <tr class="align-top even:bg-white/2">
+                        <td class="border-b border-nebula-border px-3 py-3 font-medium">@project.ProjectId</td>
+                        <td class="border-b border-nebula-border px-3 py-3">@project.Plans.PlanCount plans / @project.Plans.TaskCount tasks</td>
+                        <td class="border-b border-nebula-border px-3 py-3">@project.Rag.DocumentCount docs / @project.Rag.ChunkCount chunks</td>
+                        <td class="border-b border-nebula-border px-3 py-3">@project.Memory.MemoryCount @FormatOffset(project.Memory.LastMemoryAtUtc)</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</section>
+
+@code {
+    [Parameter]
+    public long RefreshNonce { get; set; }
+
+    private readonly List<ProjectDashboardNode> _projects = new();
+    private DashboardSnapshotResponse? _dashboardSnapshot;
+    private bool _loading;
+    private long _lastRefreshNonce = -1;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_lastRefreshNonce == RefreshNonce)
+        {
+            return;
+        }
+
+        _lastRefreshNonce = RefreshNonce;
+        await RefreshAsync();
+    }
+
+    private async Task RefreshAsync()
+    {
+        _loading = true;
+        try
+        {
+            var projects = await SnapshotService.GetProjectHierarchyAsync();
+            _projects.Clear();
+            _projects.AddRange(projects);
+            _dashboardSnapshot = await SnapshotService.GetDashboardAsync();
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private RenderFragment RenderPerformanceCard() => builder =>
+    {
+        const int width = 960;
+        const int height = 220;
+        var points = GetPerformancePoints();
+
+        if (points.Count < 2)
+        {
+            builder.AddMarkupContent(0, "<p class='text-sm text-nebula-muted'>Not enough samples yet for charting.</p>");
+            return;
+        }
+
+        var maxLatency = Math.Max(1d, points.Max(point => point.QueryLatencyMs));
+        var maxIndexing = Math.Max(1d, points.Max(point => point.IndexingRateDocsPerSec));
+        var maxCpu = Math.Max(1d, points.Max(point => point.CpuUsagePercent));
+
+        var latencySeries = BuildSeriesPoints(points, point => point.QueryLatencyMs, maxLatency, width, height);
+        var indexingSeries = BuildSeriesPoints(points, point => point.IndexingRateDocsPerSec, maxIndexing, width, height);
+        var cpuSeries = BuildSeriesPoints(points, point => point.CpuUsagePercent, maxCpu, width, height);
+
+        builder.AddMarkupContent(1, $@"
+            <div class='overflow-x-auto'>
+                <svg viewBox='0 0 {width} {height}' class='w-full rounded-xl border border-nebula-border bg-nebula-bg'>
+                    <polyline fill='none' stroke='var(--nb-accent)' stroke-width='2' points='{latencySeries}' />
+                    <polyline fill='none' stroke='var(--nb-accent-2)' stroke-width='2' points='{indexingSeries}' />
+                    <polyline fill='none' stroke='var(--nb-ok)' stroke-width='2' points='{cpuSeries}' />
+                </svg>
+            </div>
+            <div class='mt-3 flex flex-wrap gap-4 text-xs text-nebula-muted'>
+                <span><span style='color:var(--nb-accent)'>Latency ms</span> max {maxLatency:F1}</span>
+                <span><span style='color:var(--nb-accent-2)'>Index docs/s</span> max {maxIndexing:F2}</span>
+                <span><span style='color:var(--nb-ok)'>CPU %</span> max {maxCpu:F1}</span>
+            </div>");
+    };
+
+    private IReadOnlyList<PerformanceMetricPoint> GetPerformancePoints()
+    {
+        return (_dashboardSnapshot?.PerformanceMetrics ?? Array.Empty<PerformanceMetricPoint>())
+            .TakeLast(180)
+            .ToList();
+    }
+
+    private static string BuildSeriesPoints(IReadOnlyList<PerformanceMetricPoint> points, Func<PerformanceMetricPoint, double> selector, double maxValue, int width, int height)
+    {
+        if (points.Count == 0)
+        {
+            return string.Empty;
+        }
+
+        var safeMax = Math.Max(1d, maxValue);
+        var stepX = points.Count == 1 ? 0d : width / (double)(points.Count - 1);
+        var mapped = points.Select((point, index) =>
+        {
+            var x = stepX * index;
+            var value = Math.Clamp(selector(point), 0d, safeMax);
+            var y = height - ((value / safeMax) * height);
+            return $"{x.ToString("F2", CultureInfo.InvariantCulture)},{y.ToString("F2", CultureInfo.InvariantCulture)}";
+        });
+
+        return string.Join(" ", mapped);
+    }
+
+    private static string FormatOffset(DateTimeOffset? value)
+    {
+        return value.HasValue
+            ? value.Value.UtcDateTime.ToString("yyyy-MM-dd HH:mm 'UTC'", CultureInfo.InvariantCulture)
+            : "n/a";
+    }
+}

@@ -1,0 +1,261 @@
+@using System.Globalization
+@using NebulaRAG.Core.Models
+@using NebulaRAG.Core.Storage
+@inject PostgresPlanStore PlanStore
+
+<section class="mb-6 grid gap-4 lg:grid-cols-2">
+    <article class="rounded-xl border border-nebula-border bg-nebula-surface p-4">
+        <h2 class="mb-3 text-lg font-semibold">List Plans By Session</h2>
+        <div class="space-y-3">
+            <input class="w-full rounded-lg border border-nebula-border bg-nebula-bg px-3 py-2" @bind="_planSessionFilter" placeholder="Session ID" />
+            <button class="rounded-lg border border-nebula-accent px-3 py-2 text-sm hover:bg-nebula-accent/20" @onclick="LoadPlansAsync">Load Plans</button>
+        </div>
+    </article>
+
+    <article class="rounded-xl border border-nebula-border bg-nebula-surface p-4">
+        <h2 class="mb-3 text-lg font-semibold">Create Plan</h2>
+        <div class="space-y-3">
+            <input class="w-full rounded-lg border border-nebula-border bg-nebula-bg px-3 py-2" @bind="_newPlanProjectId" placeholder="Project ID" />
+            <input class="w-full rounded-lg border border-nebula-border bg-nebula-bg px-3 py-2" @bind="_newPlanSessionId" placeholder="Session ID" />
+            <input class="w-full rounded-lg border border-nebula-border bg-nebula-bg px-3 py-2" @bind="_newPlanName" placeholder="Plan name" />
+            <textarea class="h-20 w-full rounded-lg border border-nebula-border bg-nebula-bg px-3 py-2" @bind="_newPlanDescription" placeholder="Description"></textarea>
+            <textarea class="h-20 w-full rounded-lg border border-nebula-border bg-nebula-bg px-3 py-2" @bind="_newPlanTasksText" placeholder="Initial tasks, one per line"></textarea>
+            <button class="rounded-lg border border-nebula-accent px-3 py-2 text-sm hover:bg-nebula-accent/20" @onclick="CreatePlanAsync">Create Plan</button>
+        </div>
+    </article>
+</section>
+
+@if (!string.IsNullOrWhiteSpace(_statusMessage))
+{
+    <section class="mb-4 rounded-xl border p-4 text-sm @(_statusIsError ? "border-amber-500/70 bg-amber-500/10" : "border-nebula-ok/70 bg-nebula-ok/10")">
+        @_statusMessage
+    </section>
+}
+
+<section class="mb-6 rounded-xl border border-nebula-border bg-nebula-surface p-4">
+    <h3 class="mb-3 text-base font-semibold">Plan Status Update</h3>
+    <div class="grid gap-3 md:grid-cols-4">
+        <input class="rounded-lg border border-nebula-border bg-nebula-bg px-3 py-2" type="number" @bind="_statusPlanId" placeholder="Plan ID" />
+        <select class="rounded-lg border border-nebula-border bg-nebula-bg px-3 py-2" @bind="_statusTarget">
+            @foreach (var status in Enum.GetValues<PlanStatus>())
+            {
+                <option value="@status">@status</option>
+            }
+        </select>
+        <input class="rounded-lg border border-nebula-border bg-nebula-bg px-3 py-2" @bind="_statusReason" placeholder="Reason" />
+        <button class="rounded-lg border border-nebula-accent px-3 py-2 text-sm hover:bg-nebula-accent/20" @onclick="UpdatePlanStatusAsync">Update Status</button>
+    </div>
+</section>
+
+<section class="mb-6 rounded-xl border border-nebula-border bg-nebula-surface p-4">
+    <h3 class="mb-3 text-base font-semibold">Plan Tasks</h3>
+    <div class="mb-3 flex flex-wrap gap-2">
+        <input class="rounded-lg border border-nebula-border bg-nebula-bg px-3 py-2" type="number" @bind="_selectedPlanId" placeholder="Plan ID" />
+        <button class="rounded-lg border border-nebula-accent px-3 py-2 text-sm hover:bg-nebula-accent/20" @onclick="LoadSelectedPlanTasksAsync">Load Tasks</button>
+    </div>
+    <div class="overflow-x-auto">
+        <table class="w-full border-collapse text-sm">
+            <thead>
+                <tr class="text-left text-xs uppercase tracking-[0.12em] text-nebula-muted">
+                    <th class="border-b border-nebula-border px-3 py-2">Task ID</th>
+                    <th class="border-b border-nebula-border px-3 py-2">Title</th>
+                    <th class="border-b border-nebula-border px-3 py-2">Status</th>
+                    <th class="border-b border-nebula-border px-3 py-2">Priority</th>
+                    <th class="border-b border-nebula-border px-3 py-2">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var task in _selectedPlanTasks)
+                {
+                    <tr>
+                        <td class="border-b border-nebula-border px-3 py-2">@task.Id</td>
+                        <td class="border-b border-nebula-border px-3 py-2">@task.Title</td>
+                        <td class="border-b border-nebula-border px-3 py-2">@task.Status</td>
+                        <td class="border-b border-nebula-border px-3 py-2">@task.Priority</td>
+                        <td class="border-b border-nebula-border px-3 py-2">
+                            @if (task.Status != NebulaRAG.Core.Models.TaskStatus.Completed)
+                            {
+                                <button class="rounded border border-nebula-accent px-2 py-1 text-xs" @onclick="() => CompleteTaskAsync(task.Id)">Complete</button>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<section class="rounded-xl border border-nebula-border bg-nebula-surface p-4">
+    <h3 class="mb-3 text-base font-semibold">Plans</h3>
+    <div class="overflow-x-auto">
+        <table class="w-full border-collapse text-sm">
+            <thead>
+                <tr class="text-left text-xs uppercase tracking-[0.12em] text-nebula-muted">
+                    <th class="border-b border-nebula-border px-3 py-2">Id</th>
+                    <th class="border-b border-nebula-border px-3 py-2">Project</th>
+                    <th class="border-b border-nebula-border px-3 py-2">Name</th>
+                    <th class="border-b border-nebula-border px-3 py-2">Status</th>
+                    <th class="border-b border-nebula-border px-3 py-2">Updated</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var plan in _plans)
+                {
+                    <tr>
+                        <td class="border-b border-nebula-border px-3 py-2">@plan.Id</td>
+                        <td class="border-b border-nebula-border px-3 py-2">@plan.ProjectId</td>
+                        <td class="border-b border-nebula-border px-3 py-2">@plan.Name</td>
+                        <td class="border-b border-nebula-border px-3 py-2">@plan.Status</td>
+                        <td class="border-b border-nebula-border px-3 py-2">@plan.UpdatedAt.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</section>
+
+@code {
+    [Parameter]
+    public long RefreshNonce { get; set; }
+
+    private readonly List<PlanRecord> _plans = new();
+    private readonly List<PlanTaskRecord> _selectedPlanTasks = new();
+    private long _lastRefreshNonce = -1;
+    private bool _statusIsError;
+    private string? _statusMessage;
+    private string _planSessionFilter = "dashboard-session";
+    private string _newPlanProjectId = "NebulaRAG";
+    private string _newPlanSessionId = "dashboard-session";
+    private string _newPlanName = string.Empty;
+    private string _newPlanDescription = string.Empty;
+    private string _newPlanTasksText = string.Empty;
+    private long _selectedPlanId;
+    private long _statusPlanId;
+    private PlanStatus _statusTarget = PlanStatus.Active;
+    private string _statusReason = "Updated from dashboard";
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_lastRefreshNonce == RefreshNonce)
+        {
+            return;
+        }
+
+        _lastRefreshNonce = RefreshNonce;
+        await LoadPlansAsync();
+    }
+
+    private async Task LoadPlansAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_planSessionFilter))
+        {
+            SetStatus("Session ID is required to list plans.", isError: true);
+            return;
+        }
+
+        try
+        {
+            var plans = await PlanStore.ListPlansBySessionAsync(_planSessionFilter.Trim());
+            _plans.Clear();
+            _plans.AddRange(plans);
+            SetStatus($"Loaded {_plans.Count} plans.");
+        }
+        catch (Exception exception)
+        {
+            SetStatus($"Load plans failed: {exception.Message}", isError: true);
+        }
+    }
+
+    private async Task CreatePlanAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_newPlanProjectId) || string.IsNullOrWhiteSpace(_newPlanSessionId) || string.IsNullOrWhiteSpace(_newPlanName))
+        {
+            SetStatus("Project ID, Session ID, and Plan Name are required.", isError: true);
+            return;
+        }
+
+        try
+        {
+            var taskRows = _newPlanTasksText
+                .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(task => new CreateTaskRequest(task, null, "medium", "dashboard-ui"))
+                .ToList();
+
+            var request = new CreatePlanRequest(_newPlanProjectId.Trim(), _newPlanSessionId.Trim(), _newPlanName.Trim(), NormalizeOptional(_newPlanDescription), taskRows, "dashboard-ui");
+            var created = await PlanStore.CreatePlanAsync(request);
+            SetStatus($"Plan created: {created.planId} with {created.taskIds.Count} tasks.");
+            _planSessionFilter = _newPlanSessionId.Trim();
+            await LoadPlansAsync();
+        }
+        catch (Exception exception)
+        {
+            SetStatus($"Create plan failed: {exception.Message}", isError: true);
+        }
+    }
+
+    private async Task UpdatePlanStatusAsync()
+    {
+        if (_statusPlanId <= 0)
+        {
+            SetStatus("Plan ID is required for status update.", isError: true);
+            return;
+        }
+
+        try
+        {
+            await PlanStore.UpdatePlanStatusAsync(_statusPlanId, _statusTarget, "dashboard-ui", NormalizeOptional(_statusReason));
+            SetStatus($"Plan {_statusPlanId} moved to {_statusTarget}.");
+            await LoadPlansAsync();
+        }
+        catch (Exception exception)
+        {
+            SetStatus($"Update status failed: {exception.Message}", isError: true);
+        }
+    }
+
+    private async Task LoadSelectedPlanTasksAsync()
+    {
+        if (_selectedPlanId <= 0)
+        {
+            SetStatus("Plan ID is required to load tasks.", isError: true);
+            return;
+        }
+
+        try
+        {
+            var planWithTasks = await PlanStore.GetPlanWithTasksByIdAsync(_selectedPlanId);
+            _selectedPlanTasks.Clear();
+            _selectedPlanTasks.AddRange(planWithTasks.tasks);
+            SetStatus($"Loaded {_selectedPlanTasks.Count} tasks for plan {_selectedPlanId}.");
+        }
+        catch (Exception exception)
+        {
+            SetStatus($"Load tasks failed: {exception.Message}", isError: true);
+        }
+    }
+
+    private async Task CompleteTaskAsync(long taskId)
+    {
+        try
+        {
+            await PlanStore.CompleteTaskAsync(taskId, "dashboard-ui", "Completed from dashboard");
+            SetStatus($"Task {taskId} marked completed.");
+            await LoadSelectedPlanTasksAsync();
+        }
+        catch (Exception exception)
+        {
+            SetStatus($"Complete task failed: {exception.Message}", isError: true);
+        }
+    }
+
+    private void SetStatus(string message, bool isError = false)
+    {
+        _statusMessage = message;
+        _statusIsError = isError;
+    }
+
+    private static string? NormalizeOptional(string value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+    }
+}

@@ -1,14 +1,8 @@
-@page "/"
-@page "/dashboard"
-@page "/dashboard/"
 @page "/{*ingressPath:nonfile}"
 @rendermode InteractiveServer
-@using NebulaRAG.AddonHost.Services
-@using NebulaRAG.Core.Models
 @implements IAsyncDisposable
-@inject DashboardSnapshotService SnapshotService
 
-<PageTitle>Nebula Dashboard</PageTitle>
+<PageTitle>Nebula Management</PageTitle>
 
 <div class="min-h-screen bg-nebula-bg text-nebula-text">
     <div class="mx-auto max-w-7xl px-4 py-6 md:px-8 md:py-10">
@@ -16,8 +10,8 @@
             <div class="flex flex-wrap items-start justify-between gap-4">
                 <div>
                     <p class="text-xs uppercase tracking-[0.24em] text-nebula-muted">NebulaRAG</p>
-                    <h1 class="mt-1 text-3xl font-semibold md:text-4xl">Project Dashboard</h1>
-                    <p class="mt-2 text-sm text-nebula-muted">Structuur: <span class="font-medium text-nebula-text">projects -> plans / rag / memory</span></p>
+                    <h1 class="mt-1 text-3xl font-semibold md:text-4xl">Management Dashboard</h1>
+                    <p class="mt-2 text-sm text-nebula-muted">Operational tabs for RAG, memory, plans, and telemetry.</p>
                 </div>
                 <button class="rounded-lg border border-nebula-accent px-4 py-2 text-sm font-medium text-nebula-text transition hover:bg-nebula-accent/20" @onclick="RefreshAsync">
                     Refresh
@@ -25,99 +19,61 @@
             </div>
         </section>
 
-        @if (!string.IsNullOrWhiteSpace(_error))
+        <section class="mb-6 flex flex-wrap gap-2 rounded-xl border border-nebula-border bg-nebula-surface p-2">
+            @foreach (var tab in _tabs)
+            {
+                <button class="rounded-lg px-4 py-2 text-sm font-medium transition @GetTabClass(tab)" @onclick="() => _activeTab = tab">
+                    @tab
+                </button>
+            }
+        </section>
+
+        @if (_activeTab == DashboardTab.Overview)
         {
-            <section class="mb-6 rounded-xl border border-red-500/60 bg-red-500/10 p-4 text-sm">
-                @_error
-            </section>
+            <OverviewManagementTab RefreshNonce="@_refreshNonce" />
         }
 
-        <section class="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            <article class="rounded-xl border border-nebula-border bg-nebula-surface p-4">
-                <p class="text-xs uppercase tracking-[0.16em] text-nebula-muted">Projects</p>
-                <p class="mt-2 text-2xl font-semibold">@_projects.Count</p>
-            </article>
-            <article class="rounded-xl border border-nebula-border bg-nebula-surface p-4">
-                <p class="text-xs uppercase tracking-[0.16em] text-nebula-muted">Plans</p>
-                <p class="mt-2 text-2xl font-semibold">@_projects.Sum(project => project.Plans.PlanCount)</p>
-            </article>
-            <article class="rounded-xl border border-nebula-border bg-nebula-surface p-4">
-                <p class="text-xs uppercase tracking-[0.16em] text-nebula-muted">RAG Chunks</p>
-                <p class="mt-2 text-2xl font-semibold">@_projects.Sum(project => project.Rag.ChunkCount)</p>
-            </article>
-            <article class="rounded-xl border border-nebula-border bg-nebula-surface p-4">
-                <p class="text-xs uppercase tracking-[0.16em] text-nebula-muted">Memories</p>
-                <p class="mt-2 text-2xl font-semibold">@_projects.Sum(project => project.Memory.MemoryCount)</p>
-            </article>
-        </section>
+        @if (_activeTab == DashboardTab.Rag)
+        {
+            <RagManagementTab RefreshNonce="@_refreshNonce" />
+        }
 
-        <section class="rounded-2xl border border-nebula-border bg-nebula-surface p-4 md:p-6">
-            <div class="mb-4 flex items-center justify-between">
-                <h2 class="text-xl font-semibold">Per Project</h2>
-                @if (_loading)
-                {
-                    <span class="text-xs uppercase tracking-[0.16em] text-nebula-ok">laden</span>
-                }
-            </div>
+        @if (_activeTab == DashboardTab.Memory)
+        {
+            <MemoryManagementTab RefreshNonce="@_refreshNonce" />
+        }
 
-            <div class="overflow-x-auto">
-                <table class="w-full border-collapse text-sm">
-                    <thead>
-                        <tr class="text-left text-xs uppercase tracking-[0.13em] text-nebula-muted">
-                            <th class="border-b border-nebula-border px-3 py-3">Project</th>
-                            <th class="border-b border-nebula-border px-3 py-3">Plans</th>
-                            <th class="border-b border-nebula-border px-3 py-3">RAG</th>
-                            <th class="border-b border-nebula-border px-3 py-3">Memory</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @if (_projects.Count == 0 && !_loading)
-                        {
-                            <tr>
-                                <td class="px-3 py-4 text-nebula-muted" colspan="4">Geen projectdata gevonden.</td>
-                            </tr>
-                        }
-                        else
-                        {
-                            foreach (var project in _projects)
-                            {
-                                <tr class="align-top even:bg-white/2">
-                                    <td class="border-b border-nebula-border px-3 py-3 font-medium">@project.ProjectId</td>
-                                    <td class="border-b border-nebula-border px-3 py-3">
-                                        <p>@project.Plans.PlanCount totaal</p>
-                                        <p class="text-nebula-muted">@project.Plans.ActivePlanCount actief, @project.Plans.TaskCount taken</p>
-                                    </td>
-                                    <td class="border-b border-nebula-border px-3 py-3">
-                                        <p>@project.Rag.DocumentCount docs, @project.Rag.ChunkCount chunks</p>
-                                        <p class="text-nebula-muted">@project.Rag.TotalTokens tokens</p>
-                                    </td>
-                                    <td class="border-b border-nebula-border px-3 py-3">
-                                        <p>@project.Memory.MemoryCount items</p>
-                                        <p class="text-nebula-muted">@FormatOffset(project.Memory.LastMemoryAtUtc)</p>
-                                    </td>
-                                </tr>
-                            }
-                        }
-                    </tbody>
-                </table>
-            </div>
-        </section>
+        @if (_activeTab == DashboardTab.Plans)
+        {
+            <PlansManagementTab RefreshNonce="@_refreshNonce" />
+        }
     </div>
 </div>
 
 @code {
-    private readonly List<ProjectDashboardNode> _projects = new();
+    [Parameter]
+    public string? IngressPath { get; set; }
+
+    private enum DashboardTab
+    {
+        Overview,
+        Rag,
+        Memory,
+        Plans
+    }
+
+    private readonly DashboardTab[] _tabs = [DashboardTab.Overview, DashboardTab.Rag, DashboardTab.Memory, DashboardTab.Plans];
     private PeriodicTimer? _refreshTimer;
     private CancellationTokenSource? _refreshCancellation;
-    private bool _loading;
-    private string? _error;
+    private DashboardTab _activeTab = DashboardTab.Overview;
+    private long _refreshNonce = 1;
 
     protected override async Task OnInitializedAsync()
     {
         _refreshCancellation = new CancellationTokenSource();
         _refreshTimer = new PeriodicTimer(TimeSpan.FromSeconds(20));
         _ = RunRefreshLoopAsync(_refreshCancellation.Token);
-        await RefreshAsync();
+        _refreshNonce++;
     }
 
     private async Task RunRefreshLoopAsync(CancellationToken cancellationToken)
@@ -131,7 +87,7 @@
         {
             while (await _refreshTimer.WaitForNextTickAsync(cancellationToken))
             {
-                await InvokeAsync(RefreshAsync);
+                await InvokeAsync(TriggerRefresh);
             }
         }
         catch (OperationCanceledException)
@@ -139,31 +95,23 @@
         }
     }
 
-    private async Task RefreshAsync()
+    private Task RefreshAsync()
     {
-        _loading = true;
-        _error = null;
-
-        try
-        {
-            var projects = await SnapshotService.GetProjectHierarchyAsync();
-            _projects.Clear();
-            _projects.AddRange(projects);
-        }
-        catch (Exception exception)
-        {
-            _error = $"Dashboard data kon niet geladen worden: {exception.Message}";
-        }
-        finally
-        {
-            _loading = false;
-            StateHasChanged();
-        }
+        TriggerRefresh();
+        return Task.CompletedTask;
     }
 
-    private static string FormatOffset(DateTimeOffset? value)
+    private string GetTabClass(DashboardTab tab)
     {
-        return value.HasValue ? value.Value.UtcDateTime.ToString("yyyy-MM-dd HH:mm 'UTC'") : "n/a";
+        return _activeTab == tab
+            ? "border border-nebula-accent bg-nebula-accent/20 text-nebula-text"
+            : "border border-transparent text-nebula-muted hover:border-nebula-border hover:text-nebula-text";
+    }
+
+    private void TriggerRefresh()
+    {
+        _refreshNonce++;
+        StateHasChanged();
     }
 
     public async ValueTask DisposeAsync()

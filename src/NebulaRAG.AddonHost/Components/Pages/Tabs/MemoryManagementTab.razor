@@ -1,0 +1,347 @@
+@using System.Globalization
+@using NebulaRAG.Core.Configuration
+@using NebulaRAG.Core.Embeddings
+@using NebulaRAG.Core.Models
+@using NebulaRAG.Core.Services
+@using NebulaRAG.Core.Storage
+@inject RagManagementService ManagementService
+@inject PostgresRagStore RagStore
+@inject IEmbeddingGenerator EmbeddingGenerator
+@inject RagSettings Settings
+
+<section class="mb-6 grid gap-4 lg:grid-cols-2">
+    <article class="rounded-xl border border-nebula-border bg-nebula-surface p-4">
+        <h2 class="mb-3 text-lg font-semibold">Create Memory</h2>
+        <div class="space-y-3">
+            <input class="w-full rounded-lg border border-nebula-border bg-nebula-bg px-3 py-2" @bind="_memorySessionId" placeholder="Session ID (optional)" />
+            <input class="w-full rounded-lg border border-nebula-border bg-nebula-bg px-3 py-2" @bind="_memoryProjectId" placeholder="Project ID (optional)" />
+            <select class="w-full rounded-lg border border-nebula-border bg-nebula-bg px-3 py-2" @bind="_memoryType">
+                <option value="episodic">episodic</option>
+                <option value="semantic">semantic</option>
+                <option value="procedural">procedural</option>
+            </select>
+            <input class="w-full rounded-lg border border-nebula-border bg-nebula-bg px-3 py-2" @bind="_memoryTagsText" placeholder="Comma tags" />
+            <textarea class="h-24 w-full rounded-lg border border-nebula-border bg-nebula-bg px-3 py-2" @bind="_memoryContent" placeholder="Memory content"></textarea>
+            <button class="rounded-lg border border-nebula-accent px-3 py-2 text-sm hover:bg-nebula-accent/20" @onclick="CreateMemoryAsync">Create Memory</button>
+        </div>
+    </article>
+
+    <article class="rounded-xl border border-nebula-border bg-nebula-surface p-4">
+        <h2 class="mb-3 text-lg font-semibold">Search Memories</h2>
+        <div class="space-y-3">
+            <input class="w-full rounded-lg border border-nebula-border bg-nebula-bg px-3 py-2" @bind="_memorySearchText" placeholder="Semantic search text" />
+            <input class="w-full rounded-lg border border-nebula-border bg-nebula-bg px-3 py-2" type="number" min="1" max="100" @bind="_memorySearchLimit" />
+            <button class="rounded-lg border border-nebula-accent px-3 py-2 text-sm hover:bg-nebula-accent/20" @onclick="SearchMemoriesAsync">Search</button>
+        </div>
+    </article>
+</section>
+
+@if (!string.IsNullOrWhiteSpace(_statusMessage))
+{
+    <section class="mb-4 rounded-xl border p-4 text-sm @(_statusIsError ? "border-amber-500/70 bg-amber-500/10" : "border-nebula-ok/70 bg-nebula-ok/10")">
+        @_statusMessage
+    </section>
+}
+
+<section class="mb-6 rounded-xl border border-nebula-border bg-nebula-surface p-4">
+    <h3 class="mb-3 text-base font-semibold">Memory Filters</h3>
+    <div class="grid gap-3 md:grid-cols-5">
+        <select class="rounded-lg border border-nebula-border bg-nebula-bg px-3 py-2" @bind="_memoryScope">
+            <option value="global">global</option>
+            <option value="project">project</option>
+            <option value="session">session</option>
+        </select>
+        <input class="rounded-lg border border-nebula-border bg-nebula-bg px-3 py-2" @bind="_memoryScopeProjectId" placeholder="Scope projectId" />
+        <input class="rounded-lg border border-nebula-border bg-nebula-bg px-3 py-2" @bind="_memoryScopeSessionId" placeholder="Scope sessionId" />
+        <input class="rounded-lg border border-nebula-border bg-nebula-bg px-3 py-2" @bind="_memoryListTag" placeholder="Tag filter" />
+        <button class="rounded-lg border border-nebula-accent px-3 py-2 text-sm hover:bg-nebula-accent/20" @onclick="LoadMemoriesAsync">Load</button>
+    </div>
+</section>
+
+<section class="mb-6 rounded-xl border border-nebula-border bg-nebula-surface p-4">
+    <h3 class="mb-3 text-base font-semibold">Edit Memory</h3>
+    <div class="grid gap-3 md:grid-cols-2">
+        <input class="rounded-lg border border-nebula-border bg-nebula-bg px-3 py-2" type="number" @bind="_editMemoryId" placeholder="Memory ID" />
+        <select class="rounded-lg border border-nebula-border bg-nebula-bg px-3 py-2" @bind="_editMemoryType">
+            <option value="episodic">episodic</option>
+            <option value="semantic">semantic</option>
+            <option value="procedural">procedural</option>
+        </select>
+        <input class="rounded-lg border border-nebula-border bg-nebula-bg px-3 py-2 md:col-span-2" @bind="_editMemoryTagsText" placeholder="Comma tags" />
+        <textarea class="h-24 rounded-lg border border-nebula-border bg-nebula-bg px-3 py-2 md:col-span-2" @bind="_editMemoryContent" placeholder="Updated memory content"></textarea>
+        <button class="rounded-lg border border-nebula-accent px-3 py-2 text-sm hover:bg-nebula-accent/20" @onclick="UpdateMemoryAsync">Update</button>
+        <button class="rounded-lg border border-red-500 px-3 py-2 text-sm hover:bg-red-500/20" @onclick="OpenDeleteEditorConfirm">Delete</button>
+    </div>
+</section>
+
+<section class="mb-6 rounded-xl border border-nebula-border bg-nebula-surface p-4">
+    <h3 class="mb-3 text-base font-semibold">Memory Search Results</h3>
+    <div class="overflow-x-auto">
+        <table class="w-full border-collapse text-sm">
+            <thead>
+                <tr class="text-left text-xs uppercase tracking-[0.12em] text-nebula-muted">
+                    <th class="border-b border-nebula-border px-3 py-2">Id</th>
+                    <th class="border-b border-nebula-border px-3 py-2">Score</th>
+                    <th class="border-b border-nebula-border px-3 py-2">Type</th>
+                    <th class="border-b border-nebula-border px-3 py-2">Content</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var row in _memorySearchResults)
+                {
+                    <tr>
+                        <td class="border-b border-nebula-border px-3 py-2">@row.Id</td>
+                        <td class="border-b border-nebula-border px-3 py-2">@row.Score.ToString("F3", CultureInfo.InvariantCulture)</td>
+                        <td class="border-b border-nebula-border px-3 py-2">@row.Type</td>
+                        <td class="border-b border-nebula-border px-3 py-2">@TrimText(row.Content, 120)</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<section class="rounded-xl border border-nebula-border bg-nebula-surface p-4">
+    <h3 class="mb-3 text-base font-semibold">Memory Records</h3>
+    <div class="overflow-x-auto">
+        <table class="w-full border-collapse text-sm">
+            <thead>
+                <tr class="text-left text-xs uppercase tracking-[0.12em] text-nebula-muted">
+                    <th class="border-b border-nebula-border px-3 py-2">Id</th>
+                    <th class="border-b border-nebula-border px-3 py-2">Session/Project</th>
+                    <th class="border-b border-nebula-border px-3 py-2">Type</th>
+                    <th class="border-b border-nebula-border px-3 py-2">Content</th>
+                    <th class="border-b border-nebula-border px-3 py-2">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var memory in _memories)
+                {
+                    <tr>
+                        <td class="border-b border-nebula-border px-3 py-2">@memory.Id</td>
+                        <td class="border-b border-nebula-border px-3 py-2">@memory.SessionId / @memory.ProjectId</td>
+                        <td class="border-b border-nebula-border px-3 py-2">@memory.Type</td>
+                        <td class="border-b border-nebula-border px-3 py-2">@TrimText(memory.Content, 140)</td>
+                        <td class="border-b border-nebula-border px-3 py-2">
+                            <button class="mr-2 rounded border border-nebula-accent px-2 py-1 text-xs" @onclick="() => LoadMemoryIntoEditor(memory)">Edit</button>
+                            <button class="rounded border border-red-500 px-2 py-1 text-xs" @onclick="() => OpenDeleteRowConfirm(memory.Id)">Delete</button>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<ConfirmationModal IsOpen="@_showDeleteMemoryConfirm" Title="Delete Memory" Message="Delete selected memory entry permanently?" OnConfirm="ConfirmDeleteMemoryAsync" OnCancel="CloseDeleteConfirm" />
+
+@code {
+    [Parameter]
+    public long RefreshNonce { get; set; }
+
+    private readonly List<MemoryRecord> _memories = new();
+    private readonly List<MemorySearchResult> _memorySearchResults = new();
+    private long _lastRefreshNonce = -1;
+    private bool _statusIsError;
+    private bool _showDeleteMemoryConfirm;
+    private long _pendingDeleteMemoryId;
+    private string? _statusMessage;
+    private string _memorySessionId = string.Empty;
+    private string _memoryProjectId = string.Empty;
+    private string _memoryType = "semantic";
+    private string _memoryTagsText = string.Empty;
+    private string _memoryContent = string.Empty;
+    private string _memorySearchText = string.Empty;
+    private int _memorySearchLimit = 20;
+    private string _memoryScope = "global";
+    private string _memoryScopeSessionId = string.Empty;
+    private string _memoryScopeProjectId = string.Empty;
+    private string _memoryListTag = string.Empty;
+    private long _editMemoryId;
+    private string _editMemoryType = "semantic";
+    private string _editMemoryTagsText = string.Empty;
+    private string _editMemoryContent = string.Empty;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_lastRefreshNonce == RefreshNonce)
+        {
+            return;
+        }
+
+        _lastRefreshNonce = RefreshNonce;
+        await LoadMemoriesAsync();
+    }
+
+    private async Task CreateMemoryAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_memoryContent))
+        {
+            SetStatus("Memory content is required.", isError: true);
+            return;
+        }
+
+        try
+        {
+            var tags = ParseTags(_memoryTagsText);
+            var embedding = EmbeddingGenerator.GenerateEmbedding(_memoryContent.Trim(), Settings.Ingestion.VectorDimensions);
+            var id = await RagStore.CreateMemoryAsync(
+                sessionId: NormalizeOptional(_memorySessionId),
+                projectId: NormalizeOptional(_memoryProjectId),
+                type: _memoryType,
+                content: _memoryContent.Trim(),
+                tags: tags,
+                embedding: embedding);
+            SetStatus($"Memory created with id {id}.");
+            await LoadMemoriesAsync();
+        }
+        catch (Exception exception)
+        {
+            SetStatus($"Create memory failed: {exception.Message}", isError: true);
+        }
+    }
+
+    private async Task LoadMemoriesAsync()
+    {
+        try
+        {
+            var scopeSession = _memoryScope == "session" ? NormalizeOptional(_memoryScopeSessionId) : null;
+            var scopeProject = _memoryScope == "project" ? NormalizeOptional(_memoryScopeProjectId) : null;
+            var memories = await ManagementService.ListMemoriesAsync(limit: 300, tag: NormalizeOptional(_memoryListTag), sessionId: scopeSession, projectId: scopeProject);
+            _memories.Clear();
+            _memories.AddRange(memories);
+            SetStatus($"Loaded {_memories.Count} memories.");
+        }
+        catch (Exception exception)
+        {
+            SetStatus($"Load memories failed: {exception.Message}", isError: true);
+        }
+    }
+
+    private async Task SearchMemoriesAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_memorySearchText))
+        {
+            SetStatus("Memory search text is required.", isError: true);
+            return;
+        }
+
+        try
+        {
+            var results = await ManagementService.SearchMemoriesAsync(_memorySearchText.Trim(), Math.Clamp(_memorySearchLimit, 1, 100));
+            _memorySearchResults.Clear();
+            _memorySearchResults.AddRange(results);
+            SetStatus($"Memory search returned {_memorySearchResults.Count} rows.");
+        }
+        catch (Exception exception)
+        {
+            SetStatus($"Memory search failed: {exception.Message}", isError: true);
+        }
+    }
+
+    private void LoadMemoryIntoEditor(MemoryRecord memory)
+    {
+        _editMemoryId = memory.Id;
+        _editMemoryType = memory.Type;
+        _editMemoryContent = memory.Content;
+        _editMemoryTagsText = string.Join(",", memory.Tags);
+    }
+
+    private async Task UpdateMemoryAsync()
+    {
+        if (_editMemoryId <= 0)
+        {
+            SetStatus("Memory id is required for update.", isError: true);
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(_editMemoryContent))
+        {
+            SetStatus("Updated content cannot be empty.", isError: true);
+            return;
+        }
+
+        try
+        {
+            var updatedTags = ParseTags(_editMemoryTagsText);
+            var embedding = EmbeddingGenerator.GenerateEmbedding(_editMemoryContent.Trim(), Settings.Ingestion.VectorDimensions);
+            var updated = await RagStore.UpdateMemoryAsync(_editMemoryId, _editMemoryType, _editMemoryContent.Trim(), updatedTags, embedding);
+            SetStatus(updated ? $"Memory {_editMemoryId} updated." : $"Memory {_editMemoryId} was not found.", isError: !updated);
+            await LoadMemoriesAsync();
+        }
+        catch (Exception exception)
+        {
+            SetStatus($"Update memory failed: {exception.Message}", isError: true);
+        }
+    }
+
+    private void OpenDeleteEditorConfirm()
+    {
+        if (_editMemoryId <= 0)
+        {
+            SetStatus("Memory id is required for delete.", isError: true);
+            return;
+        }
+
+        _pendingDeleteMemoryId = _editMemoryId;
+        _showDeleteMemoryConfirm = true;
+    }
+
+    private void OpenDeleteRowConfirm(long memoryId)
+    {
+        _pendingDeleteMemoryId = memoryId;
+        _showDeleteMemoryConfirm = true;
+    }
+
+    private async Task ConfirmDeleteMemoryAsync()
+    {
+        try
+        {
+            var deleted = await RagStore.DeleteMemoryAsync(_pendingDeleteMemoryId);
+            SetStatus(deleted ? $"Memory {_pendingDeleteMemoryId} deleted." : $"Memory {_pendingDeleteMemoryId} was not found.", isError: !deleted);
+            await LoadMemoriesAsync();
+        }
+        catch (Exception exception)
+        {
+            SetStatus($"Delete memory failed: {exception.Message}", isError: true);
+        }
+        finally
+        {
+            CloseDeleteConfirm();
+        }
+    }
+
+    private void CloseDeleteConfirm()
+    {
+        _showDeleteMemoryConfirm = false;
+        _pendingDeleteMemoryId = 0;
+    }
+
+    private void SetStatus(string message, bool isError = false)
+    {
+        _statusMessage = message;
+        _statusIsError = isError;
+    }
+
+    private static IReadOnlyList<string> ParseTags(string rawTags)
+    {
+        return rawTags.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private static string? NormalizeOptional(string value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+    }
+
+    private static string TrimText(string value, int maxLength)
+    {
+        if (string.IsNullOrWhiteSpace(value) || value.Length <= maxLength)
+        {
+            return value;
+        }
+
+        return $"{value[..maxLength]}...";
+    }
+}

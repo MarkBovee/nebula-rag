@@ -105,6 +105,7 @@ app.UseStaticFiles(new StaticFileOptions
         context.Context.Response.Headers["Expires"] = "0";
     }
 });
+app.UseAntiforgery();
 app.MapControllers();
 app.MapRazorComponents<NebulaRAG.AddonHost.Components.App>().AddInteractiveServerRenderMode();
 

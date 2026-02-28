@@ -4,6 +4,25 @@ All notable changes to the Nebula RAG Home Assistant add-on are documented in th
 
 The format is inspired by Keep a Changelog and follows semantic versioning.
 
+## [0.3.12] - 2026-02-28
+
+- Refactored dashboard page orchestration by splitting tab UIs into dedicated Blazor components (`OverviewManagementTab`, `RagManagementTab`, `MemoryManagementTab`, `PlansManagementTab`) and reducing `Dashboard.razor` to a tab host.
+- Added reusable confirmation modal component for destructive operations and wired confirmation flows for RAG purge/source-delete and memory delete actions.
+- Kept live operational behavior intact while improving dashboard maintainability through component boundaries and per-tab state management.
+
+## [0.3.11] - 2026-02-28
+
+- Rebuilt the Blazor dashboard into a tabbed management console with category tabs: `Overview`, `RAG`, `Memory`, and `Plans`.
+- Added RAG operations to the dashboard: semantic query execution, source indexing, source deletion, and full index purge controls.
+- Added memory operations to the dashboard: create, list/filter, semantic search, update, and delete flows against the live PostgreSQL memory store.
+- Added plan/task operations to the dashboard: session-scoped plan listing, plan creation with initial tasks, plan status updates, task listing by plan, and task completion actions.
+- Added in-dashboard performance graphing by plotting runtime query latency, indexing throughput, and CPU usage from sampled telemetry points.
+
+## [0.3.10] - 2026-02-28
+
+- Fixed Home Assistant dashboard 500 errors caused by ambiguous Blazor page route matching by consolidating dashboard routing to a single catch-all non-file route.
+- Fixed dashboard rendering failures by adding missing anti-forgery middleware and catch-all route parameter binding required by interactive server rendering.
+
 ## [0.3.9] - 2026-02-28
 
 - Fixed Home Assistant ingress 404 behavior for the Blazor dashboard by making the app base href path-base aware (`<base href="~/">`).

@@ -1,0 +1,240 @@
+@using System.Globalization
+@using NebulaRAG.AddonHost.Services
+@using NebulaRAG.Core.Models
+@using NebulaRAG.Core.Services
+@inject DashboardSnapshotService SnapshotService
+@inject RagQueryService QueryService
+@inject RagManagementService ManagementService
+@inject RagIndexer Indexer
+
+<section class="mb-6 grid gap-4 lg:grid-cols-2">
+    <article class="rounded-xl border border-nebula-border bg-nebula-surface p-4">
+        <h2 class="mb-3 text-lg font-semibold">Semantic Search</h2>
+        <div class="space-y-3">
+            <input class="w-full rounded-lg border border-nebula-border bg-nebula-bg px-3 py-2" @bind="_queryText" placeholder="Search query" />
+            <input class="w-full rounded-lg border border-nebula-border bg-nebula-bg px-3 py-2" type="number" min="1" max="20" @bind="_queryLimit" />
+            <button class="rounded-lg border border-nebula-accent px-3 py-2 text-sm hover:bg-nebula-accent/20" @onclick="RunQueryAsync">Run Query</button>
+        </div>
+    </article>
+
+    <article class="rounded-xl border border-nebula-border bg-nebula-surface p-4">
+        <h2 class="mb-3 text-lg font-semibold">Index & Maintenance</h2>
+        <div class="space-y-3">
+            <input class="w-full rounded-lg border border-nebula-border bg-nebula-bg px-3 py-2" @bind="_indexPath" placeholder="Source path to index" />
+            <button class="rounded-lg border border-nebula-accent px-3 py-2 text-sm hover:bg-nebula-accent/20" @onclick="IndexSourceAsync">Index Path</button>
+            <input class="w-full rounded-lg border border-nebula-border bg-nebula-bg px-3 py-2" @bind="_deleteSourcePath" placeholder="Exact source path to delete" />
+            <button class="rounded-lg border border-amber-500 px-3 py-2 text-sm hover:bg-amber-500/20" @onclick="OpenDeleteSourceConfirm">Delete Source</button>
+            <button class="rounded-lg border border-red-500 px-3 py-2 text-sm hover:bg-red-500/20" @onclick="OpenPurgeConfirm">Purge All</button>
+        </div>
+    </article>
+</section>
+
+@if (!string.IsNullOrWhiteSpace(_statusMessage))
+{
+    <section class="mb-4 rounded-xl border p-4 text-sm @(_statusIsError ? "border-amber-500/70 bg-amber-500/10" : "border-nebula-ok/70 bg-nebula-ok/10")">
+        @_statusMessage
+    </section>
+}
+
+<section class="mb-6 rounded-xl border border-nebula-border bg-nebula-surface p-4">
+    <h3 class="mb-3 text-base font-semibold">Query Results</h3>
+    <div class="overflow-x-auto">
+        <table class="w-full border-collapse text-sm">
+            <thead>
+                <tr class="text-left text-xs uppercase tracking-[0.12em] text-nebula-muted">
+                    <th class="border-b border-nebula-border px-3 py-2">Source</th>
+                    <th class="border-b border-nebula-border px-3 py-2">Score</th>
+                    <th class="border-b border-nebula-border px-3 py-2">Snippet</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var match in _queryResults)
+                {
+                    <tr>
+                        <td class="border-b border-nebula-border px-3 py-2">@match.SourcePath</td>
+                        <td class="border-b border-nebula-border px-3 py-2">@match.Score.ToString("F3", CultureInfo.InvariantCulture)</td>
+                        <td class="border-b border-nebula-border px-3 py-2">@TrimText(match.ChunkText, 180)</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<section class="rounded-xl border border-nebula-border bg-nebula-surface p-4">
+    <h3 class="mb-3 text-base font-semibold">Indexed Sources</h3>
+    <div class="overflow-x-auto">
+        <table class="w-full border-collapse text-sm">
+            <thead>
+                <tr class="text-left text-xs uppercase tracking-[0.12em] text-nebula-muted">
+                    <th class="border-b border-nebula-border px-3 py-2">Source</th>
+                    <th class="border-b border-nebula-border px-3 py-2">Chunks</th>
+                    <th class="border-b border-nebula-border px-3 py-2">Indexed</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var source in _sources)
+                {
+                    <tr>
+                        <td class="border-b border-nebula-border px-3 py-2">@source.SourcePath</td>
+                        <td class="border-b border-nebula-border px-3 py-2">@source.ChunkCount</td>
+                        <td class="border-b border-nebula-border px-3 py-2">@source.IndexedAt.ToUniversalTime().ToString("yyyy-MM-dd HH:mm 'UTC'", CultureInfo.InvariantCulture)</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<ConfirmationModal IsOpen="@_showPurgeConfirm" Title="Purge Entire Index" Message="This will delete all indexed RAG documents and chunks. This action cannot be undone." OnConfirm="ConfirmPurgeAsync" OnCancel="CloseAllConfirm" />
+<ConfirmationModal IsOpen="@_showDeleteSourceConfirm" Title="Delete Indexed Source" Message="Delete this source and all its chunks from the index?" OnConfirm="ConfirmDeleteSourceAsync" OnCancel="CloseAllConfirm" />
+
+@code {
+    [Parameter]
+    public long RefreshNonce { get; set; }
+
+    private readonly List<RagSearchResult> _queryResults = new();
+    private readonly List<SourceInfo> _sources = new();
+    private long _lastRefreshNonce = -1;
+    private bool _statusIsError;
+    private bool _showPurgeConfirm;
+    private bool _showDeleteSourceConfirm;
+    private string? _statusMessage;
+    private string _queryText = string.Empty;
+    private int _queryLimit = 5;
+    private string _indexPath = "/share";
+    private string _deleteSourcePath = string.Empty;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_lastRefreshNonce == RefreshNonce)
+        {
+            return;
+        }
+
+        _lastRefreshNonce = RefreshNonce;
+        await RefreshSourcesAsync();
+    }
+
+    private async Task RefreshSourcesAsync()
+    {
+        var snapshot = await SnapshotService.GetDashboardAsync();
+        _sources.Clear();
+        _sources.AddRange(snapshot.Sources.Take(300));
+    }
+
+    private async Task RunQueryAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_queryText))
+        {
+            SetStatus("Query text is required.", isError: true);
+            return;
+        }
+
+        try
+        {
+            var matches = await QueryService.QueryAsync(_queryText.Trim(), Math.Clamp(_queryLimit, 1, 20));
+            _queryResults.Clear();
+            _queryResults.AddRange(matches);
+            SetStatus($"Query completed with {_queryResults.Count} matches.");
+        }
+        catch (Exception exception)
+        {
+            SetStatus($"Query failed: {exception.Message}", isError: true);
+        }
+    }
+
+    private async Task IndexSourceAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_indexPath))
+        {
+            SetStatus("Source path is required.", isError: true);
+            return;
+        }
+
+        try
+        {
+            var summary = await Indexer.IndexDirectoryAsync(_indexPath.Trim());
+            SetStatus($"Index finished. Docs: {summary.DocumentsIndexed}, Chunks: {summary.ChunksIndexed}.");
+            await RefreshSourcesAsync();
+        }
+        catch (Exception exception)
+        {
+            SetStatus($"Index failed: {exception.Message}", isError: true);
+        }
+    }
+
+    private void OpenDeleteSourceConfirm()
+    {
+        if (string.IsNullOrWhiteSpace(_deleteSourcePath))
+        {
+            SetStatus("Source path to delete is required.", isError: true);
+            return;
+        }
+
+        _showDeleteSourceConfirm = true;
+    }
+
+    private void OpenPurgeConfirm()
+    {
+        _showPurgeConfirm = true;
+    }
+
+    private async Task ConfirmDeleteSourceAsync()
+    {
+        try
+        {
+            var deleted = await ManagementService.DeleteSourceAsync(_deleteSourcePath.Trim());
+            SetStatus($"Deleted {deleted} source rows.");
+            await RefreshSourcesAsync();
+        }
+        catch (Exception exception)
+        {
+            SetStatus($"Delete source failed: {exception.Message}", isError: true);
+        }
+        finally
+        {
+            CloseAllConfirm();
+        }
+    }
+
+    private async Task ConfirmPurgeAsync()
+    {
+        try
+        {
+            await ManagementService.PurgeAllAsync();
+            SetStatus("Entire index purged.");
+            await RefreshSourcesAsync();
+        }
+        catch (Exception exception)
+        {
+            SetStatus($"Purge failed: {exception.Message}", isError: true);
+        }
+        finally
+        {
+            CloseAllConfirm();
+        }
+    }
+
+    private void CloseAllConfirm()
+    {
+        _showPurgeConfirm = false;
+        _showDeleteSourceConfirm = false;
+    }
+
+    private void SetStatus(string message, bool isError = false)
+    {
+        _statusMessage = message;
+        _statusIsError = isError;
+    }
+
+    private static string TrimText(string value, int maxLength)
+    {
+        if (string.IsNullOrWhiteSpace(value) || value.Length <= maxLength)
+        {
+            return value;
+        }
+
+        return $"{value[..maxLength]}...";
+    }
+}
