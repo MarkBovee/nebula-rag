@@ -363,10 +363,3 @@ NUL
 **/mcp.json
 **/ragsettings.local.json
 
-# Generated dashboard artifacts copied into AddonHost webroot
-src/NebulaRAG.AddonHost/wwwroot/dashboard/index.*.js
-src/NebulaRAG.AddonHost/wwwroot/dashboard/index.*.css
-src/NebulaRAG.AddonHost/wwwroot/dashboard/index.html
-
-# Playwright local run metadata
-dashboard/test-results/.last-run.json

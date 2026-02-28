@@ -89,7 +89,7 @@ It combines:
 - A **.NET core retrieval engine** — chunking, embeddings, pgvector storage
 - A **local CLI** for indexing and querying
 - **MCP endpoints** for agents and editor tooling (VS Code, Claude Code, Cursor)
-- A **Home Assistant add-on** with a built-in TypeScript web dashboard
+- A **Home Assistant add-on** with a built-in Blazor web dashboard
 
 ---
 
@@ -230,8 +230,7 @@ NebulaRAG/
 │   ├── NebulaRAG.Core/        # Chunking, embeddings, storage, query services
 │   ├── NebulaRAG.Cli/         # CLI: init · index · query
 │   ├── NebulaRAG.Mcp/         # stdio MCP adapter
-│   └── NebulaRAG.AddonHost/   # HTTP host: Home Assistant ingress + MCP endpoint
-├── dashboard/                 # TypeScript web dashboard
+│   └── NebulaRAG.AddonHost/   # HTTP host: Home Assistant ingress + MCP endpoint + Blazor dashboard
 ├── container/                 # Container configuration
 ├── nebula-rag/                # Home Assistant add-on package + release metadata
 ├── scripts/                   # PowerShell setup scripts

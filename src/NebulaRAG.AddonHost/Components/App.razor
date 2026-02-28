@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <base href="/" />
+    <title>Nebula Dashboard</title>
+    <link rel="stylesheet" href="css/dashboard-tokens.css" />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        nebula: {
+                            bg: "var(--nb-bg)",
+                            surface: "var(--nb-surface)",
+                            border: "var(--nb-border)",
+                            text: "var(--nb-text)",
+                            muted: "var(--nb-muted)",
+                            accent: "var(--nb-accent)",
+                            accent2: "var(--nb-accent-2)",
+                            ok: "var(--nb-ok)"
+                        }
+                    }
+                }
+            }
+        };
+    </script>
+    <HeadOutlet />
+</head>
+<body>
+    <Router AppAssembly="@typeof(App).Assembly">
+        <Found Context="routeData">
+            <RouteView RouteData="@routeData" />
+        </Found>
+        <NotFound>
+            <p class="p-6 text-nebula-text">Pagina niet gevonden.</p>
+        </NotFound>
+    </Router>
+    <script src="_framework/blazor.web.js"></script>
+</body>
+</html>

@@ -1,6 +1,6 @@
 {
   "name": "Nebula RAG",
-  "version": "0.3.6",
+  "version": "0.3.8",
   "slug": "nebula_rag",
   "description": "NebulaRAG long-running add-on with Nebula web UI and MCP endpoint.",
   "url": "https://github.com/MarkBovee/NebulaRAG/tree/main/nebula-rag",
@@ -33,7 +33,7 @@
     "database": {
       "host": "homeassistant.local",
       "port": 5432,
-      "name": "nebularag",
+      "name": "nebula",
       "username": "postgres",
       "password": "",
       "ssl_mode": "Prefer"

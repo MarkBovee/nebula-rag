@@ -2,7 +2,7 @@
   "Database": {
     "Host": "host.docker.internal",
     "Port": 5432,
-    "Database": "nebularag",
+    "Database": "nebula",
     "Username": "postgres",
     "Password": "postgres",
     "SslMode": "Prefer"

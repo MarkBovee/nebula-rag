@@ -185,6 +185,18 @@ public sealed class RagApiController : ControllerBase
     }
 
     /// <summary>
+    /// Returns project-first dashboard hierarchy: projects -> plans/rag/memory.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Project hierarchy payload.</returns>
+    [HttpGet("dashboard/projects")]
+    public async Task<ActionResult<IReadOnlyList<ProjectDashboardNode>>> GetDashboardProjectsAsync(CancellationToken cancellationToken)
+    {
+        var hierarchy = await _dashboardSnapshotService.GetProjectHierarchyAsync(cancellationToken);
+        return Ok(hierarchy);
+    }
+
+    /// <summary>
     /// Executes semantic search.
     /// </summary>
     /// <param name="request">Query request payload.</param>
