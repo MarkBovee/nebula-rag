@@ -3,8 +3,11 @@ using NebulaRAG.Core.Embeddings;
 
 namespace NebulaRAG.Tests;
 
-public class UnitTest1
+public class TextChunkerAndEmbeddingTests
 {
+    /// <summary>
+    /// Validates that the TextChunker produces multiple chunks for a long input text and that each chunk contains tokens.
+    /// </summary>
     [Fact]
     public void Chunker_ProducesMultipleChunks_ForLongText()
     {
@@ -17,6 +20,9 @@ public class UnitTest1
         Assert.All(chunks, chunk => Assert.True(chunk.TokenCount > 0));
     }
 
+    /// <summary>
+    /// Validates that the HashEmbeddingGenerator produces an embedding vector of the expected dimensions and that the vector is normalized (magnitude close to 1).
+    /// </summary>
     [Fact]
     public void HashEmbeddingGenerator_ReturnsExpectedDimensions_AndNormalizedVector()
     {

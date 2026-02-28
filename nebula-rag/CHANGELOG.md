@@ -4,6 +4,11 @@ All notable changes to the Nebula RAG Home Assistant add-on are documented in th
 
 The format is inspired by Keep a Changelog and follows semantic versioning.
 
+## [0.3.16] - 2026-02-28
+
+- Added MCP transport contract tests in `tests/NebulaRAG.Tests/McpTransportHandlerContractTests.cs` to validate JSON-RPC baseline behavior aligned with the MCP transports spec (`initialize`, `ping`, `tools/list`, notification handling, and protocol error codes for invalid/missing methods).
+- Ensured transport regression coverage for method lookup and parameter validation paths that previously surfaced as handshake failures after dashboard changes.
+
 ## [0.3.15] - 2026-02-28
 
 - Fixed MCP transport compatibility for Home Assistant ingress by making `/mcp` POST parsing tolerant and returning JSON-RPC parse errors with HTTP 200 instead of transport-level HTTP 400 responses.
