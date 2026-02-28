@@ -109,8 +109,6 @@ app.UseAntiforgery();
 app.MapControllers();
 app.MapRazorComponents<NebulaRAG.AddonHost.Components.App>().AddInteractiveServerRenderMode();
 
-app.MapGet("/", () => Results.LocalRedirect("/dashboard"));
-
 app.MapPost("/mcp", async (JsonObject request, McpTransportHandler handler, CancellationToken cancellationToken) =>
 {
     var response = await handler.HandleAsync(request, cancellationToken);

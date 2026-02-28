@@ -4,6 +4,11 @@ All notable changes to the Nebula RAG Home Assistant add-on are documented in th
 
 The format is inspired by Keep a Changelog and follows semantic versioning.
 
+## [0.3.13] - 2026-02-28
+
+- Fixed Home Assistant add-on root route ambiguity by removing explicit `GET /` mapping in AddonHost, so the catch-all dashboard route is the single resolver for `/` and ingress slug paths.
+- Preserved `UseAntiforgery()` middleware ordering with interactive Razor endpoints to keep `/mcp` and dashboard routes stable under ingress path-base execution.
+
 ## [0.3.12] - 2026-02-28
 
 - Refactored dashboard page orchestration by splitting tab UIs into dedicated Blazor components (`OverviewManagementTab`, `RagManagementTab`, `MemoryManagementTab`, `PlansManagementTab`) and reducing `Dashboard.razor` to a tab host.
