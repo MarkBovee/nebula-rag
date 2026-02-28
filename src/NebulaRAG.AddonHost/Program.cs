@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using System.Text.Json;
 using Microsoft.AspNetCore.Http.Json;
 using Microsoft.AspNetCore.StaticFiles;
 using Microsoft.Extensions.Configuration;
@@ -109,11 +110,55 @@ app.UseAntiforgery();
 app.MapControllers();
 app.MapRazorComponents<NebulaRAG.AddonHost.Components.App>().AddInteractiveServerRenderMode();
 
-app.MapPost("/mcp", async (JsonObject request, McpTransportHandler handler, CancellationToken cancellationToken) =>
+app.MapPost("/mcp", async (HttpRequest request, McpTransportHandler handler, CancellationToken cancellationToken) =>
 {
-    var response = await handler.HandleAsync(request, cancellationToken);
-    return Results.Json(response);
-});
+    JsonNode? payload;
+    try
+    {
+        payload = await JsonNode.ParseAsync(request.Body, cancellationToken: cancellationToken);
+    }
+    catch (JsonException)
+    {
+        return Results.BadRequest(new { error = "Invalid JSON payload." });
+    }
+
+    if (payload is JsonObject singleRequest)
+    {
+        var singleResponse = await handler.HandleAsync(singleRequest, cancellationToken);
+        return Results.Json(singleResponse);
+    }
+
+    if (payload is JsonArray batchRequests)
+    {
+        var batchResponses = new JsonArray();
+        foreach (var item in batchRequests)
+        {
+            if (item is JsonObject batchRequest)
+            {
+                var batchResponse = await handler.HandleAsync(batchRequest, cancellationToken);
+                batchResponses.Add(batchResponse);
+            }
+            else
+            {
+                batchResponses.Add(new JsonObject
+                {
+                    ["jsonrpc"] = "2.0",
+                    ["id"] = null,
+                    ["error"] = new JsonObject
+                    {
+                        ["code"] = -32600,
+                        ["message"] = "Invalid request"
+                    }
+                });
+            }
+        }
+
+        return Results.Json(batchResponses);
+    }
+
+    return Results.BadRequest(new { error = "MCP request must be a JSON object or array." });
+})
+.DisableAntiforgery();
 
 Log.Information(
     "NebulaRAG flight deck online. Dashboard: {DashboardPath} | MCP: {McpPath}",

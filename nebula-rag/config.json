@@ -1,6 +1,6 @@
 {
   "name": "Nebula",
-  "version": "0.3.13",
+  "version": "0.3.14",
   "slug": "nebula_rag",
   "description": "RAG mcp server for Home Assistant",
   "url": "https://github.com/MarkBovee/NebulaRAG/tree/main/nebula-rag",
