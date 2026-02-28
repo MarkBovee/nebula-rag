@@ -4,6 +4,12 @@ All notable changes to the Nebula RAG Home Assistant add-on are documented in th
 
 The format is inspired by Keep a Changelog and follows semantic versioning.
 
+## [0.3.15] - 2026-02-28
+
+- Fixed MCP transport compatibility for Home Assistant ingress by making `/mcp` POST parsing tolerant and returning JSON-RPC parse errors with HTTP 200 instead of transport-level HTTP 400 responses.
+- Added explicit `GET /mcp` handling to return a JSON-RPC method error with HTTP 405 so MCP fallback/probe requests no longer get routed to the dashboard shell.
+- Added structured diagnostics for malformed/empty MCP POST payloads (content type, user agent, and bounded body preview) to speed up future handshake troubleshooting.
+
 ## [0.3.14] - 2026-02-28
 
 - Fixed VS Code MCP `initialize` handshake failures (`400` on `/nebula/mcp`) by making the AddonHost `/mcp` endpoint accept both single JSON-RPC objects and batch JSON-RPC arrays.

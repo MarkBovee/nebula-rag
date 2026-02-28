@@ -74,6 +74,7 @@ await store.InitializeSchemaAsync(settings.Ingestion.VectorDimensions);
 await planStore.InitializeSchemaAsync();
 
 var app = builder.Build();
+var appLogger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("NebulaRAG.AddonHost.McpTransport");
 Log.Information("NebulaRAG add-on ignition sequence started.");
 
 if (!string.IsNullOrEmpty(pathBase))
@@ -110,53 +111,61 @@ app.UseAntiforgery();
 app.MapControllers();
 app.MapRazorComponents<NebulaRAG.AddonHost.Components.App>().AddInteractiveServerRenderMode();
 
+app.MapGet("/mcp", () =>
+{
+    // Explicitly block GET fallback so SSE probing does not land on the dashboard route.
+    return Results.Json(new JsonObject
+    {
+        ["jsonrpc"] = "2.0",
+        ["id"] = null,
+        ["error"] = new JsonObject
+        {
+            ["code"] = -32600,
+            ["message"] = "Use HTTP POST for MCP JSON-RPC requests."
+        }
+    }, statusCode: StatusCodes.Status405MethodNotAllowed);
+});
+
 app.MapPost("/mcp", async (HttpRequest request, McpTransportHandler handler, CancellationToken cancellationToken) =>
 {
-    JsonNode? payload;
-    try
+    var requestBody = await ReadRequestBodyAsync(request, cancellationToken);
+    if (string.IsNullOrWhiteSpace(requestBody))
     {
-        payload = await JsonNode.ParseAsync(request.Body, cancellationToken: cancellationToken);
-    }
-    catch (JsonException)
-    {
-        return Results.BadRequest(new { error = "Invalid JSON payload." });
+        appLogger.LogWarning("Received empty MCP POST payload. ContentType={ContentType}; UserAgent={UserAgent}", request.ContentType, request.Headers.UserAgent.ToString());
+        return Results.Json(BuildJsonRpcError(null, -32600, "Empty MCP request payload."));
     }
 
-    if (payload is JsonObject singleRequest)
+    var parseOutcome = TryParseMcpPayload(requestBody);
+    if (!parseOutcome.IsSuccess)
     {
-        var singleResponse = await handler.HandleAsync(singleRequest, cancellationToken);
+        appLogger.LogWarning(
+            "Failed to parse MCP POST payload. ContentType={ContentType}; UserAgent={UserAgent}; BodyPreview={BodyPreview}",
+            request.ContentType,
+            request.Headers.UserAgent.ToString(),
+            requestBody.Length > 200 ? requestBody[..200] : requestBody);
+
+        return Results.Json(BuildJsonRpcError(null, -32700, "Invalid JSON payload."));
+    }
+
+    if (parseOutcome.SingleRequest is not null)
+    {
+        var singleResponse = await handler.HandleAsync(parseOutcome.SingleRequest, cancellationToken);
         return Results.Json(singleResponse);
     }
 
-    if (payload is JsonArray batchRequests)
+    if (parseOutcome.BatchRequests.Count > 0)
     {
         var batchResponses = new JsonArray();
-        foreach (var item in batchRequests)
+        foreach (var batchRequest in parseOutcome.BatchRequests)
         {
-            if (item is JsonObject batchRequest)
-            {
-                var batchResponse = await handler.HandleAsync(batchRequest, cancellationToken);
-                batchResponses.Add(batchResponse);
-            }
-            else
-            {
-                batchResponses.Add(new JsonObject
-                {
-                    ["jsonrpc"] = "2.0",
-                    ["id"] = null,
-                    ["error"] = new JsonObject
-                    {
-                        ["code"] = -32600,
-                        ["message"] = "Invalid request"
-                    }
-                });
-            }
+            var batchResponse = await handler.HandleAsync(batchRequest, cancellationToken);
+            batchResponses.Add(batchResponse);
         }
 
         return Results.Json(batchResponses);
     }
 
-    return Results.BadRequest(new { error = "MCP request must be a JSON object or array." });
+    return Results.Json(BuildJsonRpcError(null, -32600, "MCP request must be a JSON object or array."));
 })
 .DisableAntiforgery();
 
@@ -271,4 +280,112 @@ static void ConfigureOpenTelemetry(IServiceCollection services)
                 metricBuilder.AddOtlpExporter();
             }
         });
+}
+
+/// <summary>
+/// Reads the full MCP request body as UTF-8 text.
+/// </summary>
+/// <param name="request">Incoming HTTP request.</param>
+/// <param name="cancellationToken">Cancellation token.</param>
+/// <returns>Raw request body text.</returns>
+static async Task<string> ReadRequestBodyAsync(HttpRequest request, CancellationToken cancellationToken)
+{
+    using var reader = new StreamReader(request.Body);
+    return await reader.ReadToEndAsync(cancellationToken);
+}
+
+/// <summary>
+/// Attempts to parse a raw MCP payload as a single JSON-RPC object or batch array.
+/// </summary>
+/// <param name="requestBody">Raw HTTP body content.</param>
+/// <returns>Parse outcome with either a single request, batch requests, or failure details.</returns>
+static McpPayloadParseOutcome TryParseMcpPayload(string requestBody)
+{
+    try
+    {
+        var payload = JsonNode.Parse(requestBody);
+        if (payload is JsonObject singleRequest)
+        {
+            return McpPayloadParseOutcome.SuccessSingle(singleRequest);
+        }
+
+        if (payload is JsonArray batchRequests)
+        {
+            var normalizedBatchRequests = new List<JsonObject>();
+            foreach (var item in batchRequests)
+            {
+                if (item is JsonObject batchRequest)
+                {
+                    normalizedBatchRequests.Add(batchRequest);
+                }
+            }
+
+            return McpPayloadParseOutcome.SuccessBatch(normalizedBatchRequests);
+        }
+
+        return McpPayloadParseOutcome.Failure();
+    }
+    catch (JsonException)
+    {
+        return McpPayloadParseOutcome.Failure();
+    }
+}
+
+/// <summary>
+/// Builds a JSON-RPC error response envelope.
+/// </summary>
+/// <param name="id">Request id when available.</param>
+/// <param name="code">JSON-RPC error code.</param>
+/// <param name="message">Human-readable error message.</param>
+/// <returns>JSON-RPC error object.</returns>
+static JsonObject BuildJsonRpcError(JsonNode? id, int code, string message)
+{
+    return new JsonObject
+    {
+        ["jsonrpc"] = "2.0",
+        ["id"] = id?.DeepClone(),
+        ["error"] = new JsonObject
+        {
+            ["code"] = code,
+            ["message"] = message
+        }
+    };
+}
+
+/// <summary>
+/// Represents MCP request payload parse results for single and batch requests.
+/// </summary>
+/// <param name="isSuccess">Whether payload parsing succeeded.</param>
+/// <param name="singleRequest">Parsed single request object when present.</param>
+/// <param name="batchRequests">Parsed batch requests when present.</param>
+readonly record struct McpPayloadParseOutcome(bool IsSuccess, JsonObject? SingleRequest, IReadOnlyList<JsonObject> BatchRequests)
+{
+    /// <summary>
+    /// Creates a successful parse outcome for one request object.
+    /// </summary>
+    /// <param name="request">Parsed request object.</param>
+    /// <returns>Single-request parse outcome.</returns>
+    public static McpPayloadParseOutcome SuccessSingle(JsonObject request)
+    {
+        return new McpPayloadParseOutcome(true, request, Array.Empty<JsonObject>());
+    }
+
+    /// <summary>
+    /// Creates a successful parse outcome for a request batch.
+    /// </summary>
+    /// <param name="requests">Parsed batch request objects.</param>
+    /// <returns>Batch parse outcome.</returns>
+    public static McpPayloadParseOutcome SuccessBatch(IReadOnlyList<JsonObject> requests)
+    {
+        return new McpPayloadParseOutcome(true, null, requests);
+    }
+
+    /// <summary>
+    /// Creates a failed parse outcome.
+    /// </summary>
+    /// <returns>Failed parse outcome.</returns>
+    public static McpPayloadParseOutcome Failure()
+    {
+        return new McpPayloadParseOutcome(false, null, Array.Empty<JsonObject>());
+    }
 }
