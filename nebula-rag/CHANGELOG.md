@@ -4,6 +4,12 @@ All notable changes to the Nebula RAG Home Assistant add-on are documented in th
 
 The format is inspired by Keep a Changelog and follows semantic versioning.
 
+## [0.3.17] - 2026-02-28
+
+- Refactored dashboard Blazor components by splitting `Dashboard.razor` and `RagManagementTab.razor` into markup plus code-behind partial classes, reducing UI markup noise and clarifying component lifecycle/state intent.
+- Added `RagOperationsService` in AddonHost to centralize reusable RAG tab operations (query, index, delete, purge, and source listing), reducing direct UI coupling to multiple core services.
+- Extracted memory scope normalization/validation from `RagApiController` into a dedicated `MemoryScopeResolver` service and moved API request/response contracts into `RagApiContracts.cs` to reduce controller responsibility and improve maintainability.
+
 ## [0.3.16] - 2026-02-28
 
 - Added MCP transport contract tests in `tests/NebulaRAG.Tests/McpTransportHandlerContractTests.cs` to validate JSON-RPC baseline behavior aligned with the MCP transports spec (`initialize`, `ping`, `tools/list`, notification handling, and protocol error codes for invalid/missing methods).

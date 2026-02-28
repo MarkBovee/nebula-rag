@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Mvc;
 using NebulaRAG.AddonHost.Services;
 using NebulaRAG.Core.Configuration;
@@ -20,6 +19,7 @@ public sealed class RagApiController : ControllerBase
     private readonly RagIndexer _indexer;
     private readonly RagSettings _settings;
     private readonly DashboardSnapshotService _dashboardSnapshotService;
+    private readonly MemoryScopeResolver _memoryScopeResolver;
     private readonly IRuntimeTelemetrySink _telemetrySink;
     private readonly ILogger<RagApiController> _logger;
 
@@ -31,14 +31,16 @@ public sealed class RagApiController : ControllerBase
     /// <param name="indexer">Indexer service for source ingestion.</param>
     /// <param name="settings">Runtime settings.</param>
     /// <param name="dashboardSnapshotService">Dashboard snapshot orchestration service.</param>
+    /// <param name="memoryScopeResolver">Scope resolver for memory APIs.</param>
     /// <param name="logger">Controller logger.</param>
-    public RagApiController(RagQueryService queryService, RagManagementService managementService, RagIndexer indexer, RagSettings settings, DashboardSnapshotService dashboardSnapshotService, IRuntimeTelemetrySink telemetrySink, ILogger<RagApiController> logger)
+    public RagApiController(RagQueryService queryService, RagManagementService managementService, RagIndexer indexer, RagSettings settings, DashboardSnapshotService dashboardSnapshotService, MemoryScopeResolver memoryScopeResolver, IRuntimeTelemetrySink telemetrySink, ILogger<RagApiController> logger)
     {
         _queryService = queryService ?? throw new ArgumentNullException(nameof(queryService));
         _managementService = managementService ?? throw new ArgumentNullException(nameof(managementService));
         _indexer = indexer ?? throw new ArgumentNullException(nameof(indexer));
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
         _dashboardSnapshotService = dashboardSnapshotService ?? throw new ArgumentNullException(nameof(dashboardSnapshotService));
+        _memoryScopeResolver = memoryScopeResolver ?? throw new ArgumentNullException(nameof(memoryScopeResolver));
         _telemetrySink = telemetrySink ?? throw new ArgumentNullException(nameof(telemetrySink));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
@@ -79,15 +81,16 @@ public sealed class RagApiController : ControllerBase
     [HttpGet("memory/stats")]
     public async Task<ActionResult<MemoryDashboardStats>> GetMemoryStatsAsync([FromQuery] string? scope, [FromQuery] string? projectId, [FromQuery] string? sessionId, CancellationToken cancellationToken)
     {
-        if (!TryResolveMemoryScope(scope, sessionId, projectId, out var resolvedSessionId, out var resolvedProjectId, out var error))
+        var resolvedScope = _memoryScopeResolver.Resolve(scope, sessionId, projectId);
+        if (!resolvedScope.IsSuccess)
         {
-            return BadRequest(new { error });
+            return BadRequest(new { error = resolvedScope.Error });
         }
 
         // Keep cache behavior for the common global view while allowing explicit scoped views.
-        var memoryStats = string.IsNullOrWhiteSpace(resolvedSessionId) && string.IsNullOrWhiteSpace(resolvedProjectId)
+        var memoryStats = string.IsNullOrWhiteSpace(resolvedScope.SessionId) && string.IsNullOrWhiteSpace(resolvedScope.ProjectId)
             ? await _dashboardSnapshotService.GetMemoryStatsAsync(cancellationToken)
-            : await _managementService.GetMemoryStatsAsync(sessionId: resolvedSessionId, projectId: resolvedProjectId, cancellationToken: cancellationToken);
+            : await _managementService.GetMemoryStatsAsync(sessionId: resolvedScope.SessionId, projectId: resolvedScope.ProjectId, cancellationToken: cancellationToken);
 
         return Ok(memoryStats);
     }
@@ -106,17 +109,18 @@ public sealed class RagApiController : ControllerBase
     [HttpGet("memory/list")]
     public async Task<ActionResult<IReadOnlyList<MemoryRecord>>> ListMemoriesAsync([FromQuery] string? scope, [FromQuery] string? projectId, [FromQuery] string? sessionId, [FromQuery] string? type, [FromQuery] string? tag, [FromQuery] int? limit, CancellationToken cancellationToken)
     {
-        if (!TryResolveMemoryScope(scope, sessionId, projectId, out var resolvedSessionId, out var resolvedProjectId, out var error))
+        var resolvedScope = _memoryScopeResolver.Resolve(scope, sessionId, projectId);
+        if (!resolvedScope.IsSuccess)
         {
-            return BadRequest(new { error });
+            return BadRequest(new { error = resolvedScope.Error });
         }
 
         var memories = await _managementService.ListMemoriesAsync(
             limit: Math.Clamp(limit ?? 100, 1, 500),
             type: type,
             tag: tag,
-            sessionId: resolvedSessionId,
-            projectId: resolvedProjectId,
+            sessionId: resolvedScope.SessionId,
+            projectId: resolvedScope.ProjectId,
             cancellationToken: cancellationToken);
 
         return Ok(memories);
@@ -136,9 +140,10 @@ public sealed class RagApiController : ControllerBase
             return BadRequest(new { error = "text is required" });
         }
 
-        if (!TryResolveMemoryScope(request.Scope, request.SessionId, request.ProjectId, out var resolvedSessionId, out var resolvedProjectId, out var error))
+        var resolvedScope = _memoryScopeResolver.Resolve(request.Scope, request.SessionId, request.ProjectId);
+        if (!resolvedScope.IsSuccess)
         {
-            return BadRequest(new { error });
+            return BadRequest(new { error = resolvedScope.Error });
         }
 
         var matches = await _managementService.SearchMemoriesAsync(
@@ -146,8 +151,8 @@ public sealed class RagApiController : ControllerBase
             limit: Math.Clamp(request.Limit ?? 20, 1, 100),
             type: request.Type,
             tag: request.Tag,
-            sessionId: resolvedSessionId,
-            projectId: resolvedProjectId,
+            sessionId: resolvedScope.SessionId,
+            projectId: resolvedScope.ProjectId,
             cancellationToken: cancellationToken);
 
         _telemetrySink.RecordActivity("query", "API memory search", new Dictionary<string, string?>
@@ -341,130 +346,4 @@ public sealed class RagApiController : ControllerBase
         return value.Length <= maxLength ? value : $"{value[..maxLength]}...";
     }
 
-    /// <summary>
-    /// Resolves memory scope values into normalized project/session filters.
-    /// </summary>
-    /// <param name="scope">Optional scope value.</param>
-    /// <param name="sessionId">Optional session-id input.</param>
-    /// <param name="projectId">Optional project-id input.</param>
-    /// <param name="resolvedSessionId">Resolved session-id filter.</param>
-    /// <param name="resolvedProjectId">Resolved project-id filter.</param>
-    /// <param name="error">Validation error message when input is invalid.</param>
-    /// <returns><c>true</c> when scope resolution is valid; otherwise <c>false</c>.</returns>
-    private static bool TryResolveMemoryScope(string? scope, string? sessionId, string? projectId, out string? resolvedSessionId, out string? resolvedProjectId, out string? error)
-    {
-        resolvedSessionId = string.IsNullOrWhiteSpace(sessionId) ? null : sessionId.Trim();
-        resolvedProjectId = string.IsNullOrWhiteSpace(projectId) ? null : projectId.Trim();
-        error = null;
-
-        var normalizedScope = string.IsNullOrWhiteSpace(scope)
-            ? MemoryScopeType.Global
-            : scope.Trim().ToLowerInvariant();
-
-        switch (normalizedScope)
-        {
-            case MemoryScopeType.Global:
-                return true;
-            case MemoryScopeType.Project:
-                if (string.IsNullOrWhiteSpace(resolvedProjectId))
-                {
-                    error = "projectId is required when scope=project.";
-                    return false;
-                }
-
-                resolvedSessionId = null;
-                return true;
-            case MemoryScopeType.Session:
-                if (string.IsNullOrWhiteSpace(resolvedSessionId))
-                {
-                    error = "sessionId is required when scope=session.";
-                    return false;
-                }
-
-                resolvedProjectId = null;
-                return true;
-            default:
-                error = "scope must be one of: global, project, session.";
-                return false;
-        }
-    }
 }
-
-/// <summary>
-/// Supported memory scope values for API filtering.
-/// </summary>
-public static class MemoryScopeType
-{
-    /// <summary>Global unfiltered scope.</summary>
-    public const string Global = "global";
-
-    /// <summary>Project-specific scope.</summary>
-    public const string Project = "project";
-
-    /// <summary>Session-specific scope.</summary>
-    public const string Session = "session";
-}
-
-/// <summary>
-/// Query API request model.
-/// </summary>
-/// <param name="Text">The semantic query text.</param>
-/// <param name="Limit">Optional top-k result limit.</param>
-public sealed record ApiQueryRequest(string Text, int? Limit);
-
-/// <summary>
-/// Query API response model.
-/// </summary>
-/// <param name="Query">Original query text.</param>
-/// <param name="Limit">Effective top-k limit.</param>
-/// <param name="Matches">Ranked result list.</param>
-public sealed record QueryResponse(string Query, int Limit, IReadOnlyList<RagSearchResult> Matches);
-
-/// <summary>
-/// Index API request model.
-/// </summary>
-/// <param name="SourcePath">Directory path to index.</param>
-public sealed record ApiIndexRequest(string SourcePath);
-
-/// <summary>
-/// Memory semantic search API request model.
-/// </summary>
-/// <param name="Text">Memory search text.</param>
-/// <param name="Limit">Optional max number of matches to return.</param>
-/// <param name="Scope">Optional scope value: global, project, or session.</param>
-/// <param name="SessionId">Optional session-id filter.</param>
-/// <param name="ProjectId">Optional project-id filter.</param>
-/// <param name="Type">Optional memory type filter.</param>
-/// <param name="Tag">Optional memory tag filter.</param>
-public sealed record ApiMemorySearchRequest(
-    string Text,
-    int? Limit,
-    [property: JsonPropertyName("scope")] string? Scope,
-    [property: JsonPropertyName("sessionId")] string? SessionId,
-    [property: JsonPropertyName("projectId")] string? ProjectId,
-    string? Type,
-    string? Tag);
-
-/// <summary>
-/// Delete source API request model.
-/// </summary>
-/// <param name="SourcePath">Indexed source path to delete.</param>
-public sealed record ApiDeleteRequest(string SourcePath);
-
-/// <summary>
-/// Purge API request model.
-/// </summary>
-/// <param name="ConfirmPhrase">Safety confirmation phrase.</param>
-public sealed record ApiPurgeRequest(string ConfirmPhrase);
-
-/// <summary>
-/// Client error telemetry payload model.
-/// </summary>
-/// <param name="Message">Client error message.</param>
-/// <param name="Stack">Optional stack trace.</param>
-/// <param name="Source">Event source name.</param>
-/// <param name="Url">Page URL where error occurred.</param>
-/// <param name="UserAgent">Browser user agent string.</param>
-/// <param name="Severity">Client severity hint.</param>
-/// <param name="Timestamp">Client timestamp.</param>
-public sealed record ApiClientErrorRequest(string Message, string? Stack, string? Source, string? Url, string? UserAgent, string? Severity, string? Timestamp);

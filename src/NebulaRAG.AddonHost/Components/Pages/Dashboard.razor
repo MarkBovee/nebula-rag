@@ -1,6 +1,5 @@
 @page "/{*ingressPath:nonfile}"
 @rendermode InteractiveServer
-@implements IAsyncDisposable
 
 <PageTitle>Nebula Management</PageTitle>
 
@@ -49,79 +48,3 @@
         }
     </div>
 </div>
-
-@code {
-    [Parameter]
-    public string? IngressPath { get; set; }
-
-    private enum DashboardTab
-    {
-        Overview,
-        Rag,
-        Memory,
-        Plans
-    }
-
-    private readonly DashboardTab[] _tabs = [DashboardTab.Overview, DashboardTab.Rag, DashboardTab.Memory, DashboardTab.Plans];
-    private PeriodicTimer? _refreshTimer;
-    private CancellationTokenSource? _refreshCancellation;
-    private DashboardTab _activeTab = DashboardTab.Overview;
-    private long _refreshNonce = 1;
-
-    protected override async Task OnInitializedAsync()
-    {
-        _refreshCancellation = new CancellationTokenSource();
-        _refreshTimer = new PeriodicTimer(TimeSpan.FromSeconds(20));
-        _ = RunRefreshLoopAsync(_refreshCancellation.Token);
-        _refreshNonce++;
-    }
-
-    private async Task RunRefreshLoopAsync(CancellationToken cancellationToken)
-    {
-        if (_refreshTimer is null)
-        {
-            return;
-        }
-
-        try
-        {
-            while (await _refreshTimer.WaitForNextTickAsync(cancellationToken))
-            {
-                await InvokeAsync(TriggerRefresh);
-            }
-        }
-        catch (OperationCanceledException)
-        {
-        }
-    }
-
-    private Task RefreshAsync()
-    {
-        TriggerRefresh();
-        return Task.CompletedTask;
-    }
-
-    private string GetTabClass(DashboardTab tab)
-    {
-        return _activeTab == tab
-            ? "border border-nebula-accent bg-nebula-accent/20 text-nebula-text"
-            : "border border-transparent text-nebula-muted hover:border-nebula-border hover:text-nebula-text";
-    }
-
-    private void TriggerRefresh()
-    {
-        _refreshNonce++;
-        StateHasChanged();
-    }
-
-    public async ValueTask DisposeAsync()
-    {
-        if (_refreshCancellation is not null)
-        {
-            await _refreshCancellation.CancelAsync();
-            _refreshCancellation.Dispose();
-        }
-
-        _refreshTimer?.Dispose();
-    }
-}
