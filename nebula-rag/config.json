@@ -1,8 +1,8 @@
 {
   "name": "Nebula",
-  "version": "0.3.8",
+  "version": "0.3.9",
   "slug": "nebula_rag",
-  "description": "Nebula - long-running RAG add-on with UI and MCP endpoint.",
+  "description": "RAG mcp server for Home Assistant",
   "url": "https://github.com/MarkBovee/NebulaRAG/tree/main/nebula-rag",
   "stage": "stable",
   "startup": "services",

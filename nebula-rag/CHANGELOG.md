@@ -4,6 +4,11 @@ All notable changes to the Nebula RAG Home Assistant add-on are documented in th
 
 The format is inspired by Keep a Changelog and follows semantic versioning.
 
+## [0.3.9] - 2026-02-28
+
+- Fixed Home Assistant ingress 404 behavior for the Blazor dashboard by making the app base href path-base aware (`<base href="~/">`).
+- Expanded dashboard route coverage in Blazor (`/`, `/dashboard`, and non-file catch-all) so ingress slug URLs resolve to the dashboard page instead of returning 404.
+
 ## [0.3.8] - 2026-02-28
 
 - Added a native CLI database migration command `clone-db` (`src/NebulaRAG.Cli/Program.cs`) to clone one PostgreSQL database into another and verify key table counts (`rag_documents`, `rag_chunks`, `memories`, `plans`, `tasks`, `plan_history`, `task_history`).
