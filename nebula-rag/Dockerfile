@@ -10,7 +10,7 @@ ARG NEBULARAG_REPO_REF=main
 ARG BUILD_VERSION=dev
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends git ca-certificates nodejs npm \
+    && apt-get install -y --no-install-recommends git ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 RUN echo "nebula-rag build version: ${BUILD_VERSION}" \
@@ -19,12 +19,6 @@ RUN echo "nebula-rag build version: ${BUILD_VERSION}" \
 WORKDIR /src/NebulaRAG
 
 RUN test -f "src/NebulaRAG.AddonHost/NebulaRAG.AddonHost.csproj"
-RUN test -f "dashboard/package.json"
-
-# Build the dashboard so static assets are included in AddonHost publish output.
-RUN cd dashboard \
-    && npm install --no-audit --no-fund \
-    && npm run build
 
 # Home Assistant builders can be resource-constrained; disable parallel restore and retry transient failures.
 RUN set -eux; \

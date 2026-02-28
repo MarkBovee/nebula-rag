@@ -695,6 +695,45 @@ public sealed class PostgresPlanStore
         return (plan, tasks);
     }
 
+    /// <summary>
+    /// Returns per-project plan/task aggregates for dashboard presentation.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Project-level plan statistics.</returns>
+    public async Task<IReadOnlyList<ProjectPlanStats>> GetProjectPlanStatsAsync(CancellationToken cancellationToken = default)
+    {
+        const string sql = @"
+            SELECT
+                p.project_id,
+                COUNT(DISTINCT p.id)::int AS plan_count,
+                COUNT(t.id)::int AS task_count,
+                COUNT(DISTINCT CASE WHEN p.status = 'active' THEN p.id END)::int AS active_plan_count,
+                MAX(p.updated_at) AS last_updated_at
+            FROM plans p
+            LEFT JOIN tasks t ON p.id = t.plan_id
+            GROUP BY p.project_id
+            ORDER BY p.project_id ASC";
+
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await using var command = new NpgsqlCommand(sql, connection);
+
+        await connection.OpenAsync(cancellationToken);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+
+        var rows = new List<ProjectPlanStats>();
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            rows.Add(new ProjectPlanStats(
+                ProjectId: reader.GetString(0),
+                PlanCount: reader.GetInt32(1),
+                TaskCount: reader.GetInt32(2),
+                ActivePlanCount: reader.GetInt32(3),
+                LastUpdatedAtUtc: reader.IsDBNull(4) ? null : reader.GetFieldValue<DateTimeOffset>(4)));
+        }
+
+        return rows.AsReadOnly();
+    }
+
     private static PlanRecord ReadPlanFromReader(NpgsqlDataReader reader)
     {
         var id = reader.GetInt64(reader.GetOrdinal("id"));

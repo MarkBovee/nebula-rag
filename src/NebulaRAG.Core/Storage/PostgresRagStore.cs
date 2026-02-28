@@ -440,6 +440,83 @@ public sealed class PostgresRagStore
     }
 
     /// <summary>
+    /// Returns per-project aggregates for indexed RAG content.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Project-level RAG statistics.</returns>
+    public async Task<IReadOnlyList<ProjectRagStats>> GetProjectRagStatsAsync(CancellationToken cancellationToken = default)
+    {
+        const string sql = @"
+            SELECT
+                CASE
+                    WHEN d.source_path ~* '^https?://' THEN split_part(split_part(d.source_path, '://', 2), '/', 1)
+                    ELSE split_part(replace(d.source_path, '\\', '/'), '/', 1)
+                END AS project_id,
+                COUNT(DISTINCT d.id)::int AS document_count,
+                COUNT(c.id)::int AS chunk_count,
+                COALESCE(SUM(c.token_count), 0)::bigint AS total_tokens,
+                MAX(d.indexed_at) AS newest_indexed_at
+            FROM rag_documents d
+            LEFT JOIN rag_chunks c ON d.id = c.document_id
+            GROUP BY project_id
+            ORDER BY project_id ASC";
+
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+
+        await using var command = new NpgsqlCommand(sql, connection);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+
+        var rows = new List<ProjectRagStats>();
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var projectId = reader.IsDBNull(0) ? "unscoped" : reader.GetString(0);
+            rows.Add(new ProjectRagStats(
+                ProjectId: projectId,
+                DocumentCount: reader.GetInt32(1),
+                ChunkCount: reader.GetInt32(2),
+                TotalTokens: reader.GetInt64(3),
+                NewestIndexedAt: reader.IsDBNull(4) ? null : reader.GetDateTime(4)));
+        }
+
+        return rows.AsReadOnly();
+    }
+
+    /// <summary>
+    /// Returns per-project aggregates for stored memories.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Project-level memory statistics.</returns>
+    public async Task<IReadOnlyList<ProjectMemoryStats>> GetProjectMemoryStatsAsync(CancellationToken cancellationToken = default)
+    {
+        const string sql = @"
+            SELECT
+                COALESCE(NULLIF(project_id, ''), 'unscoped') AS project_id,
+                COUNT(*)::bigint AS memory_count,
+                MAX(created_at) AS last_memory_at
+            FROM memories
+            GROUP BY project_id
+            ORDER BY project_id ASC";
+
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+
+        await using var command = new NpgsqlCommand(sql, connection);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+
+        var rows = new List<ProjectMemoryStats>();
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            rows.Add(new ProjectMemoryStats(
+                ProjectId: reader.GetString(0),
+                MemoryCount: reader.GetInt64(1),
+                LastMemoryAtUtc: reader.IsDBNull(2) ? null : reader.GetFieldValue<DateTimeOffset>(2)));
+        }
+
+        return rows.AsReadOnly();
+    }
+
+    /// <summary>
     /// Extracts a project identifier from a source path for dashboard grouping.
     /// </summary>
     /// <param name="sourcePath">Stored source path or URL.</param>

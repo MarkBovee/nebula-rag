@@ -29,6 +29,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Host.UseSerilog();
 ConfigureOpenTelemetry(builder.Services);
 builder.Services.AddControllers();
+builder.Services.AddRazorComponents().AddInteractiveServerComponents();
 builder.Services.AddSingleton<HttpClient>();
 
 builder.Services.Configure<JsonOptions>(options =>
@@ -47,6 +48,7 @@ var loggerFactory = LoggerFactory.Create(loggingBuilder =>
 });
 
 var store = new PostgresRagStore(settings.Database.BuildConnectionString());
+var planStore = new PostgresPlanStore(settings.Database.BuildConnectionString());
 var chunker = new TextChunker();
 var embeddingGenerator = new HashEmbeddingGenerator();
 var queryService = new RagQueryService(store, embeddingGenerator, settings, loggerFactory.CreateLogger<RagQueryService>());
@@ -59,6 +61,7 @@ builder.Services.AddSingleton(queryService);
 builder.Services.AddSingleton(managementService);
 builder.Services.AddSingleton(sourcesManifestService);
 builder.Services.AddSingleton(store);
+builder.Services.AddSingleton(planStore);
 builder.Services.AddSingleton(chunker);
 builder.Services.AddSingleton<IEmbeddingGenerator>(embeddingGenerator);
 builder.Services.AddSingleton(indexer);
@@ -67,6 +70,7 @@ builder.Services.AddSingleton<IRuntimeTelemetrySink>(serviceProvider => serviceP
 builder.Services.AddSingleton<McpTransportHandler>();
 
 await store.InitializeSchemaAsync(settings.Ingestion.VectorDimensions);
+await planStore.InitializeSchemaAsync();
 
 var app = builder.Build();
 Log.Information("NebulaRAG add-on ignition sequence started.");
@@ -86,7 +90,6 @@ app.UseSerilogRequestLogging(options =>
             : LogEventLevel.Information;
 });
 
-app.UseDefaultFiles();
 app.UseStaticFiles(new StaticFileOptions
 {
     OnPrepareResponse = context =>
@@ -103,6 +106,9 @@ app.UseStaticFiles(new StaticFileOptions
     }
 });
 app.MapControllers();
+app.MapRazorComponents<NebulaRAG.AddonHost.Components.App>().AddInteractiveServerRenderMode();
+
+app.MapGet("/", () => Results.LocalRedirect("/dashboard"));
 
 app.MapPost("/mcp", async (JsonObject request, McpTransportHandler handler, CancellationToken cancellationToken) =>
 {

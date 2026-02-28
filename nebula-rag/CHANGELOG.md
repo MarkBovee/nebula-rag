@@ -4,6 +4,18 @@ All notable changes to the Nebula RAG Home Assistant add-on are documented in th
 
 The format is inspired by Keep a Changelog and follows semantic versioning.
 
+## [0.3.8] - 2026-02-28
+
+- Added a native CLI database migration command `clone-db` (`src/NebulaRAG.Cli/Program.cs`) to clone one PostgreSQL database into another and verify key table counts (`rag_documents`, `rag_chunks`, `memories`, `plans`, `tasks`, `plan_history`, `task_history`).
+- Finalized repository cleanup for the Blazor dashboard migration by removing the legacy `dashboard/` tree and related ignore/documentation references, leaving AddonHost Blazor as the single dashboard implementation.
+
+## [0.3.7] - 2026-02-28
+
+- Switched default database targets from `nebularag`/`brewmind` to `nebula` across runtime defaults and templates (`compose.yaml`, `container/ragsettings.container.json`, `src/NebulaRAG.Cli/ragsettings.json`, `.env.example`, and add-on `config.json`).
+- Migrated the add-on dashboard runtime to an in-process .NET Blazor dashboard in `src/NebulaRAG.AddonHost/Components/**` and removed Node/NPM build dependency from the add-on Docker build pipeline.
+- Added project-first dashboard aggregation endpoint `GET /api/dashboard/projects` that returns `projects -> plans/rag/memory` slices, backed by new per-project PostgreSQL aggregates in RAG and plan stores.
+- Removed the legacy React/Vite `dashboard/` workspace folder and related ignore patterns now that the Blazor dashboard is the single supported dashboard implementation.
+
 ## [0.3.6] - 2026-02-27
 
 - Made MCP plan-by-id operations session-agnostic in execution handlers (`get_plan`, `update_plan`, `complete_task`, `update_task`, `archive_plan`) to prevent unnecessary "plan does not belong to provided sessionId" failures.

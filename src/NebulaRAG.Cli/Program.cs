@@ -8,6 +8,7 @@ using NebulaRAG.Core.Embeddings;
 using NebulaRAG.Core.Exceptions;
 using NebulaRAG.Core.Services;
 using NebulaRAG.Core.Storage;
+using Npgsql;
 
 // Setup Serilog
 Log.Logger = new LoggerConfiguration()
@@ -248,6 +249,31 @@ internal static class ProgramMain
                         return 0;
                     }
 
+                case "clone-db":
+                    {
+                        var sourceDatabase = options.TryGetValue("from", out var fromDatabase) && !string.IsNullOrWhiteSpace(fromDatabase)
+                            ? fromDatabase.Trim()
+                            : "brewmind";
+                        var targetDatabase = options.TryGetValue("to", out var toDatabase) && !string.IsNullOrWhiteSpace(toDatabase)
+                            ? toDatabase.Trim()
+                            : settings.Database.Database;
+
+                        var force = !options.TryGetValue("force", out var forceValue) || !string.Equals(forceValue, "false", StringComparison.OrdinalIgnoreCase);
+
+                        var verification = await CloneDatabaseAsync(settings.Database, sourceDatabase, targetDatabase, force, logger);
+
+                        Console.WriteLine($"✓ Cloned database '{sourceDatabase}' -> '{targetDatabase}'.");
+                        Console.WriteLine($"  rag_documents: {verification.Source.RagDocuments}");
+                        Console.WriteLine($"  rag_chunks: {verification.Source.RagChunks}");
+                        Console.WriteLine($"  memories: {verification.Source.Memories}");
+                        Console.WriteLine($"  plans: {verification.Source.Plans}");
+                        Console.WriteLine($"  tasks: {verification.Source.Tasks}");
+                        Console.WriteLine($"  plan_history: {verification.Source.PlanHistory}");
+                        Console.WriteLine($"  task_history: {verification.Source.TaskHistory}");
+                        Console.WriteLine("✓ Verification: key table counts match.");
+                        return 0;
+                    }
+
                 default:
                     Console.Error.WriteLine($"✗ Unknown command: {command}");
                     PrintUsage();
@@ -396,6 +422,7 @@ internal static class ProgramMain
         Console.WriteLine("  purge-all                             Clear entire index (with confirmation)");
         Console.WriteLine("  health-check                          Verify database connectivity");
         Console.WriteLine("  repair-source-prefix --from <p> --to <p>  Rewrite stored source-path prefixes");
+        Console.WriteLine("  clone-db [--from <db>] [--to <db>] [--force true|false]  Clone source DB into target DB and verify counts");
         Console.WriteLine();
         Console.WriteLine("Options:");
         Console.WriteLine("  --config <path>                       Path to configuration file");
@@ -405,4 +432,179 @@ internal static class ProgramMain
         Console.WriteLine("  dotnet run -- query --text 'How does indexing work?'");
         Console.WriteLine("  dotnet run -- stats");
     }
+
+    /// <summary>
+    /// Clones a source PostgreSQL database into a target database and verifies core table counts.
+    /// </summary>
+    /// <param name="databaseSettings">Database connection settings.</param>
+    /// <param name="sourceDatabase">Source database name.</param>
+    /// <param name="targetDatabase">Target database name.</param>
+    /// <param name="force">When true, drops existing target database before cloning.</param>
+    /// <param name="logger">Logger instance.</param>
+    /// <returns>Verification payload containing source and target key table counts.</returns>
+    private static async Task<CloneVerification> CloneDatabaseAsync(DatabaseSettings databaseSettings, string sourceDatabase, string targetDatabase, bool force, Microsoft.Extensions.Logging.ILogger logger)
+    {
+        if (string.IsNullOrWhiteSpace(sourceDatabase))
+        {
+            throw new ArgumentException("Source database is required.", nameof(sourceDatabase));
+        }
+
+        if (string.IsNullOrWhiteSpace(targetDatabase))
+        {
+            throw new ArgumentException("Target database is required.", nameof(targetDatabase));
+        }
+
+        if (string.Equals(sourceDatabase, targetDatabase, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new ArgumentException("Source and target database must differ.");
+        }
+
+        var builder = new NpgsqlConnectionStringBuilder(databaseSettings.BuildConnectionString())
+        {
+            Database = "postgres"
+        };
+
+        await using var adminConnection = new NpgsqlConnection(builder.ConnectionString);
+        await adminConnection.OpenAsync();
+
+        await EnsureDatabaseExistsAsync(adminConnection, sourceDatabase);
+        await HandleTargetDatabaseAsync(adminConnection, targetDatabase, force);
+
+        await using (var createCommand = adminConnection.CreateCommand())
+        {
+            createCommand.CommandText = $"CREATE DATABASE \"{targetDatabase.Replace("\"", "\"\"")}\" WITH TEMPLATE \"{sourceDatabase.Replace("\"", "\"\"")}\";";
+            await createCommand.ExecuteNonQueryAsync();
+        }
+
+        logger.LogInformation("Database clone complete: {SourceDatabase} -> {TargetDatabase}", sourceDatabase, targetDatabase);
+
+        var sourceCounts = await ReadCoreCountsAsync(builder, sourceDatabase);
+        var targetCounts = await ReadCoreCountsAsync(builder, targetDatabase);
+
+        if (!sourceCounts.Equals(targetCounts))
+        {
+            throw new InvalidOperationException("Database clone verification failed: source and target counts differ.");
+        }
+
+        return new CloneVerification(sourceCounts, targetCounts);
+    }
+
+    /// <summary>
+    /// Ensures the specified database exists.
+    /// </summary>
+    /// <param name="adminConnection">Open admin connection to postgres database.</param>
+    /// <param name="databaseName">Database name to validate.</param>
+    private static async Task EnsureDatabaseExistsAsync(NpgsqlConnection adminConnection, string databaseName)
+    {
+        await using var command = adminConnection.CreateCommand();
+        command.CommandText = "SELECT EXISTS(SELECT 1 FROM pg_database WHERE datname = @db);";
+        command.Parameters.AddWithValue("db", databaseName);
+        var exists = (bool)(await command.ExecuteScalarAsync() ?? false);
+        if (!exists)
+        {
+            throw new InvalidOperationException($"Source database '{databaseName}' does not exist.");
+        }
+    }
+
+    /// <summary>
+    /// Drops the target database when present and force is enabled.
+    /// </summary>
+    /// <param name="adminConnection">Open admin connection to postgres database.</param>
+    /// <param name="targetDatabase">Target database name.</param>
+    /// <param name="force">Force drop existing target database.</param>
+    private static async Task HandleTargetDatabaseAsync(NpgsqlConnection adminConnection, string targetDatabase, bool force)
+    {
+        await using var existsCommand = adminConnection.CreateCommand();
+        existsCommand.CommandText = "SELECT EXISTS(SELECT 1 FROM pg_database WHERE datname = @db);";
+        existsCommand.Parameters.AddWithValue("db", targetDatabase);
+        var targetExists = (bool)(await existsCommand.ExecuteScalarAsync() ?? false);
+
+        if (!targetExists)
+        {
+            return;
+        }
+
+        if (!force)
+        {
+            throw new InvalidOperationException($"Target database '{targetDatabase}' already exists. Use --force true to overwrite.");
+        }
+
+        await using (var terminateCommand = adminConnection.CreateCommand())
+        {
+            terminateCommand.CommandText =
+                """
+                SELECT pg_terminate_backend(pid)
+                FROM pg_stat_activity
+                WHERE datname = @db
+                  AND pid <> pg_backend_pid();
+                """;
+            terminateCommand.Parameters.AddWithValue("db", targetDatabase);
+            await terminateCommand.ExecuteNonQueryAsync();
+        }
+
+        await using var dropCommand = adminConnection.CreateCommand();
+        dropCommand.CommandText = $"DROP DATABASE \"{targetDatabase.Replace("\"", "\"\"")}\";";
+        await dropCommand.ExecuteNonQueryAsync();
+    }
+
+    /// <summary>
+    /// Reads key table counts used to verify clone integrity.
+    /// </summary>
+    /// <param name="baseConnectionBuilder">Connection string builder with server credentials.</param>
+    /// <param name="database">Database to inspect.</param>
+    /// <returns>Key table count payload.</returns>
+    private static async Task<CoreTableCounts> ReadCoreCountsAsync(NpgsqlConnectionStringBuilder baseConnectionBuilder, string database)
+    {
+        var databaseBuilder = new NpgsqlConnectionStringBuilder(baseConnectionBuilder.ConnectionString)
+        {
+            Database = database
+        };
+
+        await using var connection = new NpgsqlConnection(databaseBuilder.ConnectionString);
+        await connection.OpenAsync();
+
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT
+                (SELECT COUNT(*) FROM public.rag_documents)::bigint,
+                (SELECT COUNT(*) FROM public.rag_chunks)::bigint,
+                (SELECT COUNT(*) FROM public.memories)::bigint,
+                (SELECT COUNT(*) FROM public.plans)::bigint,
+                (SELECT COUNT(*) FROM public.tasks)::bigint,
+                (SELECT COUNT(*) FROM public.plan_history)::bigint,
+                (SELECT COUNT(*) FROM public.task_history)::bigint;
+            """;
+
+        await using var reader = await command.ExecuteReaderAsync();
+        await reader.ReadAsync();
+
+        return new CoreTableCounts(
+            RagDocuments: reader.GetInt64(0),
+            RagChunks: reader.GetInt64(1),
+            Memories: reader.GetInt64(2),
+            Plans: reader.GetInt64(3),
+            Tasks: reader.GetInt64(4),
+            PlanHistory: reader.GetInt64(5),
+            TaskHistory: reader.GetInt64(6));
+    }
+
+    /// <summary>
+    /// Core table counts used for clone validation.
+    /// </summary>
+    /// <param name="RagDocuments">Count of rag_documents rows.</param>
+    /// <param name="RagChunks">Count of rag_chunks rows.</param>
+    /// <param name="Memories">Count of memories rows.</param>
+    /// <param name="Plans">Count of plans rows.</param>
+    /// <param name="Tasks">Count of tasks rows.</param>
+    /// <param name="PlanHistory">Count of plan_history rows.</param>
+    /// <param name="TaskHistory">Count of task_history rows.</param>
+    private sealed record CoreTableCounts(long RagDocuments, long RagChunks, long Memories, long Plans, long Tasks, long PlanHistory, long TaskHistory);
+
+    /// <summary>
+    /// Clone verification payload for source and target table counts.
+    /// </summary>
+    /// <param name="Source">Source database table counts.</param>
+    /// <param name="Target">Target database table counts.</param>
+    private sealed record CloneVerification(CoreTableCounts Source, CoreTableCounts Target);
 }

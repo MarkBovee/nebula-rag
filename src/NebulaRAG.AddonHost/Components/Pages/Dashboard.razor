@@ -1,0 +1,177 @@
+@page "/dashboard"
+@page "/dashboard/"
+@rendermode InteractiveServer
+@using NebulaRAG.AddonHost.Services
+@using NebulaRAG.Core.Models
+@implements IAsyncDisposable
+@inject DashboardSnapshotService SnapshotService
+
+<PageTitle>Nebula Dashboard</PageTitle>
+
+<div class="min-h-screen bg-nebula-bg text-nebula-text">
+    <div class="mx-auto max-w-7xl px-4 py-6 md:px-8 md:py-10">
+        <section class="mb-6 rounded-2xl border border-nebula-border bg-nebula-surface/90 p-6 shadow-xl">
+            <div class="flex flex-wrap items-start justify-between gap-4">
+                <div>
+                    <p class="text-xs uppercase tracking-[0.24em] text-nebula-muted">NebulaRAG</p>
+                    <h1 class="mt-1 text-3xl font-semibold md:text-4xl">Project Dashboard</h1>
+                    <p class="mt-2 text-sm text-nebula-muted">Structuur: <span class="font-medium text-nebula-text">projects -> plans / rag / memory</span></p>
+                </div>
+                <button class="rounded-lg border border-nebula-accent px-4 py-2 text-sm font-medium text-nebula-text transition hover:bg-nebula-accent/20" @onclick="RefreshAsync">
+                    Refresh
+                </button>
+            </div>
+        </section>
+
+        @if (!string.IsNullOrWhiteSpace(_error))
+        {
+            <section class="mb-6 rounded-xl border border-red-500/60 bg-red-500/10 p-4 text-sm">
+                @_error
+            </section>
+        }
+
+        <section class="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <article class="rounded-xl border border-nebula-border bg-nebula-surface p-4">
+                <p class="text-xs uppercase tracking-[0.16em] text-nebula-muted">Projects</p>
+                <p class="mt-2 text-2xl font-semibold">@_projects.Count</p>
+            </article>
+            <article class="rounded-xl border border-nebula-border bg-nebula-surface p-4">
+                <p class="text-xs uppercase tracking-[0.16em] text-nebula-muted">Plans</p>
+                <p class="mt-2 text-2xl font-semibold">@_projects.Sum(project => project.Plans.PlanCount)</p>
+            </article>
+            <article class="rounded-xl border border-nebula-border bg-nebula-surface p-4">
+                <p class="text-xs uppercase tracking-[0.16em] text-nebula-muted">RAG Chunks</p>
+                <p class="mt-2 text-2xl font-semibold">@_projects.Sum(project => project.Rag.ChunkCount)</p>
+            </article>
+            <article class="rounded-xl border border-nebula-border bg-nebula-surface p-4">
+                <p class="text-xs uppercase tracking-[0.16em] text-nebula-muted">Memories</p>
+                <p class="mt-2 text-2xl font-semibold">@_projects.Sum(project => project.Memory.MemoryCount)</p>
+            </article>
+        </section>
+
+        <section class="rounded-2xl border border-nebula-border bg-nebula-surface p-4 md:p-6">
+            <div class="mb-4 flex items-center justify-between">
+                <h2 class="text-xl font-semibold">Per Project</h2>
+                @if (_loading)
+                {
+                    <span class="text-xs uppercase tracking-[0.16em] text-nebula-ok">laden</span>
+                }
+            </div>
+
+            <div class="overflow-x-auto">
+                <table class="w-full border-collapse text-sm">
+                    <thead>
+                        <tr class="text-left text-xs uppercase tracking-[0.13em] text-nebula-muted">
+                            <th class="border-b border-nebula-border px-3 py-3">Project</th>
+                            <th class="border-b border-nebula-border px-3 py-3">Plans</th>
+                            <th class="border-b border-nebula-border px-3 py-3">RAG</th>
+                            <th class="border-b border-nebula-border px-3 py-3">Memory</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @if (_projects.Count == 0 && !_loading)
+                        {
+                            <tr>
+                                <td class="px-3 py-4 text-nebula-muted" colspan="4">Geen projectdata gevonden.</td>
+                            </tr>
+                        }
+                        else
+                        {
+                            foreach (var project in _projects)
+                            {
+                                <tr class="align-top even:bg-white/2">
+                                    <td class="border-b border-nebula-border px-3 py-3 font-medium">@project.ProjectId</td>
+                                    <td class="border-b border-nebula-border px-3 py-3">
+                                        <p>@project.Plans.PlanCount totaal</p>
+                                        <p class="text-nebula-muted">@project.Plans.ActivePlanCount actief, @project.Plans.TaskCount taken</p>
+                                    </td>
+                                    <td class="border-b border-nebula-border px-3 py-3">
+                                        <p>@project.Rag.DocumentCount docs, @project.Rag.ChunkCount chunks</p>
+                                        <p class="text-nebula-muted">@project.Rag.TotalTokens tokens</p>
+                                    </td>
+                                    <td class="border-b border-nebula-border px-3 py-3">
+                                        <p>@project.Memory.MemoryCount items</p>
+                                        <p class="text-nebula-muted">@FormatOffset(project.Memory.LastMemoryAtUtc)</p>
+                                    </td>
+                                </tr>
+                            }
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </div>
+</div>
+
+@code {
+    private readonly List<ProjectDashboardNode> _projects = new();
+    private PeriodicTimer? _refreshTimer;
+    private CancellationTokenSource? _refreshCancellation;
+    private bool _loading;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _refreshCancellation = new CancellationTokenSource();
+        _refreshTimer = new PeriodicTimer(TimeSpan.FromSeconds(20));
+        _ = RunRefreshLoopAsync(_refreshCancellation.Token);
+        await RefreshAsync();
+    }
+
+    private async Task RunRefreshLoopAsync(CancellationToken cancellationToken)
+    {
+        if (_refreshTimer is null)
+        {
+            return;
+        }
+
+        try
+        {
+            while (await _refreshTimer.WaitForNextTickAsync(cancellationToken))
+            {
+                await InvokeAsync(RefreshAsync);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    private async Task RefreshAsync()
+    {
+        _loading = true;
+        _error = null;
+
+        try
+        {
+            var projects = await SnapshotService.GetProjectHierarchyAsync();
+            _projects.Clear();
+            _projects.AddRange(projects);
+        }
+        catch (Exception exception)
+        {
+            _error = $"Dashboard data kon niet geladen worden: {exception.Message}";
+        }
+        finally
+        {
+            _loading = false;
+            StateHasChanged();
+        }
+    }
+
+    private static string FormatOffset(DateTimeOffset? value)
+    {
+        return value.HasValue ? value.Value.UtcDateTime.ToString("yyyy-MM-dd HH:mm 'UTC'") : "n/a";
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_refreshCancellation is not null)
+        {
+            await _refreshCancellation.CancelAsync();
+            _refreshCancellation.Dispose();
+        }
+
+        _refreshTimer?.Dispose();
+    }
+}
