@@ -288,6 +288,15 @@ NebulaRAG ships with `AGENTS.md` — an instruction file that tells your agent w
 
 MCP configs for Claude Code (`.mcp.json`) and VS Code Copilot (`copilot.mcp.json`) are included in the repository root and registered automatically by the setup script.
 
+### Intake Prompt Commands
+
+For lightweight planning intake, this repository now includes two prompt commands:
+
+- `/new-feature` - run a short questioning loop to capture feature-level decisions and constraints
+- `/new-project` - run a short questioning loop to capture project-level scope and outcomes
+
+Both commands use the shared intake skill at `.github/skills/intake-questioning/SKILL.md` and produce a structured handoff that can be used as planning input.
+
 ---
 
 ## Security

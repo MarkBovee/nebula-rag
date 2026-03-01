@@ -4,6 +4,12 @@ All notable changes to the Nebula RAG Home Assistant add-on are documented in th
 
 The format is inspired by Keep a Changelog and follows semantic versioning.
 
+## [0.3.18] - 2026-03-01
+
+- Added a shared intake questioning skill at `.github/skills/intake-questioning/` with lightweight gray-area selection, four-question discussion loops, readiness gates, and scope guardrails for planning preparation.
+- Added prompt command wrappers `.github/prompts/new-feature.prompt.md` and `.github/prompts/new-project.prompt.md` so new feature/project intake can be started with a consistent questioning flow.
+- Added a reusable intake handoff template (`.github/skills/intake-questioning/templates/intake-output.md`) to standardize captured decisions, constraints, deferred ideas, and planning handoff notes.
+
 ## [0.3.17] - 2026-02-28
 
 - Refactored dashboard Blazor components by splitting `Dashboard.razor` and `RagManagementTab.razor` into markup plus code-behind partial classes, reducing UI markup noise and clarifying component lifecycle/state intent.
