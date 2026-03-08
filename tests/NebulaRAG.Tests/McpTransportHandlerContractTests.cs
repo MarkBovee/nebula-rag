@@ -182,10 +182,10 @@ public sealed class McpTransportHandlerContractTests
     }
 
     /// <summary>
-    /// Ensures tools/list can include legacy aliases when full profile is requested.
+    /// Ensures tools/list remains minimal even when clients request full/legacy profiles.
     /// </summary>
     [Fact]
-    public async Task HandleAsync_ToolsList_FullProfile_IncludesLegacyTools()
+    public async Task HandleAsync_ToolsList_FullProfileRequest_StillReturnsMinimalCatalog()
     {
         var transportHandler = CreateTransportHandler();
         var request = new JsonObject
@@ -207,10 +207,40 @@ public sealed class McpTransportHandlerContractTests
             .ToHashSet(StringComparer.Ordinal);
 
         Assert.Contains("rag_query", toolNames);
-        Assert.Contains("query_project_rag", toolNames);
-        Assert.Contains("memory_recall", toolNames);
-        Assert.Contains("create_plan", toolNames);
-        Assert.Equal("full", response["result"]?["profile"]?.GetValue<string>());
+        Assert.DoesNotContain("query_project_rag", toolNames);
+        Assert.DoesNotContain("memory_recall", toolNames);
+        Assert.DoesNotContain("create_plan", toolNames);
+        Assert.Equal("minimal", response["result"]?["profile"]?.GetValue<string>());
+    }
+
+    /// <summary>
+    /// Ensures removed legacy tool names are rejected by tools/call.
+    /// </summary>
+    [Fact]
+    public async Task HandleAsync_ToolsCall_LegacyToolName_ReturnsUnknownTool()
+    {
+        var transportHandler = CreateTransportHandler();
+        var request = new JsonObject
+        {
+            ["jsonrpc"] = "2.0",
+            ["id"] = 10,
+            ["method"] = "tools/call",
+            ["params"] = new JsonObject
+            {
+                ["name"] = "query_project_rag",
+                ["arguments"] = new JsonObject
+                {
+                    ["text"] = "test"
+                }
+            }
+        };
+
+        var response = await transportHandler.HandleAsync(request, CancellationToken.None);
+        var resultText = response["result"]?["content"]?[0]?["text"]?.GetValue<string>();
+
+        Assert.Equal("2.0", response["jsonrpc"]?.GetValue<string>());
+        Assert.Contains("Unknown tool: query_project_rag", resultText);
+        Assert.True(response["result"]?["isError"]?.GetValue<bool>());
     }
 
     /// <summary>

@@ -32,14 +32,9 @@ NebulaRAG includes a broad MCP (Model Context Protocol) integration for retrieva
 - `plan`: Unified planning operations (`create`, `get`, `list`, `update`, `complete_task`, `update_task`, `archive`)
 - `system`: Unified system metadata operations (`server_info`)
 
-### Legacy Compatibility
-
-Legacy tool names such as `query_project_rag`, `memory_recall`, `create_plan`, and `archive_plan` remain available for backward compatibility.
-
 ### tools/list Profiles
 
-- Default `tools/list` behavior is `minimal`, returning only preferred consolidated tools.
-- Use `profile: "full"` (or `includeLegacy: true`) in `tools/list` params to include legacy aliases.
+- `tools/list` returns a `minimal` profile with only the unified preferred tool set.
 
 ### Plan Session Behavior
 
@@ -52,8 +47,9 @@ Plan retrieval and mutation by `planId` are session-agnostic. `sessionId` is opt
 curl -X POST http://localhost:8099/mcp -d '{
   "method": "tools/call",
   "params": {
-    "name": "create_plan",
+    "name": "plan",
     "arguments": {
+      "action": "create",
       "sessionId": "agent-session-1",
       "planName": "Project Planning",
       "projectId": "project-123",
@@ -66,10 +62,10 @@ curl -X POST http://localhost:8099/mcp -d '{
 curl -X POST http://localhost:8099/mcp -d '{
   "method": "tools/call",
   "params": {
-    "name": "get_plan",
+    "name": "plan",
     "arguments": {
-      "sessionId": "agent-session-1",
-      "planId": "plan-123"
+      "action": "get",
+      "planId": 123
     }
   }
 }'
@@ -78,8 +74,9 @@ curl -X POST http://localhost:8099/mcp -d '{
 curl -X POST http://localhost:8099/mcp -d '{
   "method": "tools/call",
   "params": {
-    "name": "list_plans",
+    "name": "plan",
     "arguments": {
+      "action": "list",
       "sessionId": "agent-session-1"
     }
   }
@@ -277,40 +274,8 @@ NebulaRAG/
 |---|---|
 | `plan` | Unified plan/task operations (`create`, `get`, `list`, `update`, `complete_task`, `update_task`, `archive`) |
 
-### Legacy Aliases
-
-| Tool | Description |
-|---|---|
-| `query_project_rag` | Semantic search over indexed sources |
-| `rag_init_schema` | Initialize database schema |
-| `rag_health_check` | Check system health |
-| `rag_server_info` | Server and model info |
-| `rag_index_stats` | Chunk counts per source |
-| `rag_list_sources` | List all indexed sources |
-| `rag_index_path` | Index a local directory or file |
-| `rag_index_text` | Index raw text directly |
-| `rag_index_url` | Fetch and index a URL |
-| `rag_reindex_source` | Reindex an existing source |
-| `rag_get_chunk` | Retrieve a specific chunk by ID |
-| `rag_search_similar` | Similarity search without source filter |
-| `rag_normalize_source_paths` | Normalize stored source paths |
-| `rag_delete_source` | Remove a source from the index |
-| `rag_purge_all` | Clear the entire index |
-| `memory_store` | Store an agent memory |
-| `memory_recall` | Semantic search over memories |
-| `memory_list` | List memories by tag or type |
-| `memory_update` | Update an existing memory |
-| `memory_delete` | Delete a specific memory |
-| `create_plan` | Create a new plan with initial tasks |
-| `get_plan` | Retrieve a specific plan by ID |
-| `list_plans` | List all plans for a session |
-| `update_plan` | Update plan details or status |
-| `complete_task` | Complete a plan task |
-| `update_task` | Update a plan task |
-| `archive_plan` | Archive a plan |
-
 > `rag-sources.md` is automatically synchronized after every index, delete, and purge operation.  
-> The `memories` table and indexes are created automatically on `rag_init_schema`.
+> The `memories` table and indexes are created automatically through `rag_admin` with action `init_schema`.
 
 ---
 
