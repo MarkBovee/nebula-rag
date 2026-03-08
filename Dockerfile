@@ -1,7 +1,7 @@
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
-COPY ["NebulaRAG.sln", "./"]
+COPY ["NebulaRAG.slnx", "./"]
 COPY ["src/NebulaRAG.Core/NebulaRAG.Core.csproj", "src/NebulaRAG.Core/"]
 COPY ["src/NebulaRAG.Mcp/NebulaRAG.Mcp.csproj", "src/NebulaRAG.Mcp/"]
 RUN dotnet restore "src/NebulaRAG.Mcp/NebulaRAG.Mcp.csproj"

@@ -12,7 +12,7 @@ using Npgsql;
 
 // Setup Serilog
 Log.Logger = new LoggerConfiguration()
-    .MinimumLevel.Information()
+    .MinimumLevel.Warning()
     .WriteTo.Console(new CompactJsonFormatter())
     .CreateLogger();
 
@@ -53,15 +53,25 @@ internal static class ProgramMain
         var loggerFactory = LoggerFactory.Create(builder =>
         {
             builder.AddSerilog();
-            builder.SetMinimumLevel(LogLevel.Information);
+            builder.SetMinimumLevel(LogLevel.Warning);
         });
         var logger = loggerFactory.CreateLogger("NebulaRAG.CLI");
+
+        var dotEnvResult = DotEnvLoader.LoadStandardDotEnv();
+        if (dotEnvResult.FoundFile)
+        {
+            logger.LogDebug("Loaded .env from {Path}. Applied {LoadedCount} keys ({SkippedCount} skipped due to existing values).", dotEnvResult.Path, dotEnvResult.LoadedCount, dotEnvResult.SkippedCount);
+        }
+        else
+        {
+            Console.Error.WriteLine("! No .env file found. Using existing process environment variables only.");
+        }
 
         try
         {
             var settings = LoadSettings(options.TryGetValue("config", out var configPath) ? configPath : null);
             settings.Validate();
-            logger.LogInformation("Configuration loaded and validated");
+            logger.LogDebug("Configuration loaded and validated");
 
             var store = new PostgresRagStore(settings.Database.BuildConnectionString());
             var chunker = new TextChunker();
@@ -92,6 +102,13 @@ internal static class ProgramMain
                             $"✓ Index complete: {summary.DocumentsIndexed} documents indexed, " +
                             $"{summary.ChunksIndexed} chunks, {summary.DocumentsSkipped} skipped.");
                         return 0;
+                    }
+
+                case "preload":
+                    {
+                        var indexerLogger = loggerFactory.CreateLogger<RagIndexer>();
+                        var indexer = new RagIndexer(store, chunker, embeddingGenerator, settings, indexerLogger);
+                        return await ExecutePreloadAsync(options, settings, indexer, sourcesManifestService, logger);
                     }
 
                 case "query":
@@ -141,14 +158,27 @@ internal static class ProgramMain
                         var mgmtLogger = loggerFactory.CreateLogger<RagManagementService>();
                            var mgmtService = new RagManagementService(store, embeddingGenerator, settings, mgmtLogger);
                         var stats = await mgmtService.GetStatsAsync();
+                        var projectStats = await mgmtService.GetProjectRagStatsAsync();
                         Console.WriteLine($"✓ Index Statistics:");
                         Console.WriteLine($"  Documents: {stats.DocumentCount}");
                         Console.WriteLine($"  Chunks: {stats.ChunkCount}");
                         Console.WriteLine($"  Total Tokens: {stats.TotalTokens:N0}");
+                        Console.WriteLine($"  Projects: {stats.ProjectCount}");
                         if (stats.OldestIndexedAt.HasValue)
                             Console.WriteLine($"  Oldest: {stats.OldestIndexedAt:g}");
                         if (stats.NewestIndexedAt.HasValue)
                             Console.WriteLine($"  Newest: {stats.NewestIndexedAt:g}");
+
+                        if (projectStats.Count > 0)
+                        {
+                            Console.WriteLine();
+                            Console.WriteLine("✓ Project Breakdown:");
+                            foreach (var project in projectStats)
+                            {
+                                var latestIndexedAt = project.NewestIndexedAt.HasValue ? project.NewestIndexedAt.Value.ToString("g") : "n/a";
+                                Console.WriteLine($"  {project.ProjectId} | docs: {project.DocumentCount} | chunks: {project.ChunkCount} | tokens: {project.TotalTokens:N0} | newest: {latestIndexedAt}");
+                            }
+                        }
                         return 0;
                     }
 
@@ -387,6 +417,379 @@ internal static class ProgramMain
     }
 
     /// <summary>
+    /// Executes preload flow by auto-detecting project roots and prompting the user when confidence is low.
+    /// </summary>
+    /// <param name="options">Command-line options.</param>
+    /// <param name="settings">Resolved RAG settings.</param>
+    /// <param name="indexer">Indexer service.</param>
+    /// <param name="sourcesManifestService">RAG sources manifest service.</param>
+    /// <param name="logger">Command logger.</param>
+    /// <returns>Exit code.</returns>
+    private static async Task<int> ExecutePreloadAsync(Dictionary<string, string> options, RagSettings settings, RagIndexer indexer, RagSourcesManifestService sourcesManifestService, Microsoft.Extensions.Logging.ILogger logger)
+    {
+        if (options.TryGetValue("source", out var explicitSource) && !string.IsNullOrWhiteSpace(explicitSource))
+        {
+            return await RunPreloadForPathsAsync([explicitSource.Trim()], indexer, sourcesManifestService, logger, dryRun: IsOptionEnabled(options, "dry-run"));
+        }
+
+        var currentDirectory = Directory.GetCurrentDirectory();
+        var candidates = DetectPreloadCandidates(currentDirectory, settings);
+        var selection = SelectPreloadPaths(candidates, currentDirectory);
+
+        if (!selection.IsConfirmed)
+        {
+            return 1;
+        }
+
+        return await RunPreloadForPathsAsync(selection.Paths, indexer, sourcesManifestService, logger, dryRun: IsOptionEnabled(options, "dry-run"));
+    }
+
+    /// <summary>
+    /// Indexes one or more selected paths and emits an aggregate summary.
+    /// </summary>
+    /// <param name="paths">Paths selected for preload.</param>
+    /// <param name="indexer">Indexer service.</param>
+    /// <param name="sourcesManifestService">Manifest synchronization service.</param>
+    /// <param name="logger">Command logger.</param>
+    /// <param name="dryRun">When true, prints what would be indexed without writing.</param>
+    /// <returns>Exit code.</returns>
+    private static async Task<int> RunPreloadForPathsAsync(IReadOnlyList<string> paths, RagIndexer indexer, RagSourcesManifestService sourcesManifestService, Microsoft.Extensions.Logging.ILogger logger, bool dryRun)
+    {
+        var normalizedPaths = paths
+            .Where(path => !string.IsNullOrWhiteSpace(path))
+            .Select(path => Path.GetFullPath(path))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (normalizedPaths.Count == 0)
+        {
+            Console.Error.WriteLine("✗ No preload paths were selected.");
+            return 1;
+        }
+
+        if (dryRun)
+        {
+            Console.WriteLine("✓ Preload dry-run plan:");
+            foreach (var path in normalizedPaths)
+            {
+                Console.WriteLine($"  - {path}");
+            }
+
+            Console.WriteLine("No indexing changes were written.");
+            return 0;
+        }
+
+        var totalIndexed = 0;
+        var totalSkipped = 0;
+        var totalChunks = 0;
+
+        foreach (var path in normalizedPaths)
+        {
+            var summary = await indexer.IndexDirectoryAsync(path);
+            await TrySyncRagSourcesManifestAsync(sourcesManifestService, path, logger);
+            totalIndexed += summary.DocumentsIndexed;
+            totalSkipped += summary.DocumentsSkipped;
+            totalChunks += summary.ChunksIndexed;
+        }
+
+        Console.WriteLine($"✓ Preload complete: {totalIndexed} documents indexed, {totalChunks} chunks, {totalSkipped} skipped.");
+        return 0;
+    }
+
+    /// <summary>
+    /// Detects likely preload candidates from the current folder and immediate child folders.
+    /// </summary>
+    /// <param name="workingDirectory">Current working directory.</param>
+    /// <param name="settings">RAG settings used for extension and exclusion rules.</param>
+    /// <returns>Candidate list sorted by confidence score descending.</returns>
+    private static List<PreloadCandidate> DetectPreloadCandidates(string workingDirectory, RagSettings settings)
+    {
+        var includeExtensions = new HashSet<string>(settings.Ingestion.IncludeExtensions, StringComparer.OrdinalIgnoreCase);
+        var excludedDirectories = new HashSet<string>(settings.Ingestion.ExcludeDirectories, StringComparer.OrdinalIgnoreCase);
+
+        var rootsToEvaluate = new List<string> { Path.GetFullPath(workingDirectory) };
+        try
+        {
+            rootsToEvaluate.AddRange(Directory.EnumerateDirectories(workingDirectory)
+                .Take(8)
+                .Select(Path.GetFullPath));
+        }
+        catch
+        {
+            // Ignore child directory discovery failures and keep current directory fallback.
+        }
+
+        var candidates = new List<PreloadCandidate>();
+        foreach (var root in rootsToEvaluate.Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            if (!Directory.Exists(root))
+            {
+                continue;
+            }
+
+            var hasGit = Directory.Exists(Path.Combine(root, ".git"));
+            var hasSrc = Directory.Exists(Path.Combine(root, "src"));
+            var hasDocs = Directory.Exists(Path.Combine(root, "docs"));
+            var hasTests = Directory.Exists(Path.Combine(root, "tests")) || Directory.Exists(Path.Combine(root, "test"));
+            var hasProjectMarkers = File.Exists(Path.Combine(root, "README.md"))
+                || Directory.EnumerateFiles(root, "*.sln", SearchOption.TopDirectoryOnly).Any()
+                || Directory.EnumerateFiles(root, "*.slnx", SearchOption.TopDirectoryOnly).Any()
+                || Directory.EnumerateFiles(root, "*.csproj", SearchOption.TopDirectoryOnly).Any()
+                || File.Exists(Path.Combine(root, "package.json"))
+                || File.Exists(Path.Combine(root, "pyproject.toml"));
+
+            var eligibleFiles = CountEligibleFiles(root, includeExtensions, excludedDirectories, maxFiles: 2500);
+            if (!hasProjectMarkers && eligibleFiles == 0)
+            {
+                continue;
+            }
+
+            var score = 0;
+            if (hasGit)
+            {
+                score += 30;
+            }
+
+            if (hasProjectMarkers)
+            {
+                score += 20;
+            }
+
+            if (hasSrc)
+            {
+                score += 12;
+            }
+
+            if (hasDocs)
+            {
+                score += 6;
+            }
+
+            if (hasTests)
+            {
+                score += 4;
+            }
+
+            score += Math.Min(30, eligibleFiles / 20);
+
+            if (!string.Equals(root, workingDirectory, StringComparison.OrdinalIgnoreCase))
+            {
+                score -= 4;
+            }
+
+            var reason = BuildCandidateReason(hasGit, hasProjectMarkers, hasSrc, hasDocs, hasTests, eligibleFiles);
+            candidates.Add(new PreloadCandidate(root, Math.Max(score, 0), eligibleFiles, reason));
+        }
+
+        return candidates
+            .OrderByDescending(candidate => candidate.Score)
+            .ThenByDescending(candidate => candidate.EligibleFileCount)
+            .ToList();
+    }
+
+    /// <summary>
+    /// Builds a short human-readable reason string describing why a path was selected.
+    /// </summary>
+    /// <param name="hasGit">Whether path contains a git repository.</param>
+    /// <param name="hasProjectMarkers">Whether path has project marker files.</param>
+    /// <param name="hasSrc">Whether path has a src directory.</param>
+    /// <param name="hasDocs">Whether path has a docs directory.</param>
+    /// <param name="hasTests">Whether path has tests directory.</param>
+    /// <param name="eligibleFiles">Detected file count eligible for indexing.</param>
+    /// <returns>Reason string.</returns>
+    private static string BuildCandidateReason(bool hasGit, bool hasProjectMarkers, bool hasSrc, bool hasDocs, bool hasTests, int eligibleFiles)
+    {
+        var signals = new List<string>();
+        if (hasGit)
+        {
+            signals.Add("git");
+        }
+
+        if (hasProjectMarkers)
+        {
+            signals.Add("project markers");
+        }
+
+        if (hasSrc)
+        {
+            signals.Add("src");
+        }
+
+        if (hasDocs)
+        {
+            signals.Add("docs");
+        }
+
+        if (hasTests)
+        {
+            signals.Add("tests");
+        }
+
+        signals.Add($"eligible files: {eligibleFiles}");
+        return string.Join(", ", signals);
+    }
+
+    /// <summary>
+    /// Selects preload paths, prompting the user only when detection confidence is low.
+    /// </summary>
+    /// <param name="candidates">Detected candidates.</param>
+    /// <param name="workingDirectory">Current working directory fallback.</param>
+    /// <returns>Selection result.</returns>
+    private static (bool IsConfirmed, List<string> Paths) SelectPreloadPaths(IReadOnlyList<PreloadCandidate> candidates, string workingDirectory)
+    {
+        if (candidates.Count == 0)
+        {
+            Console.WriteLine("Could not confidently detect a project root for preload.");
+            return PromptForPathSelection(candidates, workingDirectory, isUncertain: true);
+        }
+
+        var top = candidates[0];
+        var secondScore = candidates.Count > 1 ? candidates[1].Score : 0;
+        var confident = top.Score >= 45 && (candidates.Count == 1 || top.Score - secondScore >= 12);
+
+        if (confident)
+        {
+            Console.WriteLine($"✓ Auto-detected preload source: {top.Path}");
+            Console.WriteLine($"  Signals: {top.Reason}");
+            return (true, [top.Path]);
+        }
+
+        Console.WriteLine("Preload detection found multiple possible sources.");
+        return PromptForPathSelection(candidates, workingDirectory, isUncertain: true);
+    }
+
+    /// <summary>
+    /// Prompts the user to select a detected source, all sources, or a custom path.
+    /// </summary>
+    /// <param name="candidates">Detected candidates.</param>
+    /// <param name="workingDirectory">Fallback current directory path.</param>
+    /// <param name="isUncertain">Whether the prompt is due to uncertain detection.</param>
+    /// <returns>Selection result.</returns>
+    private static (bool IsConfirmed, List<string> Paths) PromptForPathSelection(IReadOnlyList<PreloadCandidate> candidates, string workingDirectory, bool isUncertain)
+    {
+        if (isUncertain)
+        {
+            Console.WriteLine("Select what to preload:");
+        }
+
+        for (var i = 0; i < candidates.Count; i++)
+        {
+            var candidate = candidates[i];
+            Console.WriteLine($"  {i + 1}) {candidate.Path}  [{candidate.Reason}]");
+        }
+
+        Console.WriteLine("  A) All detected sources");
+        Console.WriteLine("  C) Custom path");
+        Console.WriteLine($"  D) Current directory ({workingDirectory})");
+        Console.WriteLine("  Q) Cancel");
+        Console.Write("Choice (default 1): ");
+
+        var input = (Console.ReadLine() ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(input))
+        {
+            if (candidates.Count == 0)
+            {
+                return (true, [workingDirectory]);
+            }
+
+            return (true, [candidates[0].Path]);
+        }
+
+        if (string.Equals(input, "Q", StringComparison.OrdinalIgnoreCase))
+        {
+            Console.WriteLine("Cancelled.");
+            return (false, []);
+        }
+
+        if (string.Equals(input, "A", StringComparison.OrdinalIgnoreCase))
+        {
+            var allPaths = candidates.Select(candidate => candidate.Path).ToList();
+            if (allPaths.Count == 0)
+            {
+                allPaths.Add(workingDirectory);
+            }
+
+            return (true, allPaths);
+        }
+
+        if (string.Equals(input, "D", StringComparison.OrdinalIgnoreCase))
+        {
+            return (true, [workingDirectory]);
+        }
+
+        if (string.Equals(input, "C", StringComparison.OrdinalIgnoreCase))
+        {
+            Console.Write("Enter directory path to preload: ");
+            var customPath = (Console.ReadLine() ?? string.Empty).Trim();
+            if (string.IsNullOrWhiteSpace(customPath))
+            {
+                Console.Error.WriteLine("✗ Custom path is required.");
+                return (false, []);
+            }
+
+            return (true, [customPath]);
+        }
+
+        if (int.TryParse(input, out var selectedIndex) && selectedIndex >= 1 && selectedIndex <= candidates.Count)
+        {
+            return (true, [candidates[selectedIndex - 1].Path]);
+        }
+
+        Console.Error.WriteLine("✗ Invalid selection.");
+        return (false, []);
+    }
+
+    /// <summary>
+    /// Counts index-eligible files under a root using current extension and exclusion rules.
+    /// </summary>
+    /// <param name="rootDirectory">Directory to inspect.</param>
+    /// <param name="includeExtensions">Allowed extensions.</param>
+    /// <param name="excludedDirectories">Excluded directory names.</param>
+    /// <param name="maxFiles">Maximum file count to inspect before early exit.</param>
+    /// <returns>Eligible file count up to maxFiles.</returns>
+    private static int CountEligibleFiles(string rootDirectory, HashSet<string> includeExtensions, HashSet<string> excludedDirectories, int maxFiles)
+    {
+        var count = 0;
+        foreach (var filePath in Directory.EnumerateFiles(rootDirectory, "*", SearchOption.AllDirectories))
+        {
+            var segments = filePath.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            if (segments.Any(excludedDirectories.Contains))
+            {
+                continue;
+            }
+
+            if (!includeExtensions.Contains(Path.GetExtension(filePath)))
+            {
+                continue;
+            }
+
+            count++;
+            if (count >= maxFiles)
+            {
+                return count;
+            }
+        }
+
+        return count;
+    }
+
+    /// <summary>
+    /// Returns whether an option key is present and enabled.
+    /// </summary>
+    /// <param name="options">Command-line options.</param>
+    /// <param name="key">Option key without leading dashes.</param>
+    /// <returns><c>true</c> when option is present and not explicitly false.</returns>
+    private static bool IsOptionEnabled(Dictionary<string, string> options, string key)
+    {
+        if (!options.TryGetValue(key, out var rawValue))
+        {
+            return false;
+        }
+
+        return !string.Equals(rawValue, "false", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
     /// Synchronizes rag-sources markdown after index mutations without failing the main command when sync fails.
     /// </summary>
     /// <param name="sourcesManifestService">Service that writes rag-sources markdown from indexed metadata.</param>
@@ -413,6 +816,7 @@ internal static class ProgramMain
         Console.WriteLine("Core Commands:");
         Console.WriteLine("  init                                  Initialize database schema");
         Console.WriteLine("  index [--source <directory>]          Index documents from directory");
+        Console.WriteLine("  preload [--source <directory>] [--dry-run]  Auto-detect and preload project data");
         Console.WriteLine("  query --text <query> [--limit <n>]    Execute semantic search");
         Console.WriteLine();
         Console.WriteLine("Management Commands:");
@@ -588,6 +992,15 @@ internal static class ProgramMain
             PlanHistory: reader.GetInt64(5),
             TaskHistory: reader.GetInt64(6));
     }
+
+    /// <summary>
+    /// Candidate source for preload auto-detection.
+    /// </summary>
+    /// <param name="Path">Candidate directory path.</param>
+    /// <param name="Score">Confidence score used for ranking.</param>
+    /// <param name="EligibleFileCount">Estimated eligible file count.</param>
+    /// <param name="Reason">Human-readable confidence signals.</param>
+    private sealed record PreloadCandidate(string Path, int Score, int EligibleFileCount, string Reason);
 
     /// <summary>
     /// Core table counts used for clone validation.

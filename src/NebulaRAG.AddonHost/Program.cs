@@ -26,6 +26,12 @@ Log.Logger = new LoggerConfiguration()
     .WriteTo.Console(outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj}{NewLine}{Exception}")
     .CreateLogger();
 
+var addonDotEnvResult = DotEnvLoader.LoadStandardDotEnv();
+if (addonDotEnvResult.FoundFile)
+{
+    Log.Information("Loaded .env from {Path}. Applied {LoadedCount} keys ({SkippedCount} skipped due to existing values).", addonDotEnvResult.Path, addonDotEnvResult.LoadedCount, addonDotEnvResult.SkippedCount);
+}
+
 var builder = WebApplication.CreateBuilder(args);
 builder.Host.UseSerilog();
 ConfigureOpenTelemetry(builder.Services);

@@ -4,6 +4,32 @@ All notable changes to the Nebula RAG Home Assistant add-on are documented in th
 
 The format is inspired by Keep a Changelog and follows semantic versioning.
 
+## [0.3.22] - 2026-03-08
+
+- Reduced `NebulaRAG.Cli` console noise by lowering default structured logger verbosity and suppressing startup info messages that were polluting command output.
+- Added a plain warning when no `.env` file is discovered so environment fallback behavior is explicit without JSON log spam.
+- Extended `nebula stats` to include project-first grouping output (per project: document count, chunk count, token total, and newest index timestamp).
+- Added `RagManagementService.GetProjectRagStatsAsync` to expose project-level RAG aggregates for CLI and operational surfaces.
+
+## [0.3.21] - 2026-03-08
+
+- Added shared startup `.env` loading in all executable hosts (`NebulaRAG.Cli`, `NebulaRAG.Mcp`, and `NebulaRAG.AddonHost`) so `NEBULARAG_*` variables are applied automatically from the nearest `.env` file.
+- Standardized repository tooling and docs to `.env` only by removing `.nebula.env` references across setup script defaults, security/agent instruction files, and MCP container config.
+- Removed the legacy `.nebula.env` file and switched setup-generated env paths/templates to `.env`.
+
+## [0.3.20] - 2026-03-08
+
+- Migrated solution entry usage from `NebulaRAG.sln` to `NebulaRAG.slnx` in CI and Docker build inputs (`.github/workflows/security.yml`, `Dockerfile`).
+- Updated CLI preload project-marker detection to recognize `.slnx` files when auto-detecting candidate roots.
+- Added guidance and support for a persistent PowerShell `nebula` terminal function alias that forwards to `src/NebulaRAG.Cli` for direct command usage.
+
+## [0.3.19] - 2026-03-08
+
+- Added a new CLI command `preload` in `src/NebulaRAG.Cli/Program.cs` to bootstrap project indexing without a manifest.
+- Implemented automatic project-source detection with confidence scoring from the current working directory and first-level subfolders.
+- Added interactive fallback prompts when detection is uncertain, allowing users to select a detected source, all detected sources, current directory, or a custom directory.
+- Added `--dry-run` support for `preload` to preview selected preload paths without writing index changes.
+
 ## [0.3.18] - 2026-03-01
 
 - Added a shared intake questioning skill at `.github/skills/intake-questioning/` with lightweight gray-area selection, four-question discussion loops, readiness gates, and scope guardrails for planning preparation.

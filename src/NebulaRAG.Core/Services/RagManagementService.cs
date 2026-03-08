@@ -60,6 +60,28 @@ public sealed class RagManagementService
     }
 
     /// <summary>
+    /// Gets project-level RAG aggregates used for project-first operational views.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Per-project RAG statistics.</returns>
+    public async Task<IReadOnlyList<ProjectRagStats>> GetProjectRagStatsAsync(CancellationToken cancellationToken = default)
+    {
+        _logger.LogDebug("Retrieving project-level RAG stats");
+
+        try
+        {
+            var projectStats = await _store.GetProjectRagStatsAsync(cancellationToken);
+            _logger.LogDebug("Retrieved {ProjectCount} project-level RAG rows", projectStats.Count);
+            return projectStats;
+        }
+        catch (Exception ex) when (!(ex is RagException))
+        {
+            _logger.LogError(ex, "Failed to retrieve project-level RAG stats");
+            throw new RagDatabaseException("Failed to retrieve project-level RAG stats", ex);
+        }
+    }
+
+    /// <summary>
     /// Gets all indexed document sources.
     /// </summary>
     /// <param name="limit">Maximum number of sources to return.</param>
