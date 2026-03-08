@@ -152,7 +152,7 @@ public sealed class McpTransportHandlerContractTests
     /// Ensures tools/list advertises baseline transport tool capabilities.
     /// </summary>
     [Fact]
-    public async Task HandleAsync_ToolsList_ContainsCoreTools()
+    public async Task HandleAsync_ToolsList_DefaultsToMinimalPreferredTools()
     {
         var transportHandler = CreateTransportHandler();
         var request = new JsonObject
@@ -169,16 +169,48 @@ public sealed class McpTransportHandlerContractTests
             .Where(static name => !string.IsNullOrWhiteSpace(name))
             .ToHashSet(StringComparer.Ordinal);
 
-        Assert.Contains("query_project_rag", toolNames);
         Assert.Contains("rag_query", toolNames);
         Assert.Contains("rag_ingest", toolNames);
         Assert.Contains("rag_sources", toolNames);
         Assert.Contains("rag_admin", toolNames);
         Assert.Contains("memory", toolNames);
         Assert.Contains("plan", toolNames);
-        Assert.Contains("rag_health_check", toolNames);
+        Assert.DoesNotContain("rag_health_check", toolNames);
+        Assert.DoesNotContain("memory_recall", toolNames);
+        Assert.DoesNotContain("create_plan", toolNames);
+        Assert.Equal("minimal", response["result"]?["profile"]?.GetValue<string>());
+    }
+
+    /// <summary>
+    /// Ensures tools/list can include legacy aliases when full profile is requested.
+    /// </summary>
+    [Fact]
+    public async Task HandleAsync_ToolsList_FullProfile_IncludesLegacyTools()
+    {
+        var transportHandler = CreateTransportHandler();
+        var request = new JsonObject
+        {
+            ["jsonrpc"] = "2.0",
+            ["id"] = 8,
+            ["method"] = "tools/list",
+            ["params"] = new JsonObject
+            {
+                ["profile"] = "full"
+            }
+        };
+
+        var response = await transportHandler.HandleAsync(request, CancellationToken.None);
+        var tools = response["result"]?["tools"]?.AsArray() ?? [];
+        var toolNames = tools
+            .Select(static tool => tool?["name"]?.GetValue<string>())
+            .Where(static name => !string.IsNullOrWhiteSpace(name))
+            .ToHashSet(StringComparer.Ordinal);
+
+        Assert.Contains("rag_query", toolNames);
+        Assert.Contains("query_project_rag", toolNames);
         Assert.Contains("memory_recall", toolNames);
         Assert.Contains("create_plan", toolNames);
+        Assert.Equal("full", response["result"]?["profile"]?.GetValue<string>());
     }
 
     /// <summary>

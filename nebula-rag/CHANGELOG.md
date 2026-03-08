@@ -4,6 +4,13 @@ All notable changes to the Nebula RAG Home Assistant add-on are documented in th
 
 The format is inspired by Keep a Changelog and follows semantic versioning.
 
+## [0.3.24] - 2026-03-08
+
+- Changed MCP `tools/list` default catalog profile to `minimal`, returning only preferred consolidated tools (`rag_query`, `rag_ingest`, `rag_sources`, `rag_admin`, `memory`, `plan`, `system`).
+- Added MCP `tools/list` opt-in support for legacy aliases via `params.profile = "full"` or `params.includeLegacy = true`.
+- Expanded MCP contract tests to validate both default minimal catalog behavior and explicit full-profile legacy catalog behavior.
+- Updated README and add-on docs with the new tools/list profile behavior and corrected plan/session wording.
+
 ## [0.3.23] - 2026-03-08
 
 - Added a consolidated preferred MCP tool surface in `McpTransportHandler`: `rag_query`, `rag_ingest`, `rag_sources`, `rag_admin`, `memory`, `plan`, and `system`.

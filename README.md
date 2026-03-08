@@ -36,6 +36,11 @@ NebulaRAG includes a broad MCP (Model Context Protocol) integration for retrieva
 
 Legacy tool names such as `query_project_rag`, `memory_recall`, `create_plan`, and `archive_plan` remain available for backward compatibility.
 
+### tools/list Profiles
+
+- Default `tools/list` behavior is `minimal`, returning only preferred consolidated tools.
+- Use `profile: "full"` (or `includeLegacy: true`) in `tools/list` params to include legacy aliases.
+
 ### Plan Session Behavior
 
 Plan retrieval and mutation by `planId` are session-agnostic. `sessionId` is optional for these plan-by-id operations and is used as audit metadata when provided.
@@ -83,8 +88,7 @@ curl -X POST http://localhost:8099/mcp -d '{
 
 ### Security Features
 
-- Session-based access control
-- One active plan per session enforcement
+- Optional session metadata for plan/task audit attribution
 - Proper error handling for invalid sessions
 - JSON-RPC compliance
 - Comprehensive logging and error reporting

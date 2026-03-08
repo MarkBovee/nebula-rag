@@ -136,7 +136,7 @@ public sealed partial class McpTransportHandler
 
         if (method == "tools/list")
         {
-            return BuildResult(id, BuildToolsList());
+            return BuildResult(id, BuildToolsList(parameters));
         }
 
         if (method != "tools/call")
@@ -158,49 +158,114 @@ public sealed partial class McpTransportHandler
     /// <summary>
     /// Builds the tools/list payload.
     /// </summary>
+    /// <param name="parameters">Optional tools/list parameters.</param>
     /// <returns>Tool catalog object.</returns>
-    private static JsonObject BuildToolsList()
+    private static JsonObject BuildToolsList(JsonObject? parameters)
     {
+        var includeLegacy = ShouldIncludeLegacyTools(parameters);
+        var tools = new JsonArray();
+
+        foreach (var preferredTool in BuildPreferredTools())
+        {
+            tools.Add(preferredTool);
+        }
+
+        if (includeLegacy)
+        {
+            foreach (var legacyTool in BuildLegacyTools())
+            {
+                tools.Add(legacyTool);
+            }
+        }
+
         return new JsonObject
         {
-            ["tools"] = new JsonArray
-            {
-                BuildToolDefinition(RagQueryToolName, "Unified RAG query operations (preferred)."),
-                BuildToolDefinition(RagIngestToolName, "Unified RAG indexing operations (preferred)."),
-                BuildToolDefinition(RagSourcesToolName, "Unified RAG source management operations (preferred)."),
-                BuildToolDefinition(RagAdminToolName, "Unified RAG administrative operations (preferred)."),
-                BuildToolDefinition(MemoryToolName, "Unified memory operations (preferred)."),
-                BuildToolDefinition(PlanToolName, "Unified planning operations (preferred)."),
-                BuildToolDefinition(SystemToolName, "Unified system metadata operations (preferred)."),
-                BuildToolDefinition(RagInitSchemaToolName, "Initialize Nebula RAG schema."),
-                BuildToolDefinition(QueryProjectRagToolName, "Query Nebula RAG indexed context."),
-                BuildToolDefinition(RagHealthCheckToolName, "Run health checks."),
-                BuildToolDefinition(RagServerInfoToolName, "Get runtime server details."),
-                BuildToolDefinition(RagIndexStatsToolName, "Get index statistics."),
-                BuildToolDefinition(RagListSourcesToolName, "List indexed sources."),
-                BuildToolDefinition(RagIndexPathToolName, "Index a source directory path."),
-                BuildToolDefinition(RagIndexTextToolName, "Index direct text content under a source key."),
-                BuildToolDefinition(RagIndexUrlToolName, "Fetch URL content and index it."),
-                BuildToolDefinition(RagReindexSourceToolName, "Reindex an existing source path from disk."),
-                BuildToolDefinition(RagGetChunkToolName, "Get one indexed chunk by chunk id."),
-                BuildToolDefinition(RagSearchSimilarToolName, "Run similarity search without project path filtering."),
-                BuildToolDefinition(RagNormalizeSourcePathsToolName, "Normalize stored source paths and remove duplicates after key changes."),
-                BuildToolDefinition(RagDeleteSourceToolName, "Delete one indexed source path."),
-                BuildToolDefinition(RagPurgeAllToolName, "Purge all indexed content."),
-                BuildToolDefinition(MemoryStoreToolName, "Store one memory observation with tags and type."),
-                BuildToolDefinition(MemoryRecallToolName, "Recall semantically similar memories."),
-                BuildToolDefinition(MemoryListToolName, "List recent memories with optional filters."),
-                BuildToolDefinition(MemoryDeleteToolName, "Delete one memory by id."),
-                BuildToolDefinition(MemoryUpdateToolName, "Update one memory entry."),
-                BuildToolDefinition(CreatePlanToolName, "Create a new plan with initial tasks."),
-                BuildToolDefinition(GetPlanToolName, "Get a specific plan by ID."),
-                BuildToolDefinition(ListPlansToolName, "List all plans for the current session."),
-                BuildToolDefinition(UpdatePlanToolName, "Update plan details or status."),
-                BuildToolDefinition(CompleteTaskToolName, "Complete a specific task (legacy alias; prefer plan action)."),
-                BuildToolDefinition(UpdateTaskToolName, "Update a specific task (legacy alias; prefer plan action)."),
-                BuildToolDefinition(ArchivePlanToolName, "Archive a plan (legacy alias; prefer plan action).")
-            }
+            ["tools"] = tools,
+            ["profile"] = includeLegacy ? "full" : "minimal"
         };
+    }
+
+    /// <summary>
+    /// Builds preferred consolidated tool definitions.
+    /// </summary>
+    /// <returns>Preferred tool list.</returns>
+    private static IReadOnlyList<JsonObject> BuildPreferredTools()
+    {
+        return
+        [
+            BuildToolDefinition(RagQueryToolName, "Unified RAG query operations (preferred)."),
+            BuildToolDefinition(RagIngestToolName, "Unified RAG indexing operations (preferred)."),
+            BuildToolDefinition(RagSourcesToolName, "Unified RAG source management operations (preferred)."),
+            BuildToolDefinition(RagAdminToolName, "Unified RAG administrative operations (preferred)."),
+            BuildToolDefinition(MemoryToolName, "Unified memory operations (preferred)."),
+            BuildToolDefinition(PlanToolName, "Unified planning operations (preferred)."),
+            BuildToolDefinition(SystemToolName, "Unified system metadata operations (preferred).")
+        ];
+    }
+
+    /// <summary>
+    /// Builds legacy compatibility tool definitions.
+    /// </summary>
+    /// <returns>Legacy alias tool list.</returns>
+    private static IReadOnlyList<JsonObject> BuildLegacyTools()
+    {
+        return
+        [
+            BuildToolDefinition(RagInitSchemaToolName, "Initialize Nebula RAG schema."),
+            BuildToolDefinition(QueryProjectRagToolName, "Query Nebula RAG indexed context."),
+            BuildToolDefinition(RagHealthCheckToolName, "Run health checks."),
+            BuildToolDefinition(RagServerInfoToolName, "Get runtime server details."),
+            BuildToolDefinition(RagIndexStatsToolName, "Get index statistics."),
+            BuildToolDefinition(RagListSourcesToolName, "List indexed sources."),
+            BuildToolDefinition(RagIndexPathToolName, "Index a source directory path."),
+            BuildToolDefinition(RagIndexTextToolName, "Index direct text content under a source key."),
+            BuildToolDefinition(RagIndexUrlToolName, "Fetch URL content and index it."),
+            BuildToolDefinition(RagReindexSourceToolName, "Reindex an existing source path from disk."),
+            BuildToolDefinition(RagGetChunkToolName, "Get one indexed chunk by chunk id."),
+            BuildToolDefinition(RagSearchSimilarToolName, "Run similarity search without project path filtering."),
+            BuildToolDefinition(RagNormalizeSourcePathsToolName, "Normalize stored source paths and remove duplicates after key changes."),
+            BuildToolDefinition(RagDeleteSourceToolName, "Delete one indexed source path."),
+            BuildToolDefinition(RagPurgeAllToolName, "Purge all indexed content."),
+            BuildToolDefinition(MemoryStoreToolName, "Store one memory observation with tags and type."),
+            BuildToolDefinition(MemoryRecallToolName, "Recall semantically similar memories."),
+            BuildToolDefinition(MemoryListToolName, "List recent memories with optional filters."),
+            BuildToolDefinition(MemoryDeleteToolName, "Delete one memory by id."),
+            BuildToolDefinition(MemoryUpdateToolName, "Update one memory entry."),
+            BuildToolDefinition(CreatePlanToolName, "Create a new plan with initial tasks."),
+            BuildToolDefinition(GetPlanToolName, "Get a specific plan by ID."),
+            BuildToolDefinition(ListPlansToolName, "List all plans for the current session."),
+            BuildToolDefinition(UpdatePlanToolName, "Update plan details or status."),
+            BuildToolDefinition(CompleteTaskToolName, "Complete a specific task (legacy alias; prefer plan action)."),
+            BuildToolDefinition(UpdateTaskToolName, "Update a specific task (legacy alias; prefer plan action)."),
+            BuildToolDefinition(ArchivePlanToolName, "Archive a plan (legacy alias; prefer plan action).")
+        ];
+    }
+
+    /// <summary>
+    /// Determines whether tools/list should include legacy alias tools.
+    /// </summary>
+    /// <param name="parameters">Optional tools/list parameters.</param>
+    /// <returns><c>true</c> when legacy aliases should be included; otherwise <c>false</c>.</returns>
+    private static bool ShouldIncludeLegacyTools(JsonObject? parameters)
+    {
+        if (parameters is null)
+        {
+            return false;
+        }
+
+        if (parameters["includeLegacy"]?.GetValue<bool?>() == true)
+        {
+            return true;
+        }
+
+        var profile = parameters["profile"]?.GetValue<string>()?.Trim();
+        if (string.IsNullOrWhiteSpace(profile))
+        {
+            return false;
+        }
+
+        return profile.Equals("full", StringComparison.OrdinalIgnoreCase)
+            || profile.Equals("legacy", StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>
