@@ -57,17 +57,17 @@ Supported methods:
 - `tools/list`
 - `tools/call`
 
-Key tools include:
+Preferred tools include:
 
-- `query_project_rag`
-- `rag_init_schema`
-- `rag_health_check`
-- `rag_server_info`
-- `rag_index_stats`
-- `rag_list_sources`
-- `rag_index_path`
-- `rag_delete_source`
-- `rag_purge_all`
+- `rag_query`
+- `rag_ingest`
+- `rag_sources`
+- `rag_admin`
+- `memory`
+- `plan`
+- `system`
+
+Legacy aliases remain available for backward compatibility (for example `query_project_rag`, `memory_recall`, and `create_plan`).
 
 ## Troubleshooting
 

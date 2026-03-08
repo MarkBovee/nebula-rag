@@ -18,23 +18,27 @@
 
 NebulaRAG is a self-hosted Retrieval-Augmented Generation platform that gives AI agents fast, code-aware context from your actual project sources — without sending anything to the cloud.
 
-## MCP Integration for Plan Management
+## MCP Integration for RAG, Memory, and Plans
 
-NebulaRAG now includes comprehensive MCP (Model Context Protocol) integration for plan lifecycle management. AI agents can create, manage, and track plans with full session validation and security enforcement.
+NebulaRAG includes a broad MCP (Model Context Protocol) integration for retrieval, indexing, memory, and plan lifecycle operations.
 
-### Available MCP Tools
+### Preferred MCP Tools
 
-- `create_plan`: Create a new plan with initial tasks
-- `get_plan`: Retrieve a specific plan by ID
-- `list_plans`: List all plans for the current session
-- `update_plan`: Update plan details or status
-- `complete_task`: Complete a specific task
-- `update_task`: Update a specific task
-- `archive_plan`: Archive a plan
+- `rag_query`: Unified semantic query operations (`project`, `similar`)
+- `rag_ingest`: Unified indexing operations (`path`, `text`, `url`, `reindex`)
+- `rag_sources`: Unified source operations (`list`, `get_chunk`, `delete`, `normalize`)
+- `rag_admin`: Unified admin operations (`init_schema`, `health`, `stats`, `purge`)
+- `memory`: Unified memory operations (`store`, `recall`, `list`, `update`, `delete`)
+- `plan`: Unified planning operations (`create`, `get`, `list`, `update`, `complete_task`, `update_task`, `archive`)
+- `system`: Unified system metadata operations (`server_info`)
 
-### Session Validation
+### Legacy Compatibility
 
-All MCP tools enforce session ownership validation, ensuring that agents can only access plans belonging to their session. Session validation is performed before any plan operation, providing robust security and data integrity.
+Legacy tool names such as `query_project_rag`, `memory_recall`, `create_plan`, and `archive_plan` remain available for backward compatibility.
+
+### Plan Session Behavior
+
+Plan retrieval and mutation by `planId` are session-agnostic. `sessionId` is optional for these plan-by-id operations and is used as audit metadata when provided.
 
 ### Usage Examples
 
@@ -247,7 +251,29 @@ NebulaRAG/
 
 ## MCP Tools
 
-### RAG
+### RAG (Preferred)
+
+| Tool | Description |
+|---|---|
+| `rag_query` | Unified semantic query operations (`project`, `similar`) |
+| `rag_ingest` | Unified indexing operations (`path`, `text`, `url`, `reindex`) |
+| `rag_sources` | Unified source operations (`list`, `get_chunk`, `delete`, `normalize`) |
+| `rag_admin` | Unified admin operations (`init_schema`, `health`, `stats`, `purge`) |
+| `system` | Runtime server metadata (`server_info`) |
+
+### Memory (Preferred)
+
+| Tool | Description |
+|---|---|
+| `memory` | Unified memory operations (`store`, `recall`, `list`, `update`, `delete`) |
+
+### Plans (Preferred)
+
+| Tool | Description |
+|---|---|
+| `plan` | Unified plan/task operations (`create`, `get`, `list`, `update`, `complete_task`, `update_task`, `archive`) |
+
+### Legacy Aliases
 
 | Tool | Description |
 |---|---|
@@ -266,16 +292,18 @@ NebulaRAG/
 | `rag_normalize_source_paths` | Normalize stored source paths |
 | `rag_delete_source` | Remove a source from the index |
 | `rag_purge_all` | Clear the entire index |
-
-### Memory
-
-| Tool | Description |
-|---|---|
 | `memory_store` | Store an agent memory |
 | `memory_recall` | Semantic search over memories |
 | `memory_list` | List memories by tag or type |
 | `memory_update` | Update an existing memory |
 | `memory_delete` | Delete a specific memory |
+| `create_plan` | Create a new plan with initial tasks |
+| `get_plan` | Retrieve a specific plan by ID |
+| `list_plans` | List all plans for a session |
+| `update_plan` | Update plan details or status |
+| `complete_task` | Complete a plan task |
+| `update_task` | Update a plan task |
+| `archive_plan` | Archive a plan |
 
 > `rag-sources.md` is automatically synchronized after every index, delete, and purge operation.  
 > The `memories` table and indexes are created automatically on `rag_init_schema`.

@@ -13,6 +13,14 @@ namespace NebulaRAG.Core.Mcp;
 /// </summary>
 public sealed partial class McpTransportHandler
 {
+    private const string RagQueryToolName = "rag_query";
+    private const string RagIngestToolName = "rag_ingest";
+    private const string RagSourcesToolName = "rag_sources";
+    private const string RagAdminToolName = "rag_admin";
+    private const string MemoryToolName = "memory";
+    private const string PlanToolName = "plan";
+    private const string SystemToolName = "system";
+
     private const string QueryProjectRagToolName = "query_project_rag";
     private const string RagInitSchemaToolName = "rag_init_schema";
     private const string RagHealthCheckToolName = "rag_health_check";
@@ -157,6 +165,13 @@ public sealed partial class McpTransportHandler
         {
             ["tools"] = new JsonArray
             {
+                BuildToolDefinition(RagQueryToolName, "Unified RAG query operations (preferred)."),
+                BuildToolDefinition(RagIngestToolName, "Unified RAG indexing operations (preferred)."),
+                BuildToolDefinition(RagSourcesToolName, "Unified RAG source management operations (preferred)."),
+                BuildToolDefinition(RagAdminToolName, "Unified RAG administrative operations (preferred)."),
+                BuildToolDefinition(MemoryToolName, "Unified memory operations (preferred)."),
+                BuildToolDefinition(PlanToolName, "Unified planning operations (preferred)."),
+                BuildToolDefinition(SystemToolName, "Unified system metadata operations (preferred)."),
                 BuildToolDefinition(RagInitSchemaToolName, "Initialize Nebula RAG schema."),
                 BuildToolDefinition(QueryProjectRagToolName, "Query Nebula RAG indexed context."),
                 BuildToolDefinition(RagHealthCheckToolName, "Run health checks."),
@@ -181,9 +196,9 @@ public sealed partial class McpTransportHandler
                 BuildToolDefinition(GetPlanToolName, "Get a specific plan by ID."),
                 BuildToolDefinition(ListPlansToolName, "List all plans for the current session."),
                 BuildToolDefinition(UpdatePlanToolName, "Update plan details or status."),
-                BuildToolDefinition(CompleteTaskToolName, "Complete a specific task."),
-                BuildToolDefinition(UpdateTaskToolName, "Update a specific task."),
-                BuildToolDefinition(ArchivePlanToolName, "Archive a plan.")
+                BuildToolDefinition(CompleteTaskToolName, "Complete a specific task (legacy alias; prefer plan action)."),
+                BuildToolDefinition(UpdateTaskToolName, "Update a specific task (legacy alias; prefer plan action)."),
+                BuildToolDefinition(ArchivePlanToolName, "Archive a plan (legacy alias; prefer plan action).")
             }
         };
     }
@@ -213,6 +228,88 @@ public sealed partial class McpTransportHandler
     {
         return toolName switch
         {
+            RagQueryToolName => BuildObjectSchema(
+                new JsonObject
+                {
+                    ["mode"] = BuildEnumStringSchema("Query mode.", "project", "similar"),
+                    ["text"] = BuildStringSchema("Semantic query text."),
+                    ["limit"] = BuildIntegerSchema("Optional max number of matches to return.", minimum: 1, maximum: 20)
+                },
+                "mode",
+                "text"),
+            RagIngestToolName => BuildObjectSchema(
+                new JsonObject
+                {
+                    ["mode"] = BuildEnumStringSchema("Ingestion mode.", "path", "text", "url", "reindex"),
+                    ["sourcePath"] = BuildStringSchema("Source path for path/text/reindex modes."),
+                    ["content"] = BuildStringSchema("Text content for text mode."),
+                    ["url"] = BuildStringSchema("HTTP(S) URL for url mode."),
+                    ["projectId"] = BuildStringSchema("Optional project id used as source-key prefix.")
+                },
+                "mode"),
+            RagSourcesToolName => BuildObjectSchema(
+                new JsonObject
+                {
+                    ["action"] = BuildEnumStringSchema("Source action.", "list", "get_chunk", "delete", "normalize"),
+                    ["limit"] = BuildIntegerSchema("Optional max number of sources to return for list action.", minimum: 1, maximum: 1000),
+                    ["chunkId"] = BuildIntegerSchema("Chunk row identifier for get_chunk action.", minimum: 1),
+                    ["sourcePath"] = BuildStringSchema("Indexed source path for delete action."),
+                    ["confirm"] = BuildBooleanSchema("Safety flag for delete action. Must be true."),
+                    ["projectRootPath"] = BuildStringSchema("Optional project root path for normalize action.")
+                },
+                "action"),
+            RagAdminToolName => BuildObjectSchema(
+                new JsonObject
+                {
+                    ["action"] = BuildEnumStringSchema("Admin action.", "init_schema", "health", "stats", "purge"),
+                    ["confirmPhrase"] = BuildConstStringSchema("Safety phrase required for purge action.", "PURGE ALL")
+                },
+                "action"),
+            MemoryToolName => BuildObjectSchema(
+                new JsonObject
+                {
+                    ["action"] = BuildEnumStringSchema("Memory action.", "store", "recall", "list", "update", "delete"),
+                    ["memoryId"] = BuildIntegerSchema("Memory identifier for update/delete actions.", minimum: 1),
+                    ["sessionId"] = BuildStringSchema("Optional session-id for grouping and filtering."),
+                    ["projectId"] = BuildStringSchema("Optional project-id for scoping."),
+                    ["type"] = BuildEnumStringSchema("Memory type for store/recall/list/update filters.", "episodic", "semantic", "procedural"),
+                    ["content"] = BuildStringSchema("Memory content for store/update actions."),
+                    ["text"] = BuildStringSchema("Probe text for recall action."),
+                    ["tag"] = BuildStringSchema("Optional memory tag filter for recall/list actions."),
+                    ["limit"] = BuildIntegerSchema("Optional max items for recall/list actions.", minimum: 1, maximum: 100),
+                    ["tags"] = new JsonObject
+                    {
+                        ["type"] = "array",
+                        ["description"] = "Optional tags for store/update actions.",
+                        ["items"] = BuildStringSchema("Memory tag.")
+                    }
+                },
+                "action"),
+            PlanToolName => BuildObjectSchema(
+                new JsonObject
+                {
+                    ["action"] = BuildEnumStringSchema("Plan action.", "create", "get", "list", "update", "complete_task", "update_task", "archive"),
+                    ["sessionId"] = BuildStringSchema("Session ID for create/list actions; optional audit override for plan-by-id actions."),
+                    ["planId"] = BuildIntegerSchema("Plan identifier for plan-by-id actions.", minimum: 1),
+                    ["taskId"] = BuildIntegerSchema("Task identifier for task actions.", minimum: 1),
+                    ["planName"] = BuildStringSchema("Plan name for create/update actions."),
+                    ["projectId"] = BuildStringSchema("Project id for create action."),
+                    ["status"] = BuildStringSchema("Status for update action (draft|active|completed|archived) or update_task action (completed)."),
+                    ["taskName"] = BuildStringSchema("Task name for update_task action."),
+                    ["initialTasks"] = new JsonObject
+                    {
+                        ["type"] = "array",
+                        ["description"] = "Initial tasks for create action.",
+                        ["items"] = BuildStringSchema("Task name.")
+                    }
+                },
+                "action"),
+            SystemToolName => BuildObjectSchema(
+                new JsonObject
+                {
+                    ["action"] = BuildEnumStringSchema("System action.", "server_info")
+                },
+                "action"),
             QueryProjectRagToolName => BuildObjectSchema(
                 new JsonObject
                 {

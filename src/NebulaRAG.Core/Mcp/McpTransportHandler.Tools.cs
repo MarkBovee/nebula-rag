@@ -29,6 +29,13 @@ public sealed partial class McpTransportHandler
         {
             result = toolName switch
             {
+                RagQueryToolName => await ExecuteRagQueryToolAsync(arguments, cancellationToken),
+                RagIngestToolName => await ExecuteRagIngestToolAsync(arguments, cancellationToken),
+                RagSourcesToolName => await ExecuteRagSourcesToolAsync(arguments, cancellationToken),
+                RagAdminToolName => await ExecuteRagAdminToolAsync(arguments, cancellationToken),
+                MemoryToolName => await ExecuteMemoryToolAsync(arguments, cancellationToken),
+                PlanToolName => await ExecutePlanToolAsync(arguments, cancellationToken),
+                SystemToolName => ExecuteSystemTool(arguments),
                 RagInitSchemaToolName => await ExecuteInitSchemaToolAsync(cancellationToken),
                 QueryProjectRagToolName => await ExecuteQueryProjectRagToolAsync(arguments, cancellationToken),
                 RagHealthCheckToolName => await ExecuteHealthCheckToolAsync(cancellationToken),
@@ -74,6 +81,168 @@ public sealed partial class McpTransportHandler
     }
 
     /// <summary>
+    /// Executes the unified RAG query tool by delegating to existing query implementations.
+    /// </summary>
+    /// <param name="arguments">Tool arguments.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Tool result payload.</returns>
+    private async Task<JsonObject> ExecuteRagQueryToolAsync(JsonObject? arguments, CancellationToken cancellationToken)
+    {
+        var mode = arguments?["mode"]?.GetValue<string>()?.Trim();
+        if (string.IsNullOrWhiteSpace(mode))
+        {
+            return BuildToolResult("mode is required and must be one of: project, similar.", isError: true);
+        }
+
+        return mode.ToLowerInvariant() switch
+        {
+            "project" => await ExecuteQueryProjectRagToolAsync(arguments, cancellationToken),
+            "similar" => await ExecuteSearchSimilarToolAsync(arguments, cancellationToken),
+            _ => BuildToolResult("Unsupported rag_query mode. Use: project or similar.", isError: true)
+        };
+    }
+
+    /// <summary>
+    /// Executes the unified RAG ingest tool by delegating to existing ingestion implementations.
+    /// </summary>
+    /// <param name="arguments">Tool arguments.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Tool result payload.</returns>
+    private async Task<JsonObject> ExecuteRagIngestToolAsync(JsonObject? arguments, CancellationToken cancellationToken)
+    {
+        var mode = arguments?["mode"]?.GetValue<string>()?.Trim();
+        if (string.IsNullOrWhiteSpace(mode))
+        {
+            return BuildToolResult("mode is required and must be one of: path, text, url, reindex.", isError: true);
+        }
+
+        return mode.ToLowerInvariant() switch
+        {
+            "path" => await ExecuteIndexPathToolAsync(arguments, cancellationToken),
+            "text" => await ExecuteIndexTextToolAsync(arguments, cancellationToken),
+            "url" => await ExecuteIndexUrlToolAsync(arguments, cancellationToken),
+            "reindex" => await ExecuteReindexSourceToolAsync(arguments, cancellationToken),
+            _ => BuildToolResult("Unsupported rag_ingest mode. Use: path, text, url, or reindex.", isError: true)
+        };
+    }
+
+    /// <summary>
+    /// Executes the unified RAG sources tool by delegating to existing source-management implementations.
+    /// </summary>
+    /// <param name="arguments">Tool arguments.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Tool result payload.</returns>
+    private async Task<JsonObject> ExecuteRagSourcesToolAsync(JsonObject? arguments, CancellationToken cancellationToken)
+    {
+        var action = arguments?["action"]?.GetValue<string>()?.Trim();
+        if (string.IsNullOrWhiteSpace(action))
+        {
+            return BuildToolResult("action is required and must be one of: list, get_chunk, delete, normalize.", isError: true);
+        }
+
+        return action.ToLowerInvariant() switch
+        {
+            "list" => await ExecuteListSourcesToolAsync(arguments, cancellationToken),
+            "get_chunk" => await ExecuteGetChunkToolAsync(arguments, cancellationToken),
+            "delete" => await ExecuteDeleteSourceToolAsync(arguments, cancellationToken),
+            "normalize" => await ExecuteNormalizeSourcePathsToolAsync(arguments, cancellationToken),
+            _ => BuildToolResult("Unsupported rag_sources action. Use: list, get_chunk, delete, or normalize.", isError: true)
+        };
+    }
+
+    /// <summary>
+    /// Executes the unified RAG admin tool by delegating to existing administrative implementations.
+    /// </summary>
+    /// <param name="arguments">Tool arguments.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Tool result payload.</returns>
+    private async Task<JsonObject> ExecuteRagAdminToolAsync(JsonObject? arguments, CancellationToken cancellationToken)
+    {
+        var action = arguments?["action"]?.GetValue<string>()?.Trim();
+        if (string.IsNullOrWhiteSpace(action))
+        {
+            return BuildToolResult("action is required and must be one of: init_schema, health, stats, purge.", isError: true);
+        }
+
+        return action.ToLowerInvariant() switch
+        {
+            "init_schema" => await ExecuteInitSchemaToolAsync(cancellationToken),
+            "health" => await ExecuteHealthCheckToolAsync(cancellationToken),
+            "stats" => await ExecuteIndexStatsToolAsync(cancellationToken),
+            "purge" => await ExecutePurgeAllToolAsync(arguments, cancellationToken),
+            _ => BuildToolResult("Unsupported rag_admin action. Use: init_schema, health, stats, or purge.", isError: true)
+        };
+    }
+
+    /// <summary>
+    /// Executes the unified memory tool by delegating to existing memory implementations.
+    /// </summary>
+    /// <param name="arguments">Tool arguments.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Tool result payload.</returns>
+    private async Task<JsonObject> ExecuteMemoryToolAsync(JsonObject? arguments, CancellationToken cancellationToken)
+    {
+        var action = arguments?["action"]?.GetValue<string>()?.Trim();
+        if (string.IsNullOrWhiteSpace(action))
+        {
+            return BuildToolResult("action is required and must be one of: store, recall, list, update, delete.", isError: true);
+        }
+
+        return action.ToLowerInvariant() switch
+        {
+            "store" => await ExecuteMemoryStoreToolAsync(arguments, cancellationToken),
+            "recall" => await ExecuteMemoryRecallToolAsync(arguments, cancellationToken),
+            "list" => await ExecuteMemoryListToolAsync(arguments, cancellationToken),
+            "update" => await ExecuteMemoryUpdateToolAsync(arguments, cancellationToken),
+            "delete" => await ExecuteMemoryDeleteToolAsync(arguments, cancellationToken),
+            _ => BuildToolResult("Unsupported memory action. Use: store, recall, list, update, or delete.", isError: true)
+        };
+    }
+
+    /// <summary>
+    /// Executes the unified planning tool by delegating to existing plan/task implementations.
+    /// </summary>
+    /// <param name="arguments">Tool arguments.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Tool result payload.</returns>
+    private async Task<JsonObject> ExecutePlanToolAsync(JsonObject? arguments, CancellationToken cancellationToken)
+    {
+        var action = arguments?["action"]?.GetValue<string>()?.Trim();
+        if (string.IsNullOrWhiteSpace(action))
+        {
+            return BuildToolResult("action is required and must be one of: create, get, list, update, complete_task, update_task, archive.", isError: true);
+        }
+
+        return action.ToLowerInvariant() switch
+        {
+            "create" => await ExecuteCreatePlanToolAsync(arguments, cancellationToken),
+            "get" => await ExecuteGetPlanToolAsync(arguments, cancellationToken),
+            "list" => await ExecuteListPlansToolAsync(arguments, cancellationToken),
+            "update" => await ExecuteUpdatePlanToolAsync(arguments, cancellationToken),
+            "complete_task" => await ExecuteCompleteTaskToolAsync(arguments, cancellationToken),
+            "update_task" => await ExecuteUpdateTaskToolAsync(arguments, cancellationToken),
+            "archive" => await ExecuteArchivePlanToolAsync(arguments, cancellationToken),
+            _ => BuildToolResult("Unsupported plan action. Use: create, get, list, update, complete_task, update_task, or archive.", isError: true)
+        };
+    }
+
+    /// <summary>
+    /// Executes the unified system tool.
+    /// </summary>
+    /// <param name="arguments">Tool arguments.</param>
+    /// <returns>Tool result payload.</returns>
+    private JsonObject ExecuteSystemTool(JsonObject? arguments)
+    {
+        var action = arguments?["action"]?.GetValue<string>()?.Trim();
+        if (!string.Equals(action, "server_info", StringComparison.OrdinalIgnoreCase))
+        {
+            return BuildToolResult("action is required and must be: server_info.", isError: true);
+        }
+
+        return ExecuteServerInfoTool();
+    }
+
+    /// <summary>
     /// Records activity and performance telemetry for one executed MCP tool call.
     /// </summary>
     /// <param name="toolName">Executed tool name.</param>
@@ -89,7 +258,7 @@ public sealed partial class McpTransportHandler
             ["durationMs"] = elapsedMilliseconds.ToString("F1")
         });
 
-        if (!isError && (toolName == QueryProjectRagToolName || toolName == RagSearchSimilarToolName))
+        if (!isError && (toolName == QueryProjectRagToolName || toolName == RagSearchSimilarToolName || toolName == RagQueryToolName))
         {
             _telemetrySink.RecordQueryLatency(elapsedMilliseconds);
         }
@@ -128,6 +297,15 @@ public sealed partial class McpTransportHandler
         if (toolName == RagIndexPathToolName)
         {
             indexedDocuments = structuredContent["documentsIndexed"]?.GetValue<int?>() ?? 0;
+        }
+        else if (toolName == RagIngestToolName)
+        {
+            indexedDocuments = structuredContent["documentsIndexed"]?.GetValue<int?>() ?? 0;
+            if (indexedDocuments <= 0)
+            {
+                var updatedFromIngest = structuredContent["updated"]?.GetValue<bool?>() == true;
+                indexedDocuments = updatedFromIngest ? 1 : 0;
+            }
         }
         else if (toolName is RagIndexTextToolName or RagIndexUrlToolName or RagReindexSourceToolName)
         {
