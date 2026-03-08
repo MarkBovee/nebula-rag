@@ -1,0 +1,16 @@
+<Solution>
+  <Configurations>
+    <Platform Name="Any CPU" />
+    <Platform Name="x64" />
+    <Platform Name="x86" />
+  </Configurations>
+  <Folder Name="/src/">
+    <Project Path="src/NebulaRAG.AddonHost/NebulaRAG.AddonHost.csproj" />
+    <Project Path="src/NebulaRAG.Cli/NebulaRAG.Cli.csproj" />
+    <Project Path="src/NebulaRAG.Core/NebulaRAG.Core.csproj" />
+    <Project Path="src/NebulaRAG.Mcp/NebulaRAG.Mcp.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/NebulaRAG.Tests/NebulaRAG.Tests.csproj" />
+  </Folder>
+</Solution>

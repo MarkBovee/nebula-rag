@@ -30,5 +30,5 @@ When reporting, include:
 ## Security Practices
 
 - Secrets must not be committed to source control.
-- Use `.nebula.env` for runtime credentials and keep it out of git.
+- Use `.env` for runtime credentials and keep it out of git.
 - Keep dependencies updated and monitor automated security scans in GitHub Actions.

@@ -23,7 +23,7 @@ param(
     [string]$ExternalHomeAssistantMcpUrl,
     [switch]$UseExternalHomeAssistantUrl,
 
-    [string]$EnvFileName = ".nebula.env",
+    [string]$EnvFileName = ".env",
     [string]$EnvFilePath,
 
     [ValidateSet("Ask", "LocalContainer", "HomeAssistantAddon")]
@@ -239,7 +239,7 @@ function New-ServerDefinition {
 function Ensure-GitignoreEnv {
     param([string]$GitignorePath)
 
-    $envFileName = ".nebula.env"
+    $envFileName = ".env"
 
     if (-not (Test-Path -LiteralPath $GitignorePath)) {
         Set-Content -LiteralPath $GitignorePath -Value $envFileName -Encoding utf8
@@ -484,7 +484,7 @@ function Ensure-EnvTemplate {
         [switch]$ForceWrite
     )
 
-    $rootEnvPath = Resolve-TemplateFile -TemplateRoot $TemplateRoot -RelativePath ".nebula.env" -RawBaseUrl $RawBaseUrl
+    $rootEnvPath = Resolve-TemplateFile -TemplateRoot $TemplateRoot -RelativePath ".env" -RawBaseUrl $RawBaseUrl
     $exampleEnvPath = Resolve-TemplateFile -TemplateRoot $TemplateRoot -RelativePath ".env.example" -RawBaseUrl $RawBaseUrl
 
     $sourceEnvPath = $null
@@ -497,7 +497,7 @@ function Ensure-EnvTemplate {
     }
 
     if ([string]::IsNullOrWhiteSpace($sourceEnvPath)) {
-        Write-Host "Skip env template: no source file found (.nebula.env or .env.example)."
+        Write-Host "Skip env template: no source file found (.env or .env.example)."
         return
     }
 
@@ -722,7 +722,7 @@ $resolvedHomeAssistantMcpUrl = Resolve-HomeAssistantMcpUrl -LocalUrl $HomeAssist
 $resolvedClientTargets = if ($ClientTargets -eq "Both") { @("VSCode", "ClaudeCode") } else { @($ClientTargets) }
 
 if ([string]::IsNullOrWhiteSpace($EnvFilePath)) {
-    $EnvFilePath = Join-Path $HOME ".nebula-rag/.nebula.env"
+    $EnvFilePath = Join-Path $HOME ".nebula-rag/.env"
 }
 
 if ($Mode -in @("Both", "User")) {

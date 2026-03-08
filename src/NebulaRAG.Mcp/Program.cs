@@ -18,6 +18,12 @@ Log.Logger = new LoggerConfiguration()
     .WriteTo.Console(new CompactJsonFormatter(), standardErrorFromLevel: Serilog.Events.LogEventLevel.Verbose)
     .CreateLogger();
 
+var mcpDotEnvResult = DotEnvLoader.LoadStandardDotEnv();
+if (mcpDotEnvResult.FoundFile)
+{
+    Log.Information("Loaded .env from {Path}. Applied {LoadedCount} keys ({SkippedCount} skipped due to existing values).", mcpDotEnvResult.Path, mcpDotEnvResult.LoadedCount, mcpDotEnvResult.SkippedCount);
+}
+
 var configPath = GetConfigPath(args);
 var settings = LoadSettings(configPath);
 settings.Validate();

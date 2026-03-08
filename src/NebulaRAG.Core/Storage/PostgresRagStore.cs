@@ -448,10 +448,13 @@ public sealed class PostgresRagStore
     {
         const string sql = @"
             SELECT
-                CASE
-                    WHEN d.source_path ~* '^https?://' THEN split_part(split_part(d.source_path, '://', 2), '/', 1)
-                    ELSE split_part(replace(d.source_path, '\\', '/'), '/', 1)
-                END AS project_id,
+                COALESCE(NULLIF(
+                    CASE
+                        WHEN d.source_path ~* '^https?://' THEN split_part(split_part(d.source_path, '://', 2), '/', 1)
+                        ELSE split_part(replace(d.source_path, '\\', '/'), '/', 1)
+                    END,
+                    ''
+                ), 'unscoped') AS project_id,
                 COUNT(DISTINCT d.id)::int AS document_count,
                 COUNT(c.id)::int AS chunk_count,
                 COALESCE(SUM(c.token_count), 0)::bigint AS total_tokens,

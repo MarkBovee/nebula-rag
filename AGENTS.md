@@ -179,7 +179,7 @@ Essential memory targets to prioritize:
 Memory safety constraints:
 
 - Never store credentials, tokens, passwords, or full connection strings.
-- Store references to secret sources (for example `.nebula.env`) instead of secret values.
+- Store references to secret sources (for example `.env`) instead of secret values.
 - Keep memory entries concise and deduplicated.
 
 Do not write memory for trivial Q&A, duplicates of existing memory, or generic facts that are not user/project specific.
@@ -282,7 +282,7 @@ For agent memory support, use a dedicated `memories` table in PostgreSQL with at
 ## Security Baseline
 
 - Never commit secrets.
-- Keep `.nebula.env` out of git.
+- Keep `.env` out of git.
 - Preserve and extend security controls in `.github/` workflows and policies.
 
 ## Language
