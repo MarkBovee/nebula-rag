@@ -170,6 +170,12 @@ public sealed class McpTransportHandlerContractTests
             .ToHashSet(StringComparer.Ordinal);
 
         Assert.Contains("query_project_rag", toolNames);
+        Assert.Contains("rag_query", toolNames);
+        Assert.Contains("rag_ingest", toolNames);
+        Assert.Contains("rag_sources", toolNames);
+        Assert.Contains("rag_admin", toolNames);
+        Assert.Contains("memory", toolNames);
+        Assert.Contains("plan", toolNames);
         Assert.Contains("rag_health_check", toolNames);
         Assert.Contains("memory_recall", toolNames);
         Assert.Contains("create_plan", toolNames);

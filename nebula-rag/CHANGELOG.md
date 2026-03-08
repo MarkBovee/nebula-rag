@@ -4,6 +4,13 @@ All notable changes to the Nebula RAG Home Assistant add-on are documented in th
 
 The format is inspired by Keep a Changelog and follows semantic versioning.
 
+## [0.3.23] - 2026-03-08
+
+- Added a consolidated preferred MCP tool surface in `McpTransportHandler`: `rag_query`, `rag_ingest`, `rag_sources`, `rag_admin`, `memory`, `plan`, and `system`.
+- Kept legacy MCP tool names fully available as compatibility aliases so existing agent/tooling integrations do not break.
+- Updated MCP transport contract coverage to assert the consolidated tool names are advertised via `tools/list`.
+- Updated README and add-on docs to document preferred consolidated tools and clarify current session behavior for plan-by-id operations.
+
 ## [0.3.22] - 2026-03-08
 
 - Reduced `NebulaRAG.Cli` console noise by lowering default structured logger verbosity and suppressing startup info messages that were polluting command output.
