@@ -4,6 +4,22 @@ All notable changes to the Nebula RAG Home Assistant add-on are documented in th
 
 The format is inspired by Keep a Changelog and follows semantic versioning.
 
+## [0.3.26] - 2026-03-08
+
+- Ran dependency freshness checks against latest stable NuGet packages across the solution before merge readiness validation.
+- Applied safe upgrades in AddonHost: OpenTelemetry packages (`Extensions.Hosting`, `Exporter.OpenTelemetryProtocol`, `Instrumentation.AspNetCore`, `Instrumentation.Http`, `Instrumentation.Runtime`) from `1.12.0` to `1.15.0`.
+- Applied safe Serilog core upgrade in AddonHost from `4.1.0` to `4.3.1`.
+- Upgraded `Serilog.AspNetCore` in AddonHost from `8.0.3` to `10.0.0` for .NET 10 alignment.
+- Applied safe test infrastructure upgrade: `Microsoft.NET.Test.Sdk` from `18.0.1` to `18.3.0`.
+
+## [0.3.25] - 2026-03-08
+
+- Removed legacy MCP tool-name endpoints from runtime dispatch; only unified tool names are callable (`rag_query`, `rag_ingest`, `rag_sources`, `rag_admin`, `memory`, `plan`, `system`).
+- Simplified `tools/list` to always return the minimal unified tool catalog and dropped legacy/full alias expansion behavior.
+- Updated MCP contract tests to verify legacy tool calls are rejected as unknown tools.
+- Updated project guidance files (`AGENTS.md`, `.github/copilot-instructions.md`, `.github/instructions/rag.instructions.md`) to use unified action-based tool format.
+- Updated README and add-on docs to remove legacy alias guidance and show unified MCP call patterns.
+
 ## [0.3.24] - 2026-03-08
 
 - Changed MCP `tools/list` default catalog profile to `minimal`, returning only preferred consolidated tools (`rag_query`, `rag_ingest`, `rag_sources`, `rag_admin`, `memory`, `plan`, `system`).

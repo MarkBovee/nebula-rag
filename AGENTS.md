@@ -92,7 +92,7 @@ Work like a professional developer: define expectations, plan, implement clean c
 Use both memory systems with clear scope boundaries:
 
 - VS Code memory tool: user-level assistant behavior and preferences (communication style, recurring personal preferences, cross-project habits).
-- NebulaRAG memory tools (`memory_recall`, `memory_store`, `memory_list`, `memory_update`, `memory_delete`): project/domain memory that should be queryable by MCP clients and retained in Nebula storage.
+- NebulaRAG `memory` tool (actions: `recall`, `store`, `list`, `update`, `delete`): project/domain memory that should be queryable by MCP clients and retained in Nebula storage.
 
 When a memory is both user-relevant and project-relevant, dual-write:
 
@@ -135,21 +135,18 @@ When querying memory:
 
 ### Preferred RAG tools
 
-- `query_project_rag`
-- `rag_health_check`
-- `rag_index_text` for direct text indexing
-- `rag_index_url` for fetch + index from URLs
-- `rag_reindex_source` for re-indexing changed sources
-- `rag_get_chunk` for chunk-level debug and verification
-- `rag_search_similar` for similarity search without project-context filtering
+- `rag_query` (`mode`: `project`/`similar`)
+- `rag_admin` (`action`: `health`)
+- `rag_ingest` (`mode`: `text`/`url`/`reindex`/`path`)
+- `rag_sources` (`action`: `list`/`get_chunk`)
 
 ### Preferred Memory tools
 
-- `memory_store` to persist facts/observations with tags and category
-- `memory_recall` for semantic lookup across memories
-- `memory_list` to list recent or tag-filtered memories
-- `memory_delete` to remove a specific memory entry
-- `memory_update` to update an existing memory
+- `memory` `action: "store"` to persist facts/observations with tags and category
+- `memory` `action: "recall"` for semantic lookup across memories
+- `memory` `action: "list"` to list recent or tag-filtered memories
+- `memory` `action: "delete"` to remove a specific memory entry
+- `memory` `action: "update"` to update an existing memory
 
 If a preferred tool is unavailable in the current runtime, gracefully fall back to available equivalents and continue the task.
 
@@ -209,10 +206,10 @@ Preferred tags: `architecture`, `preference`, `bug`, `convention`, `decision`, `
 
 ### Session Start
 
-1. Run Nebula memory recall (`memory_recall`) for recent project context, decisions, and bug history.
-2. Run Nebula memory listing (`memory_list`) when available to quickly spot recent/duplicate entries.
+1. Run Nebula memory recall (`memory` with `action: "recall"`) for recent project context, decisions, and bug history.
+2. Run Nebula memory listing (`memory` with `action: "list"`) when available to quickly spot recent/duplicate entries.
 3. Run VS Code memory recall for user preferences and communication expectations.
-4. Run `rag_health_check` to verify index availability.
+4. Run `rag_admin` with `action: "health"` to verify index availability.
 5. Provide a short summary of retrieved context before implementation.
 
 ### Session End
@@ -251,10 +248,11 @@ Before completing implementation:
 
 1. Bump `nebula-rag/config.json` add-on version (default patch bump).
 2. Add a matching `nebula-rag/CHANGELOG.md` entry for the change.
-3. Build solution with zero errors.
-4. Run tests and keep them passing.
-5. Ensure docs/readmes are updated for behavior changes.
-6. Keep changes scoped; avoid unrelated refactors.
+3. Check dependencies against latest stable versions for detected package ecosystems (NuGet and others present in the repo) and resolve approved updates.
+4. Build solution with zero errors.
+5. Run tests and keep them passing.
+6. Ensure docs/readmes are updated for behavior changes.
+7. Keep changes scoped; avoid unrelated refactors.
 
 ## Documentation Rules
 

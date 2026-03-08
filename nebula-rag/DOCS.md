@@ -67,9 +67,7 @@ Preferred tools include:
 - `plan`
 - `system`
 
-Legacy aliases remain available for backward compatibility (for example `query_project_rag`, `memory_recall`, and `create_plan`).
-
-By default, `tools/list` returns a minimal preferred-tool catalog. Use `{"profile":"full"}` (or `{"includeLegacy": true}`) in `tools/list` params to include legacy aliases.
+`tools/list` returns the minimal unified tool catalog only.
 
 ## Troubleshooting
 
