@@ -163,9 +163,9 @@ public sealed partial class McpTransportHandler
     {
         var tools = new JsonArray();
 
-        foreach (var preferredTool in BuildPreferredTools())
+        foreach (var unifiedTool in BuildUnifiedTools())
         {
-            tools.Add(preferredTool);
+            tools.Add(unifiedTool);
         }
 
         return new JsonObject
@@ -176,20 +176,20 @@ public sealed partial class McpTransportHandler
     }
 
     /// <summary>
-    /// Builds preferred consolidated tool definitions.
+    /// Builds consolidated tool definitions.
     /// </summary>
-    /// <returns>Preferred tool list.</returns>
-    private static IReadOnlyList<JsonObject> BuildPreferredTools()
+    /// <returns>Unified tool list.</returns>
+    private static IReadOnlyList<JsonObject> BuildUnifiedTools()
     {
         return
         [
-            BuildToolDefinition(RagQueryToolName, "Unified RAG query operations (preferred)."),
-            BuildToolDefinition(RagIngestToolName, "Unified RAG indexing operations (preferred)."),
-            BuildToolDefinition(RagSourcesToolName, "Unified RAG source management operations (preferred)."),
-            BuildToolDefinition(RagAdminToolName, "Unified RAG administrative operations (preferred)."),
-            BuildToolDefinition(MemoryToolName, "Unified memory operations (preferred)."),
-            BuildToolDefinition(PlanToolName, "Unified planning operations (preferred)."),
-            BuildToolDefinition(SystemToolName, "Unified system metadata operations (preferred).")
+            BuildToolDefinition(RagQueryToolName, "Unified RAG query operations."),
+            BuildToolDefinition(RagIngestToolName, "Unified RAG indexing operations."),
+            BuildToolDefinition(RagSourcesToolName, "Unified RAG source management operations."),
+            BuildToolDefinition(RagAdminToolName, "Unified RAG administrative operations."),
+            BuildToolDefinition(MemoryToolName, "Unified memory operations."),
+            BuildToolDefinition(PlanToolName, "Unified planning operations."),
+            BuildToolDefinition(SystemToolName, "Unified system metadata operations.")
         ];
     }
 

@@ -22,7 +22,7 @@ NebulaRAG is a self-hosted Retrieval-Augmented Generation platform that gives AI
 
 NebulaRAG includes a broad MCP (Model Context Protocol) integration for retrieval, indexing, memory, and plan lifecycle operations.
 
-### Preferred MCP Tools
+### Unified MCP Tools
 
 - `rag_query`: Unified semantic query operations (`project`, `similar`)
 - `rag_ingest`: Unified indexing operations (`path`, `text`, `url`, `reindex`)
@@ -34,7 +34,7 @@ NebulaRAG includes a broad MCP (Model Context Protocol) integration for retrieva
 
 ### tools/list Profiles
 
-- `tools/list` returns a `minimal` profile with only the unified preferred tool set.
+- `tools/list` returns a `minimal` profile with only the unified tool set.
 
 ### Plan Session Behavior
 
@@ -252,7 +252,7 @@ NebulaRAG/
 
 ## MCP Tools
 
-### RAG (Preferred)
+### RAG
 
 | Tool | Description |
 |---|---|
@@ -262,19 +262,18 @@ NebulaRAG/
 | `rag_admin` | Unified admin operations (`init_schema`, `health`, `stats`, `purge`) |
 | `system` | Runtime server metadata (`server_info`) |
 
-### Memory (Preferred)
+### Memory
 
 | Tool | Description |
 |---|---|
 | `memory` | Unified memory operations (`store`, `recall`, `list`, `update`, `delete`) |
 
-### Plans (Preferred)
+### Plans
 
 | Tool | Description |
 |---|---|
 | `plan` | Unified plan/task operations (`create`, `get`, `list`, `update`, `complete_task`, `update_task`, `archive`) |
 
-> `rag-sources.md` is automatically synchronized after every index, delete, and purge operation.  
 > The `memories` table and indexes are created automatically through `rag_admin` with action `init_schema`.
 
 ---

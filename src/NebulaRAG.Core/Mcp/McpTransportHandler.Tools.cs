@@ -1344,22 +1344,14 @@ public sealed partial class McpTransportHandler
     }
 
     /// <summary>
-    /// Tries to sync rag-sources manifest while keeping tool execution resilient.
+    /// Retained for compatibility; automatic rag-sources sidecar synchronization is disabled.
     /// </summary>
     /// <param name="contextPath">Optional context path.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Sync result or null on failure.</returns>
-    private async Task<RagSourcesManifestSyncResult?> TrySyncRagSourcesManifestAsync(string? contextPath, CancellationToken cancellationToken)
+    private Task<RagSourcesManifestSyncResult?> TrySyncRagSourcesManifestAsync(string? contextPath, CancellationToken cancellationToken)
     {
-        try
-        {
-            return await _sourcesManifestService.SyncAsync(contextPath, cancellationToken);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to synchronize rag-sources manifest after successful index operation.");
-            return null;
-        }
+        return Task.FromResult<RagSourcesManifestSyncResult?>(null);
     }
 
     /// <summary>

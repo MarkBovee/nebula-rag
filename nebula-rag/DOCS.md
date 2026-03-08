@@ -57,7 +57,7 @@ Supported methods:
 - `tools/list`
 - `tools/call`
 
-Preferred tools include:
+Unified tools include:
 
 - `rag_query`
 - `rag_ingest`

@@ -790,22 +790,14 @@ internal static class ProgramMain
     }
 
     /// <summary>
-    /// Synchronizes rag-sources markdown after index mutations without failing the main command when sync fails.
+    /// Retained for compatibility; automatic rag-sources sidecar synchronization is disabled.
     /// </summary>
     /// <param name="sourcesManifestService">Service that writes rag-sources markdown from indexed metadata.</param>
     /// <param name="contextPath">Optional path context that helps resolve output location.</param>
     /// <param name="logger">Command logger for non-fatal warnings.</param>
-    private static async Task TrySyncRagSourcesManifestAsync(RagSourcesManifestService sourcesManifestService, string? contextPath, Microsoft.Extensions.Logging.ILogger logger)
+    private static Task TrySyncRagSourcesManifestAsync(RagSourcesManifestService sourcesManifestService, string? contextPath, Microsoft.Extensions.Logging.ILogger logger)
     {
-        try
-        {
-            var syncResult = await sourcesManifestService.SyncAsync(contextPath);
-            logger.LogInformation("RAG sources manifest synchronized at {ManifestPath} ({SourceCount} rows).", syncResult.ManifestPath, syncResult.SourceCount);
-        }
-        catch (Exception ex)
-        {
-            logger.LogWarning(ex, "Failed to synchronize rag-sources.md automatically.");
-        }
+        return Task.CompletedTask;
     }
 
     private static void PrintUsage()

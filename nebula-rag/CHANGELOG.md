@@ -4,6 +4,17 @@ All notable changes to the Nebula RAG Home Assistant add-on are documented in th
 
 The format is inspired by Keep a Changelog and follows semantic versioning.
 
+## [0.3.27] - 2026-03-08
+
+- Removed remaining "preferred" wording from MCP tool descriptions and documentation now that migration is complete.
+- Updated MCP transport tool metadata text to consistently describe the unified tool surface.
+- Updated README and add-on docs headings/phrasing from "Preferred" to "Unified".
+
+## [0.3.27] - 2026-03-08
+
+- Disabled automatic `rag-sources.md` sidecar synchronization in CLI and MCP mutation flows so indexing remains database-first without writing local manifest files.
+- Removed the README statement that claimed `rag-sources.md` is automatically synchronized after index operations.
+
 ## [0.3.26] - 2026-03-08
 
 - Ran dependency freshness checks against latest stable NuGet packages across the solution before merge readiness validation.
