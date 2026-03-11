@@ -4,6 +4,10 @@ All notable changes to the Nebula RAG Home Assistant add-on are documented in th
 
 The format is inspired by Keep a Changelog and follows semantic versioning.
 
+## [0.3.51] - 2026-03-11
+
+- Removed the accidentally reintroduced nested `designs/openpencil/nebula-server-dashboard.fig` artifact so the OpenPencil design storage stays flat under `designs/*.fig`.
+
 ## [0.3.50] - 2026-03-11
 
 - Hardened the OpenPencil live-loop to validate `.fig` archives before sync and reopen the editor URL when the latest design changes, reducing blank-canvas drift after scripted updates.
