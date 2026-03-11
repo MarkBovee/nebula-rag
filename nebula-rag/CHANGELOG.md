@@ -4,6 +4,75 @@ All notable changes to the Nebula RAG Home Assistant add-on are documented in th
 
 The format is inspired by Keep a Changelog and follows semantic versioning.
 
+## [0.3.39] - 2026-03-11
+
+- Made `.github/skills/openpencil-design/SKILL.md` project-independent by removing NebulaRAG-specific references and replacing repository-coupled wording with generic guidance.
+- Kept design storage guidance centered on `designs/*.fig` and explicitly Figma-compatible `.fig` outputs.
+- Updated OpenPencil skill references (`references/workflow.md`, `references/prompts.md`) to remove remaining Nebula-specific language and keep reusable cross-project wording.
+
+## [0.3.38] - 2026-03-11
+
+- Hardened `.github/skills/openpencil-design/SKILL.md` for production usage with clearer activation heuristics, explicit decision points, and concrete quality gates.
+- Fixed the skill workflow sequence to include the missing first step (`memory` + one focused `rag_query`) and aligned execution language with current OpenPencil browser-first conventions.
+- Standardized skill path guidance to `designs/openpencil/*.fig` so required outputs, defaults, and guardrails are consistent with repo OpenPencil workflow references.
+
+## [0.3.37] - 2026-03-11
+
+- Broadened the OpenPencil repo skill from dashboard-only work to general UI and design work, including generic triggers such as creating or refining a design.
+- Added the generalized repo skill at `.github/skills/openpencil-design/` with updated workflow, prompts, and handoff guidance for reusable UI work.
+- Updated `README.md` to point to the generalized OpenPencil design skill.
+
+## [0.3.36] - 2026-03-11
+
+- Added the new repo skill at `.github/skills/openpencil-dashboard/` for OpenPencil-first dashboard design, live canvas refinement, reliable `.fig` saving, and implementation handoff.
+- Added compact OpenPencil skill references for workflow, prompts, and handoff guidance so later dashboard sessions can reuse the same execution model.
+- Updated `README.md` to make the new OpenPencil repo skill discoverable from the existing design workflow section.
+
+## [0.3.35] - 2026-03-11
+
+- Added the saved live OpenPencil dashboard skill asset at `designs/openpencil/nebula-live-skill-v1.fig`.
+- Extended the local OpenPencil design session into a more reusable skill baseline with pattern-library blocks and a refined overview composition for later dashboard build handoff.
+
+## [0.3.34] - 2026-03-11
+
+- Removed the remaining Windows-specific OpenPencil setup assumptions from `scripts/openpencil/install-openpencil.ps1` so the repo now requires a preinstalled Bun runtime instead of calling `winget`.
+- Made `scripts/openpencil/openpencil-common.ps1` and `scripts/openpencil/start-openpencil-mcp.ps1` portable by removing Windows-only process-window behavior and adding non-Windows MCP process detection.
+- Added a default Podman image fallback (`nebula-openpencil-mcp:latest`) so `scripts/openpencil/start-openpencil-mcp.ps1 -UsePodman` works immediately after the repo-owned image is built, even without a `.env` file.
+- Updated the OpenPencil docs to describe PowerShell-based, browser-first setup without Windows-specific installer guidance.
+- Cleaned historical OpenPencil changelog wording so it no longer points at removed repo paths or old desktop-oriented implementation details.
+
+## [0.3.33] - 2026-03-11
+
+- Added a repo-owned OpenPencil MCP container path via `scripts/openpencil/Containerfile` and `scripts/openpencil/build-openpencil-mcp-image.ps1`, making the Podman image flow reproducible inside this repository.
+- Added `.env`-driven OpenPencil settings (`OPENPENCIL_EDITOR_URL`, `OPENPENCIL_USE_PODMAN`, `OPENPENCIL_MCP_PODMAN_IMAGE`) and updated the MCP/live-loop scripts to use them when parameters are omitted.
+- Extended `scripts/openpencil/stop-openpencil-mcp.ps1` to stop both local MCP processes and the named Podman container.
+- Updated `README.md` and `docs/OpenPencil-Dashboard-Plan.md` for the repo-owned container flow and browser-first configuration model.
+- Clarified the older `0.3.30` OpenPencil entry as an initial loop implementation that has since been superseded by the browser-first flow.
+
+## [0.3.31] - 2026-03-11
+
+- Flattened OpenPencil design storage to `designs/openpencil/*.fig` so the design folder now keeps only the generated `.fig` files.
+- Removed repo-stored OpenPencil artifact subfolders under `designs/openpencil` (`runs`, `exports`, and `viewer`) as part of the simpler design handoff flow.
+- Updated `scripts/openpencil/start-openpencil-live-loop.ps1` and `docs/OpenPencil-Dashboard-Plan.md` to use the flat `designs/openpencil` folder as the automatic watch/open target.
+
+## [0.3.32] - 2026-03-11
+
+- Removed the Windows desktop `.exe` dependency from the OpenPencil live-loop flow so the repo no longer assumes a local desktop app.
+- Updated `scripts/openpencil/start-openpencil-mcp.ps1` and `scripts/openpencil/start-openpencil-live-loop.ps1` for browser-first usage with optional `-OpenUiUrl` and optional Podman-backed MCP startup.
+- Updated `docs/OpenPencil-Dashboard-Plan.md` to stop hardcoding `app.openpencil.dev/demo`, document browser/PWA + MCP separation, and describe Podman as the portable runtime option.
+
+## [0.3.30] - 2026-03-11
+
+- Added the first `scripts/openpencil/start-openpencil-live-loop.ps1` automation loop for local OpenPencil usage; this initial version was later superseded by the browser-first flow.
+- Added optional MCP bootstrap in the same loop script via `-StartMcp` so the initial local OpenPencil flow and MCP readiness could be started in one command.
+- Updated `docs/OpenPencil-Dashboard-Plan.md` with a concrete no-manual live loop command and one-shot fallback command.
+
+## [0.3.29] - 2026-03-11
+
+- Added a new OpenPencil-generated full dashboard variant (`dashboard-agent-v3.fig`), now kept in the flattened `designs/openpencil/` folder after the later design-storage cleanup.
+- Removed the temporary custom local design viewer fallback (`designs/openpencil/viewer/**`) and related helper scripts (`scripts/openpencil/start-design-viewer.ps1`, `scripts/openpencil/stop-design-viewer.ps1`).
+- Updated `docs/OpenPencil-Dashboard-Plan.md` to use standalone OpenPencil workflow as the primary route for creating a new dashboard design (no AddonHost tab integration).
+
 ## [0.3.28] - 2026-03-11
 
 - Fixed `rag_ingest` path mode to support both directory and single-file input paths, including explicit `pathType`, `sourcePath`, and `resolvedPath` in responses.
