@@ -176,7 +176,7 @@ docker compose up -d
 
 ## OpenPencil Design Workflow
 
-NebulaRAG keeps OpenPencil design files flat in `designs/openpencil/*.fig` and uses a browser-first MCP workflow rather than a desktop-app dependency.
+NebulaRAG keeps OpenPencil design files flat in `designs/*.fig` and uses a browser-first MCP workflow rather than a desktop-app dependency.
 
 The repository also includes a reusable OpenPencil skill at `.github/skills/openpencil-design/` for agent-driven UI design, live canvas refinement, reliable `.fig` saving, and implementation handoff.
 
@@ -185,15 +185,15 @@ The repository also includes a reusable OpenPencil skill at `.github/skills/open
 Local runtime (requires `bun` to already be installed from `https://bun.sh`):
 
 ```powershell
-pwsh ./scripts/openpencil/install-openpencil.ps1
-pwsh ./scripts/openpencil/start-openpencil-mcp.ps1 -Port 3100
+pwsh ./.github/skills/openpencil-design/scripts/install-openpencil.ps1
+pwsh ./.github/skills/openpencil-design/scripts/start-openpencil-mcp.ps1 -Port 3100
 ```
 
 Repo-owned container image:
 
 ```powershell
-pwsh ./scripts/openpencil/build-openpencil-mcp-image.ps1
-pwsh ./scripts/openpencil/start-openpencil-mcp.ps1 -Port 3100 -UsePodman
+pwsh ./.github/skills/openpencil-design/scripts/build-openpencil-mcp-image.ps1
+pwsh ./.github/skills/openpencil-design/scripts/start-openpencil-mcp.ps1 -Port 3100 -UsePodman
 ```
 
 Optional `.env` settings:
@@ -209,10 +209,10 @@ The scripts load these values from the repository `.env` file when parameters ar
 ### OpenPencil Live Watch
 
 ```powershell
-pwsh ./scripts/openpencil/start-openpencil-live-loop.ps1 -VariantsRoot "designs/openpencil" -Watch -StartMcp
+pwsh ./.github/skills/openpencil-design/scripts/start-openpencil-live-loop.ps1 -VariantsRoot "designs" -Watch -StartMcp
 ```
 
-This watcher logs when the latest `.fig` changes and can open a configured browser editor URL, while the MCP server keeps reading and writing the shared workspace files.
+This watcher validates the latest `.fig` archive before mirroring it into the sibling local OpenPencil `public/` folder, then reopens the editor with an `?open=/file.fig&fit=1` URL whenever the variant changes so refreshes and scripted updates come back on the latest design instead of an empty `Untitled` canvas.
 
 ---
 

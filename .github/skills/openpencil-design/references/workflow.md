@@ -17,20 +17,22 @@ The browser page wins when the live page and the automation bridge drift apart.
 
 1. Query project memory for prior OpenPencil decisions and runtime gotchas.
 2. Run one focused `rag_query` for OpenPencil workflow context.
-3. Check whether a visible page is already open.
-4. If needed, use `scripts/openpencil/install-openpencil.ps1`, `start-openpencil-mcp.ps1`, or `start-openpencil-live-loop.ps1`.
-5. Build or refine the design directly in the live editor.
-6. Save to `designs/openpencil/*.fig`.
-7. Update release metadata files when required by the host repository policy.
-8. Validate touched files and changed-file state.
+3. If the task is about visual quality, theme, or layout refinement, apply the `frontend-design` skill guidance before editing the canvas.
+4. Check whether a visible page is already open.
+5. If needed, use `.github/skills/openpencil-design/scripts/install-openpencil.ps1`, `start-openpencil-mcp.ps1`, or `start-openpencil-live-loop.ps1`.
+6. Build or refine the design directly in the live editor.
+7. Save to `designs/*.fig`.
+8. Update release metadata files when required by the host repository policy.
+9. Validate touched files and changed-file state.
 
 ## Known Repo Conventions
 
-- `.fig` files are kept flat in `designs/openpencil/`.
+- `.fig` files are kept flat in `designs/`.
 - The OpenPencil MCP endpoint is `http://localhost:3100/mcp`.
 - `http://localhost:3100/` returning `404` is expected.
 - The workflow is browser-first and PowerShell-driven.
 - Bun must already be installed before using the install script.
+- Prefer `.github/skills/openpencil-design/scripts/openpencil-browser-automation.js` and `window.__OPEN_PENCIL_STORE__` as the browser automation entry point.
 
 ## Reliable Save Strategy
 
@@ -40,7 +42,7 @@ Preferred fallback:
 
 1. Export `.fig` bytes from the running page.
 2. Decode the base64 payload.
-3. Write the result directly to the target file in `designs/openpencil/`.
+3. Write the result directly to the target file in `designs/`.
 
 This fallback is more reliable in this environment than file chooser dialogs.
 
@@ -85,20 +87,21 @@ When this happens:
 1. Treat the saved `.fig` file as the durable artifact.
 2. Inspect the live graph for expected named top-level frames before trusting the visible page.
 3. Re-open the saved file if the page state no longer matches the saved result.
+4. Prefer the live-loop watcher because it now validates the `.fig` archive before sync and reopens the editor URL on variant changes.
 
 ### Scripted store access brittleness
 
-Do not assume the OpenPencil store is reachable from the first Vue app level.
+Do not assume the OpenPencil store is reachable only from a Vue component path.
 
-In this repo/runtime, the useful graph and export state lived under `EditorView.setupState.store`, which required walking the mounted component tree.
+Prefer `window.__OPEN_PENCIL_STORE__` first. In the local upstream OpenPencil repo, the active tab wiring already publishes the active store there.
 
-If the first probe reports no store or no graph, continue discovery instead of assuming the editor is unavailable.
+If that value is missing, use `.github/skills/openpencil-design/scripts/openpencil-browser-automation.js` as the fallback discovery layer instead of open-coding new Vue tree probes in each session.
 
 ### In-page module resolution caveat
 
-Bare module imports such as `@open-pencil/core` may fail inside page-evaluated scripts even when the app itself works.
+Do not rely on ad-hoc bare-module imports inside page-evaluated snippets when store access or scene summaries are all that is needed.
 
-If that happens, resolve the local dev-module path explicitly, for example through the Vite `/@fs/...` path into the local `node_modules/@open-pencil/core/src/index.ts` entry.
+Use `.github/skills/openpencil-design/scripts/openpencil-browser-automation.js` first so routine automation stays on the already-loaded runtime surface instead of per-session module hacks.
 
 ### Render notification after scripted generation
 
@@ -146,8 +149,9 @@ Examples of good naming:
 
 ## Validation Checklist
 
-- Target `.fig` file exists under `designs/openpencil/`.
+- Target `.fig` file exists under `designs/`.
 - The `.fig` archive can be opened and contains expected entries such as `canvas.fig`, `thumbnail.png`, and `meta.json`.
+- The live-loop watcher or equivalent flow reopens the current editor URL after a validated `.fig` update when live-canvas drift recovery matters.
 - Any related metadata changes are reflected in the repository release metadata files.
 - Touched text files show no editor errors.
 - If the work came from a live page, key nodes or sections can be re-identified after the save or after re-opening the exported file.

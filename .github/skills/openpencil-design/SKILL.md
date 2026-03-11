@@ -10,6 +10,8 @@ Use this skill when the task is to create or evolve UI designs in OpenPencil or 
 
 This skill captures a browser-first workflow, reliable save/export behavior, and handoff expectations for reusable UI work.
 
+When the request includes visual polish, theming, typography, composition, or overall UI quality, apply the `frontend-design` skill as the design-quality bar for the OpenPencil work instead of treating this as a purely mechanical export workflow.
+
 ## Use This Skill For
 
 - OpenPencil UI design requests
@@ -37,7 +39,8 @@ Trigger phrases include:
 ## Default Repo Assumptions
 
 - Design assets live in `designs/*.fig`.
-- If OpenPencil helper scripts exist, they are typically under `scripts/openpencil/`.
+- OpenPencil helper scripts for this skill live under `.github/skills/openpencil-design/scripts/`.
+- Browser automation helpers for this skill live under `.github/skills/openpencil-design/scripts/openpencil-browser-automation.js`.
 - The local editor is typically browser-first, not desktop-app-first.
 - If a visible OpenPencil browser page is open, treat that page as the source of truth for design state.
 - If a sibling local upstream checkout exists at `../open-pencil`, prefer that real repo/editor over hosted shortcuts.
@@ -67,19 +70,21 @@ For real design work, leave behind these concrete artifacts:
 
 1. Recall relevant project context and run one focused context query when available.
 2. Reuse existing OpenPencil docs, scripts, and prior design artifacts before inventing a new flow.
-3. If a browser page is open, inspect the live page first.
-4. Prefer editing the visible page or local upstream OpenPencil repo over abstract-only design descriptions.
-5. Save work as a real Figma-compatible `.fig`, not only as prose or screenshots.
-6. If save dialogs are unreliable, use the in-page export fallback described in `references/workflow.md`.
-7. For substantial work, preserve reusable output as a named pattern board or baseline.
-8. Validate touched files and keep related metadata aligned with the host repository policy.
+3. If the user expects a strong visual result, load and apply the `frontend-design` skill guidance before editing the canvas.
+4. If a browser page is open, inspect the live page first.
+5. Prefer editing the visible page or local upstream OpenPencil repo over abstract-only design descriptions.
+6. Save work as a real Figma-compatible `.fig`, not only as prose or screenshots.
+7. If save dialogs are unreliable, use the in-page export fallback described in `references/workflow.md`.
+8. For substantial work, preserve reusable output as a named pattern board or baseline.
+9. Validate touched files and keep related metadata aligned with the host repository policy.
 
 If the visible page resets, goes blank, or drifts from the saved artifact, treat the saved `.fig` plus explicit validation as the source of truth until the file is re-opened successfully.
 
 ## Decision Points
 
 - If a live canvas exists: continue from the visible page first.
-- If no live canvas exists: start or reuse the local OpenPencil flow via `scripts/openpencil/`.
+- If no live canvas exists: start or reuse the local OpenPencil flow via `.github/skills/openpencil-design/scripts/`.
+- If the request asks for stronger styling, theme, typography, or composition: combine this skill with `frontend-design` guidance.
 - If browser save works: use native save.
 - If browser save fails: use the export-bytes fallback in `references/workflow.md`.
 - If request scope is a single screen: deliver one focused composition plus key states.
@@ -92,6 +97,7 @@ If the visible page resets, goes blank, or drifts from the saved artifact, treat
 - Do not rely on `http://localhost:3100/` as a UI route; `/mcp` is the expected endpoint.
 - Do not treat automation bridge state as more authoritative than the visible browser canvas.
 - Do not mutate OpenPencil store selection state incorrectly; see `references/workflow.md` for the `selectedIds` rule.
+- Prefer `window.__OPEN_PENCIL_STORE__` or `.github/skills/openpencil-design/scripts/openpencil-browser-automation.js` over probing Vue component internals directly.
 - Do not assume the visible page still represents the saved design after a scripted export; verify named top-level frames or re-open the saved file.
 - Do not stop at a concept write-up when the user expects an actual design artifact.
 
@@ -119,7 +125,9 @@ Pause and switch to troubleshooting when any of these appear:
 
 Read these only when needed:
 
+- `.github/skills/frontend-design/SKILL.md`: visual direction, typography, composition, and anti-generic quality bar.
 - `references/workflow.md`: execution order, save/export fallback, runtime gotchas, validation.
+- `.github/skills/openpencil-design/scripts/openpencil-browser-automation.js`: stable browser-side helpers for store access, selection repair, and scene summaries.
 - `references/prompts.md`: prompt templates for UI screens, reusable pattern boards, and handoff.
 - `references/handoff.md`: what to capture when a design becomes implementation-ready.
 

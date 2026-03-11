@@ -19,7 +19,7 @@ function Start-LocalMcpServer {
     param([int]$McpPort)
 
     if ($null -eq (Get-Command openpencil-mcp-http -ErrorAction SilentlyContinue)) {
-        throw "openpencil-mcp-http not found. Run scripts/openpencil/install-openpencil.ps1 first."
+        throw "openpencil-mcp-http not found. Run .github/skills/openpencil-design/scripts/install-openpencil.ps1 first."
     }
 
     Write-Step "Starting local OpenPencil MCP HTTP server on port $McpPort"
