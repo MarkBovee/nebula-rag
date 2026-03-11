@@ -74,6 +74,8 @@ For real design work, leave behind these concrete artifacts:
 7. For substantial work, preserve reusable output as a named pattern board or baseline.
 8. Validate touched files and keep related metadata aligned with the host repository policy.
 
+If the visible page resets, goes blank, or drifts from the saved artifact, treat the saved `.fig` plus explicit validation as the source of truth until the file is re-opened successfully.
+
 ## Decision Points
 
 - If a live canvas exists: continue from the visible page first.
@@ -90,7 +92,19 @@ For real design work, leave behind these concrete artifacts:
 - Do not rely on `http://localhost:3100/` as a UI route; `/mcp` is the expected endpoint.
 - Do not treat automation bridge state as more authoritative than the visible browser canvas.
 - Do not mutate OpenPencil store selection state incorrectly; see `references/workflow.md` for the `selectedIds` rule.
+- Do not assume the visible page still represents the saved design after a scripted export; verify named top-level frames or re-open the saved file.
 - Do not stop at a concept write-up when the user expects an actual design artifact.
+
+## Failure Signals
+
+Pause and switch to troubleshooting when any of these appear:
+
+- The editor page name falls back to `Untitled` or the expected frames disappear after a save/export.
+- The canvas looks blank even though a `.fig` artifact was produced.
+- Runtime notifications appear, especially errors such as `Cannot read properties of undefined (reading 'x')`.
+- A scripted session cannot resolve the OpenPencil store or graph from the first Vue component level.
+- Browser-native save succeeds inconsistently or file dialogs fail.
+- In-page module imports fail for bare specifiers such as `@open-pencil/core`.
 
 ## Quality Gates
 
@@ -98,6 +112,7 @@ For real design work, leave behind these concrete artifacts:
 - Naming is semantic and reusable, not anonymous shape groups.
 - Relevant states are represented: loading, empty, error, and success.
 - Handoff is implementation-oriented: sections, components, states, and open risks.
+- Saved-artifact validation includes more than file existence: confirm the `.fig` archive is readable and the design can be correlated to expected frame names.
 - Repo metadata stays in sync when repository artifacts are updated.
 
 ## Reference Files

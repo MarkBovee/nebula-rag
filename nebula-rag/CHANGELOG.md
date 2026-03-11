@@ -4,6 +4,18 @@ All notable changes to the Nebula RAG Home Assistant add-on are documented in th
 
 The format is inspired by Keep a Changelog and follows semantic versioning.
 
+## [0.3.41] - 2026-03-11
+
+- Documented observed OpenPencil skill failure modes in `.github/skills/openpencil-design/`, including live-canvas drift to blank `Untitled` state, brittle store discovery, render notifications, and page-eval module-resolution issues.
+- Added a concrete improvement plan to the OpenPencil workflow reference for post-export verification, blank-canvas recovery, safer artifact writing, and stronger archive validation.
+- Tightened OpenPencil skill guardrails and quality gates so saved-artifact validation no longer relies on file existence alone.
+
+## [0.3.40] - 2026-03-11
+
+- Added a new OpenPencil dashboard design artifact at `designs/openpencil/nebula-server-dashboard.fig` for Nebula server management.
+- Structured the dashboard around project-based navigation with a persistent project switcher, within-project sections, and operational health surfaces.
+- Included reusable pattern-board blocks and explicit loading, empty, error, and success state cards to support later implementation handoff.
+
 ## [0.3.39] - 2026-03-11
 
 - Made `.github/skills/openpencil-design/SKILL.md` project-independent by removing NebulaRAG-specific references and replacing repository-coupled wording with generic guidance.
