@@ -4,6 +4,11 @@ All notable changes to the Nebula RAG Home Assistant add-on are documented in th
 
 The format is inspired by Keep a Changelog and follows semantic versioning.
 
+## [0.3.57] - 2026-03-11
+
+- Added `docs/openpencil-runtime-workflow.md` to document how the private OpenPencil mirror, Nebula submodule, runtime startup, live-loop flow, and submodule update process work together.
+- Linked the new OpenPencil runtime workflow guide from the README so the update process is documented in one place instead of being implicit in recent git history.
+
 ## [0.3.56] - 2026-03-11
 
 - Added the private `open-pencil` mirror as a git submodule at the repository root so Nebula clones can build or run the upstream OpenPencil container/runtime without a separate manual clone step.

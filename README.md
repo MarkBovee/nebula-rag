@@ -201,6 +201,8 @@ OPENPENCIL_MCP_URL=http://localhost:3100/mcp
 
 The live-loop script loads these values from the repository `.env` file when `-EditorUrl` or `-McpUrl` are not supplied explicitly.
 
+Operational details for the submodule, private mirror, runtime startup, and update flow are documented in `docs/openpencil-runtime-workflow.md`.
+
 ### OpenPencil Live Watch
 
 ```powershell
