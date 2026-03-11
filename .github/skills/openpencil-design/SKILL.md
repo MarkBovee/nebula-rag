@@ -94,7 +94,7 @@ If the visible page resets, goes blank, or drifts from the saved artifact, treat
 
 - Prefer agent-generated designs over `.fig` import as the primary workflow.
 - Keep storage flat in `designs/*.fig` unless the repo convention changes.
-- Do not rely on `http://localhost:3100/` as a UI route; `/mcp` is the expected endpoint.
+- Do not assume this repository defines the OpenPencil MCP endpoint; use the upstream OpenPencil runtime and the active editor URL for the current session.
 - Do not treat automation bridge state as more authoritative than the visible browser canvas.
 - Do not mutate OpenPencil store selection state incorrectly; see `references/workflow.md` for the `selectedIds` rule.
 - Prefer `window.__OPEN_PENCIL_STORE__` or `.github/skills/openpencil-design/scripts/openpencil-browser-automation.js` over probing Vue component internals directly.

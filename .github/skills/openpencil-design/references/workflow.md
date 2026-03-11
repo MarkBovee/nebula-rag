@@ -19,7 +19,7 @@ The browser page wins when the live page and the automation bridge drift apart.
 2. Run one focused `rag_query` for OpenPencil workflow context.
 3. If the task is about visual quality, theme, or layout refinement, apply the `frontend-design` skill guidance before editing the canvas.
 4. Check whether a visible page is already open.
-5. If needed, use `.github/skills/openpencil-design/scripts/install-openpencil.ps1`, `start-openpencil-mcp.ps1`, or `start-openpencil-live-loop.ps1`.
+5. If needed, start or reuse the upstream OpenPencil editor and use `.github/skills/openpencil-design/scripts/start-openpencil-live-loop.ps1` for local variant mirroring.
 6. Build or refine the design directly in the live editor.
 7. Save to `designs/*.fig`.
 8. Update release metadata files when required by the host repository policy.
@@ -28,10 +28,9 @@ The browser page wins when the live page and the automation bridge drift apart.
 ## Known Repo Conventions
 
 - `.fig` files are kept flat in `designs/`.
-- The OpenPencil MCP endpoint is `http://localhost:3100/mcp`.
-- `http://localhost:3100/` returning `404` is expected.
 - The workflow is browser-first and PowerShell-driven.
-- Bun must already be installed before using the install script.
+- The upstream local OpenPencil editor typically runs on `http://localhost:1420`.
+- The upstream local OpenPencil MCP endpoint typically runs on `http://localhost:3100/mcp`.
 - Prefer `.github/skills/openpencil-design/scripts/openpencil-browser-automation.js` and `window.__OPEN_PENCIL_STORE__` as the browser automation entry point.
 
 ## Reliable Save Strategy

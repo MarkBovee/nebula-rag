@@ -4,6 +4,16 @@ All notable changes to the Nebula RAG Home Assistant add-on are documented in th
 
 The format is inspired by Keep a Changelog and follows semantic versioning.
 
+## [0.3.53] - 2026-03-11
+
+- Added a simple local OpenPencil startup script in the upstream OpenPencil checkout so the editor and upstream MCP can be started together with the expected default URLs `http://localhost:1420` and `http://localhost:3100/mcp`.
+- Cleaned the NebulaRAG OpenPencil guidance so it refers to the running editor and MCP URLs instead of local folder paths or wrapper-runtime terminology.
+
+## [0.3.52] - 2026-03-11
+
+- Removed the repo-owned OpenPencil MCP wrapper scripts and container assets so this repository no longer suggests a second MCP runtime alongside upstream OpenPencil.
+- Simplified the OpenPencil skill docs and live-loop usage to assume the upstream OpenPencil editor and its built-in MCP support instead of `start-openpencil-mcp.ps1`, Podman flags, or local wrapper endpoints.
+
 ## [0.3.51] - 2026-03-11
 
 - Removed the accidentally reintroduced nested `designs/openpencil/nebula-server-dashboard.fig` artifact so the OpenPencil design storage stays flat under `designs/*.fig`.

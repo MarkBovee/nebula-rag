@@ -180,39 +180,30 @@ NebulaRAG keeps OpenPencil design files flat in `designs/*.fig` and uses a brows
 
 The repository also includes a reusable OpenPencil skill at `.github/skills/openpencil-design/` for agent-driven UI design, live canvas refinement, reliable `.fig` saving, and implementation handoff.
 
-### OpenPencil MCP
+### OpenPencil Editor
 
-Local runtime (requires `bun` to already be installed from `https://bun.sh`):
+NebulaRAG no longer ships a repo-owned OpenPencil MCP wrapper or container flow. Use the upstream OpenPencil editor and its built-in MCP support directly.
 
-```powershell
-pwsh ./.github/skills/openpencil-design/scripts/install-openpencil.ps1
-pwsh ./.github/skills/openpencil-design/scripts/start-openpencil-mcp.ps1 -Port 3100
-```
+Expected local runtime:
 
-Repo-owned container image:
+- Editor: `http://localhost:1420`
+- MCP: `http://localhost:3100/mcp`
 
-```powershell
-pwsh ./.github/skills/openpencil-design/scripts/build-openpencil-mcp-image.ps1
-pwsh ./.github/skills/openpencil-design/scripts/start-openpencil-mcp.ps1 -Port 3100 -UsePodman
-```
-
-Optional `.env` settings:
+Optional `.env` setting:
 
 ```text
 OPENPENCIL_EDITOR_URL=https://your-openpencil-url
-OPENPENCIL_USE_PODMAN=true
-OPENPENCIL_MCP_PODMAN_IMAGE=nebula-openpencil-mcp:latest
 ```
 
-The scripts load these values from the repository `.env` file when parameters are not supplied explicitly.
+The live-loop script loads this value from the repository `.env` file when `-EditorUrl` is not supplied explicitly.
 
 ### OpenPencil Live Watch
 
 ```powershell
-pwsh ./.github/skills/openpencil-design/scripts/start-openpencil-live-loop.ps1 -VariantsRoot "designs" -Watch -StartMcp
+pwsh ./.github/skills/openpencil-design/scripts/start-openpencil-live-loop.ps1 -VariantsRoot "designs" -Watch
 ```
 
-This watcher validates the latest `.fig` archive before mirroring it into the sibling local OpenPencil `public/` folder, then reopens the editor with an `?open=/file.fig&fit=1` URL whenever the variant changes so refreshes and scripted updates come back on the latest design instead of an empty `Untitled` canvas.
+This watcher validates the latest `.fig` archive, prepares the newest design for the running OpenPencil editor, and reopens the editor with an `?open=/file.fig&fit=1` URL whenever the variant changes so refreshes and scripted updates come back on the latest design instead of an empty `Untitled` canvas.
 
 ---
 

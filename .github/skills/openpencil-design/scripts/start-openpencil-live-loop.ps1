@@ -2,8 +2,6 @@ param(
     [string]$VariantsRoot = "designs",
     [int]$PollSeconds = 2,
     [switch]$Watch,
-    [switch]$StartMcp,
-    [int]$McpPort = 3100,
     [string]$EditorUrl,
     [switch]$SkipArchiveValidation,
     [switch]$NoReopenOnChange
@@ -120,27 +118,6 @@ function Get-EditorUrlForVariant {
     return $builder.Uri.AbsoluteUri
 }
 
-if ($StartMcp) {
-    $startMcpScript = Join-Path (Split-Path -Parent $PSCommandPath) "start-openpencil-mcp.ps1"
-    if (-not (Test-Path $startMcpScript)) {
-        throw "MCP start script not found at $startMcpScript"
-    }
-
-    $settings = Get-OpenPencilSettings -ScriptPath $PSCommandPath
-    if (-not $PSBoundParameters.ContainsKey("EditorUrl")) {
-        $EditorUrl = $settings.EditorUrl
-    }
-
-    Write-Step "Ensuring OpenPencil MCP is running on port $McpPort"
-    if ([string]::IsNullOrWhiteSpace($EditorUrl)) {
-        & $startMcpScript -Port $McpPort
-    }
-    else {
-        & $startMcpScript -Port $McpPort -OpenUiUrl $EditorUrl
-        $EditorUrl = $null
-    }
-}
-
 if (-not $PSBoundParameters.ContainsKey("EditorUrl")) {
     $settings = Get-OpenPencilSettings -ScriptPath $PSCommandPath
     $EditorUrl = $settings.EditorUrl
@@ -180,7 +157,7 @@ while ($true) {
             $publicVariantPath = Sync-VariantToEditorPublic -Variant $latestVariant
             Write-Step "Latest variant updated: $resolvedVariantPath"
             if (-not [string]::IsNullOrWhiteSpace($publicVariantPath)) {
-                Write-Step "Synced variant to editor public folder: $publicVariantPath"
+                Write-Step "Prepared latest variant for editor reload: $($latestVariant.Name)"
             }
 
             if (-not [string]::IsNullOrWhiteSpace($EditorUrl) -and -not $NoReopenOnChange) {
