@@ -1,6 +1,7 @@
 Set-StrictMode -Version Latest
 
 Add-Type -AssemblyName System.IO.Compression.FileSystem
+Add-Type -AssemblyName System.Web
 
 function Test-OpenPencilRepoMarker {
     param([string]$CandidatePath)
@@ -65,7 +66,47 @@ function Get-OpenPencilSettings {
         RepoRoot = $repoRoot
         EnvFilePath = $envFilePath
         EditorUrl = $values["OPENPENCIL_EDITOR_URL"]
+        McpUrl = if ([string]::IsNullOrWhiteSpace($values["OPENPENCIL_MCP_URL"])) { "http://localhost:3100/mcp" } else { $values["OPENPENCIL_MCP_URL"] }
     }
+}
+
+function Get-OpenPencilRelativeVariantPath {
+    param(
+        [string]$RepoRoot,
+        [string]$VariantPath
+    )
+
+    if ([string]::IsNullOrWhiteSpace($RepoRoot) -or [string]::IsNullOrWhiteSpace($VariantPath)) {
+        return $null
+    }
+
+    $resolvedRepoRoot = (Resolve-Path $RepoRoot).Path
+    $resolvedVariantPath = (Resolve-Path $VariantPath).Path
+    $relativePath = [System.IO.Path]::GetRelativePath($resolvedRepoRoot, $resolvedVariantPath)
+    if ($relativePath.StartsWith("..")) {
+        return $null
+    }
+
+    return $relativePath.Replace('\', '/')
+}
+
+function Get-OpenPencilFileUrl {
+    param(
+        [string]$McpUrl,
+        [string]$RepoRoot,
+        [string]$VariantPath
+    )
+
+    $relativeVariantPath = Get-OpenPencilRelativeVariantPath -RepoRoot $RepoRoot -VariantPath $VariantPath
+    if ([string]::IsNullOrWhiteSpace($relativeVariantPath) -or [string]::IsNullOrWhiteSpace($McpUrl)) {
+        return $null
+    }
+
+    $mcpUri = [System.Uri]$McpUrl
+    $builder = [System.UriBuilder]::new($mcpUri.Scheme, $mcpUri.Host, $mcpUri.Port)
+    $builder.Path = "/file"
+    $builder.Query = "path=$([System.Web.HttpUtility]::UrlEncode($relativeVariantPath))"
+    return $builder.Uri.AbsoluteUri
 }
 
 function Get-OpenPencilExpectedFigEntries {

@@ -4,6 +4,22 @@ All notable changes to the Nebula RAG Home Assistant add-on are documented in th
 
 The format is inspired by Keep a Changelog and follows semantic versioning.
 
+## [0.3.56] - 2026-03-11
+
+- Added the private `open-pencil` mirror as a git submodule at the repository root so Nebula clones can build or run the upstream OpenPencil container/runtime without a separate manual clone step.
+- Updated the OpenPencil integration docs to reflect the in-repo submodule and the flat `designs/*.fig` storage convention in the current project structure.
+
+## [0.3.55] - 2026-03-11
+
+- Added a ready-to-use `open-pencil` entry to `.mcp.json` so local editor tooling can attach directly to `http://localhost:3100/mcp` alongside the Nebula MCP server.
+- Switched the OpenPencil live-loop to prefer an MCP-backed file URL for `designs/*.fig`, which makes the same reload flow work with containerized OpenPencil when its MCP root points at this repository workspace.
+- Documented `OPENPENCIL_MCP_URL` and the runtime file-route contract so the browser-first design loop no longer depends on a local `public/` mirror alone.
+
+## [0.3.54] - 2026-03-11
+
+- Updated the OpenPencil integration guidance to assume the upstream runtime can be local or containerized while keeping the integration contract centered on the editor URL `http://localhost:1420` and MCP URL `http://localhost:3100/mcp`.
+- Adjusted the OpenPencil skill wording to prefer the running upstream runtime over local checkout path references, making later MCP-server integration cleaner.
+
 ## [0.3.53] - 2026-03-11
 
 - Added a simple local OpenPencil startup script in the upstream OpenPencil checkout so the editor and upstream MCP can be started together with the expected default URLs `http://localhost:1420` and `http://localhost:3100/mcp`.

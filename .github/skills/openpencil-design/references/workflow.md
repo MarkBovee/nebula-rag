@@ -7,7 +7,7 @@ Use this reference when performing actual OpenPencil design work in a repository
 ## Source Of Truth Order
 
 1. Visible OpenPencil browser page if one is open.
-2. Real local upstream OpenPencil repo/editor if available.
+2. Running upstream OpenPencil runtime if available.
 3. Repo scripts and saved `.fig` assets.
 4. Older notes and prompts.
 
@@ -19,7 +19,7 @@ The browser page wins when the live page and the automation bridge drift apart.
 2. Run one focused `rag_query` for OpenPencil workflow context.
 3. If the task is about visual quality, theme, or layout refinement, apply the `frontend-design` skill guidance before editing the canvas.
 4. Check whether a visible page is already open.
-5. If needed, start or reuse the upstream OpenPencil editor and use `.github/skills/openpencil-design/scripts/start-openpencil-live-loop.ps1` for local variant mirroring.
+5. If needed, start or reuse the upstream OpenPencil runtime and use `.github/skills/openpencil-design/scripts/start-openpencil-live-loop.ps1` for MCP-backed live variant reloads.
 6. Build or refine the design directly in the live editor.
 7. Save to `designs/*.fig`.
 8. Update release metadata files when required by the host repository policy.
@@ -31,6 +31,7 @@ The browser page wins when the live page and the automation bridge drift apart.
 - The workflow is browser-first and PowerShell-driven.
 - The upstream local OpenPencil editor typically runs on `http://localhost:1420`.
 - The upstream local OpenPencil MCP endpoint typically runs on `http://localhost:3100/mcp`.
+- The upstream MCP file route for browser reloads is typically `http://localhost:3100/file?path=designs/<name>.fig` when the runtime root points at this repo workspace.
 - Prefer `.github/skills/openpencil-design/scripts/openpencil-browser-automation.js` and `window.__OPEN_PENCIL_STORE__` as the browser automation entry point.
 
 ## Reliable Save Strategy
@@ -86,7 +87,7 @@ When this happens:
 1. Treat the saved `.fig` file as the durable artifact.
 2. Inspect the live graph for expected named top-level frames before trusting the visible page.
 3. Re-open the saved file if the page state no longer matches the saved result.
-4. Prefer the live-loop watcher because it now validates the `.fig` archive before sync and reopens the editor URL on variant changes.
+4. Prefer the live-loop watcher because it now validates the `.fig` archive and reopens the editor URL on variant changes through the MCP-backed file route when available.
 
 ### Scripted store access brittleness
 

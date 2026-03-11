@@ -43,7 +43,8 @@ Trigger phrases include:
 - Browser automation helpers for this skill live under `.github/skills/openpencil-design/scripts/openpencil-browser-automation.js`.
 - The local editor is typically browser-first, not desktop-app-first.
 - If a visible OpenPencil browser page is open, treat that page as the source of truth for design state.
-- If a sibling local upstream checkout exists at `../open-pencil`, prefer that real repo/editor over hosted shortcuts.
+- Prefer a running upstream OpenPencil runtime at the expected local editor and MCP URLs over hosted shortcuts.
+- Prefer a runtime whose MCP root points at the active repo workspace so the live-loop can reopen `designs/*.fig` through the MCP file route.
 
 ## Activation Heuristics
 
@@ -72,7 +73,7 @@ For real design work, leave behind these concrete artifacts:
 2. Reuse existing OpenPencil docs, scripts, and prior design artifacts before inventing a new flow.
 3. If the user expects a strong visual result, load and apply the `frontend-design` skill guidance before editing the canvas.
 4. If a browser page is open, inspect the live page first.
-5. Prefer editing the visible page or local upstream OpenPencil repo over abstract-only design descriptions.
+5. Prefer editing the visible page or the running upstream OpenPencil runtime over abstract-only design descriptions.
 6. Save work as a real Figma-compatible `.fig`, not only as prose or screenshots.
 7. If save dialogs are unreliable, use the in-page export fallback described in `references/workflow.md`.
 8. For substantial work, preserve reusable output as a named pattern board or baseline.
@@ -83,7 +84,7 @@ If the visible page resets, goes blank, or drifts from the saved artifact, treat
 ## Decision Points
 
 - If a live canvas exists: continue from the visible page first.
-- If no live canvas exists: start or reuse the local OpenPencil flow via `.github/skills/openpencil-design/scripts/`.
+- If no live canvas exists: start or reuse the upstream OpenPencil runtime and then continue with the local artifact/watch helpers.
 - If the request asks for stronger styling, theme, typography, or composition: combine this skill with `frontend-design` guidance.
 - If browser save works: use native save.
 - If browser save fails: use the export-bytes fallback in `references/workflow.md`.

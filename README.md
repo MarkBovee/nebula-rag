@@ -182,20 +182,24 @@ The repository also includes a reusable OpenPencil skill at `.github/skills/open
 
 ### OpenPencil Editor
 
-NebulaRAG no longer ships a repo-owned OpenPencil MCP wrapper or container flow. Use the upstream OpenPencil editor and its built-in MCP support directly.
+NebulaRAG no longer ships a repo-owned OpenPencil MCP wrapper. Use the upstream OpenPencil runtime directly, either local or containerized.
 
-Expected local runtime:
+For portable local builds, this repository now also carries the private OpenPencil mirror as a git submodule at `open-pencil/`.
+
+Expected OpenPencil runtime:
 
 - Editor: `http://localhost:1420`
 - MCP: `http://localhost:3100/mcp`
+- Live file route: `http://localhost:3100/file?path=designs/your-file.fig`
 
 Optional `.env` setting:
 
 ```text
 OPENPENCIL_EDITOR_URL=https://your-openpencil-url
+OPENPENCIL_MCP_URL=http://localhost:3100/mcp
 ```
 
-The live-loop script loads this value from the repository `.env` file when `-EditorUrl` is not supplied explicitly.
+The live-loop script loads these values from the repository `.env` file when `-EditorUrl` or `-McpUrl` are not supplied explicitly.
 
 ### OpenPencil Live Watch
 
@@ -204,6 +208,8 @@ pwsh ./.github/skills/openpencil-design/scripts/start-openpencil-live-loop.ps1 -
 ```
 
 This watcher validates the latest `.fig` archive, prepares the newest design for the running OpenPencil editor, and reopens the editor with an `?open=/file.fig&fit=1` URL whenever the variant changes so refreshes and scripted updates come back on the latest design instead of an empty `Untitled` canvas.
+
+When the OpenPencil runtime is started with its MCP root pointed at this repo workspace, the watcher prefers the MCP-backed file route instead of relying on a sibling `public/` mirror, which makes the same loop work cleanly with containerized OpenPencil.
 
 ---
 
@@ -271,9 +277,9 @@ NebulaRAG/
 │   └── NebulaRAG.AddonHost/   # HTTP host: Home Assistant ingress + MCP endpoint + Blazor dashboard
 ├── container/                 # Container configuration
 ├── nebula-rag/                # Home Assistant add-on package + release metadata
-├── scripts/                   # PowerShell setup scripts, including OpenPencil MCP helpers
-├── designs/
-│   └── openpencil/            # Generated OpenPencil .fig design files
+├── open-pencil/               # Private OpenPencil mirror submodule for local/container runtime builds
+├── scripts/                   # PowerShell setup scripts
+├── designs/                   # Flat OpenPencil .fig design files
 ├── tests/
 │   └── NebulaRAG.Tests/
 ├── .mcp.json                  # MCP config (Claude Code)
