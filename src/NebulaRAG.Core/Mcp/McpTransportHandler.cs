@@ -284,7 +284,7 @@ public sealed partial class McpTransportHandler
                     ["taskId"] = BuildIntegerSchema("Task identifier for task actions.", minimum: 1),
                     ["planName"] = BuildStringSchema("Plan name for create/update actions."),
                     ["projectId"] = BuildStringSchema("Project id for create action."),
-                    ["status"] = BuildStringSchema("Status for update action (draft|active|completed|archived) or update_task action (completed)."),
+                    ["status"] = BuildStringSchema("Status for update action (draft|active|completed|archived) or update_task action (pending|in_progress|completed|failed)."),
                     ["taskName"] = BuildStringSchema("Task name for update_task action."),
                     ["initialTasks"] = new JsonObject
                     {
@@ -310,7 +310,7 @@ public sealed partial class McpTransportHandler
             RagIndexPathToolName => BuildObjectSchema(
                 new JsonObject
                 {
-                    ["sourcePath"] = BuildStringSchema("Source directory path to index."),
+                    ["sourcePath"] = BuildStringSchema("Source path to index (directory or single file)."),
                     ["projectId"] = BuildStringSchema("Optional project id used as the source-key prefix.")
                 },
                 "sourcePath"),

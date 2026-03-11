@@ -25,7 +25,7 @@ If memory and RAG disagree, treat source code/RAG-backed source snippets as the 
 4. If RAG returns relevant snippets, proceed using those results first.
 5. If RAG returns no matches, low-signal matches, or missing critical details, fall back to source files and instruction files.
 6. Mention whether context came from memory, RAG results, fallback source reads, or a combination.
-7. Before finishing non-trivial tasks, persist essential project insights with `memory_store`.
+7. Before finishing non-trivial tasks, persist essential project insights with `memory` using `action: "store"`.
 8. Before finishing non-trivial tasks, update plan progress using `plan` actions `update` and `complete_task` where applicable.
 
 ## Fallback order

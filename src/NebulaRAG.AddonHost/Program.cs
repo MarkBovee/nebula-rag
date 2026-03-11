@@ -279,18 +279,23 @@ static async Task<IResult> HandleMcpTransportRequestAsync(HttpRequest request, M
     var requestBody = await ReadRequestBodyAsync(request, cancellationToken);
     if (string.IsNullOrWhiteSpace(requestBody))
     {
-        logger.LogWarning("Received empty MCP POST payload. ContentType={ContentType}; UserAgent={UserAgent}", request.ContentType, request.Headers.UserAgent.ToString());
+        var sanitizedContentType = SanitizeLogValue(request.ContentType, 128);
+        var sanitizedUserAgent = SanitizeLogValue(request.Headers.UserAgent.ToString(), 256);
+        logger.LogWarning("Received empty MCP POST payload. ContentType={ContentType}; UserAgent={UserAgent}", sanitizedContentType, sanitizedUserAgent);
         return Results.Json(BuildJsonRpcError(null, -32600, "Empty MCP request payload."));
     }
 
     var parseOutcome = TryParseMcpPayload(requestBody);
     if (!parseOutcome.IsSuccess)
     {
+        var sanitizedContentType = SanitizeLogValue(request.ContentType, 128);
+        var sanitizedUserAgent = SanitizeLogValue(request.Headers.UserAgent.ToString(), 256);
+        var sanitizedBodyPreview = SanitizeLogValue(requestBody.Length > 200 ? requestBody[..200] : requestBody, 200);
         logger.LogWarning(
             "Failed to parse MCP POST payload. ContentType={ContentType}; UserAgent={UserAgent}; BodyPreview={BodyPreview}",
-            request.ContentType,
-            request.Headers.UserAgent.ToString(),
-            requestBody.Length > 200 ? requestBody[..200] : requestBody);
+            sanitizedContentType,
+            sanitizedUserAgent,
+            sanitizedBodyPreview);
 
         return Results.Json(BuildJsonRpcError(null, -32700, "Invalid JSON payload."));
     }
@@ -348,6 +353,29 @@ static async Task<string> ReadRequestBodyAsync(HttpRequest request, Cancellation
 {
     using var reader = new StreamReader(request.Body);
     return await reader.ReadToEndAsync(cancellationToken);
+}
+
+/// <summary>
+/// Sanitizes untrusted request values before writing them to structured logs.
+/// Replaces control characters to prevent log-forging and truncates long inputs.
+/// </summary>
+/// <param name="value">Untrusted value to sanitize.</param>
+/// <param name="maxLength">Maximum retained character count.</param>
+/// <returns>Sanitized log-safe value.</returns>
+static string SanitizeLogValue(string? value, int maxLength)
+{
+    if (string.IsNullOrWhiteSpace(value))
+    {
+        return string.Empty;
+    }
+
+    var normalizedValue = value.Replace("\r", " ", StringComparison.Ordinal).Replace("\n", " ", StringComparison.Ordinal).Trim();
+    if (normalizedValue.Length <= maxLength)
+    {
+        return normalizedValue;
+    }
+
+    return normalizedValue[..maxLength];
 }
 
 /// <summary>

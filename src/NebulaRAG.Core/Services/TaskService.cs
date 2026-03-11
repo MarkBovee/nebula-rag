@@ -1,6 +1,7 @@
 using NebulaRAG.Core.Exceptions;
 using NebulaRAG.Core.Models;
 using NebulaRAG.Core.Storage;
+using TaskLifecycleStatus = NebulaRAG.Core.Models.TaskStatus;
 
 namespace NebulaRAG.Core.Services;
 
@@ -57,6 +58,30 @@ public sealed class TaskService
         }
 
         await _planStore.CompleteTaskAsync(taskId, changedBy, reason, cancellationToken);
+    }
+
+    /// <summary>
+    /// Updates a task status using validated lifecycle transitions.
+    /// </summary>
+    /// <param name="taskId">The task identifier.</param>
+    /// <param name="newStatus">The target task status.</param>
+    /// <param name="changedBy">Identifier of who made the change.</param>
+    /// <param name="reason">Optional reason for the change.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <exception cref="PlanException">Thrown when business rules are violated.</exception>
+    /// <exception cref="PlanNotFoundException">Thrown when the task is not found.</exception>
+    public async Task UpdateTaskStatusAsync(long taskId, TaskLifecycleStatus newStatus, string changedBy, string? reason, CancellationToken cancellationToken = default)
+    {
+        var task = await _planStore.GetTaskByIdAsync(taskId, cancellationToken);
+        if (!PlanValidator.CanTransition(task.Status, newStatus))
+        {
+            throw new PlanException(
+                violationType: "InvalidTaskStatusTransition",
+                message: $"Task {taskId} cannot transition from {task.Status} to {newStatus}.",
+                context: new { TaskId = taskId, CurrentStatus = task.Status, RequestedStatus = newStatus });
+        }
+
+        await _planStore.UpdateTaskStatusAsync(taskId, newStatus, changedBy, reason, cancellationToken);
     }
 
     /// <summary>

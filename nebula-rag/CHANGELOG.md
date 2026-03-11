@@ -4,6 +4,17 @@ All notable changes to the Nebula RAG Home Assistant add-on are documented in th
 
 The format is inspired by Keep a Changelog and follows semantic versioning.
 
+## [0.3.28] - 2026-03-11
+
+- Fixed `rag_ingest` path mode to support both directory and single-file input paths, including explicit `pathType`, `sourcePath`, and `resolvedPath` in responses.
+- Improved `rag_ingest` path-mode validation errors to distinguish file-vs-directory missing path scenarios.
+- Extended `plan` `update_task` status handling to support `pending`, `in_progress` (and `in-progress` alias), `completed`, and `failed` via validated task lifecycle transitions.
+- Added `PostgresPlanStore.UpdateTaskStatusAsync` and `TaskService.UpdateTaskStatusAsync` to support audited non-completion task status transitions.
+- Mitigated CodeQL `cs/log-forging` findings in AddonHost MCP request logging by sanitizing untrusted request metadata before logging.
+- Added the new Nebula repository skill at `.github/skills/nebularag/SKILL.md` for unified RAG, memory, plan, and system workflow guidance.
+- Updated `.github/instructions/rag.instructions.md` to use action-based memory persistence guidance (`memory` + `store`) instead of legacy `memory_store` naming.
+- Updated `.github/copilot-instructions.md` to explicitly call out the consolidated Nebula MCP toolset (`rag_query`, `rag_ingest`, `rag_sources`, `rag_admin`, `memory`, `plan`, `system`).
+
 ## [0.3.27] - 2026-03-08
 
 - Removed remaining "preferred" wording from MCP tool descriptions and documentation now that migration is complete.

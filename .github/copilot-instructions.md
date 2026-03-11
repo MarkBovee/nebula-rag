@@ -10,6 +10,7 @@ When answering project-specific questions in this repository:
 For implementation tasks:
 
 - Query RAG once before proposing code changes.
+- Prefer the consolidated Nebula MCP toolset: `rag_query`, `rag_ingest`, `rag_sources`, `rag_admin`, `memory`, `plan`, and `system`.
 - Re-query only when validating behavior that depends on newly changed files or unresolved uncertainty.
 - Keep changes minimal and scoped to the request.
 - Before merge/push to `main`, run dependency freshness checks against latest stable package versions for all detected ecosystems in this repo.

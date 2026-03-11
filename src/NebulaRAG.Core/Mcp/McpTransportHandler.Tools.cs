@@ -9,6 +9,7 @@ using NebulaRAG.Core.Models;
 using NebulaRAG.Core.Pathing;
 using NebulaRAG.Core.Services;
 using NebulaRAG.Core.Storage;
+using TaskLifecycleStatus = NebulaRAG.Core.Models.TaskStatus;
 
 namespace NebulaRAG.Core.Mcp;
 
@@ -422,7 +423,7 @@ public sealed partial class McpTransportHandler
     }
 
     /// <summary>
-    /// Executes directory-path indexing.
+    /// Executes path indexing for both directory and single-file inputs.
     /// </summary>
     /// <param name="arguments">Tool arguments.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
@@ -436,10 +437,34 @@ public sealed partial class McpTransportHandler
             return BuildToolResult("Missing required argument: sourcePath", isError: true);
         }
 
-        var summary = await _indexer.IndexDirectoryAsync(sourcePath, projectId, cancellationToken);
-        var manifestSyncResult = await TrySyncRagSourcesManifestAsync(sourcePath, cancellationToken);
+        var resolvedPath = Path.GetFullPath(sourcePath);
+        var isFilePath = File.Exists(resolvedPath);
+        var isDirectoryPath = Directory.Exists(resolvedPath);
+        if (!isFilePath && !isDirectoryPath)
+        {
+            var looksLikeDirectory = sourcePath.EndsWith(Path.DirectorySeparatorChar)
+                || sourcePath.EndsWith(Path.AltDirectorySeparatorChar)
+                || !Path.HasExtension(sourcePath);
+            var errorMessage = looksLikeDirectory
+                ? $"Source directory does not exist: {sourcePath}"
+                : $"Source file does not exist: {sourcePath}";
+
+            return BuildToolResult(errorMessage, new JsonObject
+            {
+                ["sourcePath"] = sourcePath,
+                ["resolvedPath"] = resolvedPath
+            }, isError: true);
+        }
+
+        var summary = isFilePath
+            ? await _indexer.IndexFileAsync(resolvedPath, projectId, cancellationToken)
+            : await _indexer.IndexDirectoryAsync(resolvedPath, projectId, cancellationToken);
+        var manifestSyncResult = await TrySyncRagSourcesManifestAsync(resolvedPath, cancellationToken);
         return BuildToolResult("Index complete.", new JsonObject
         {
+            ["sourcePath"] = sourcePath,
+            ["resolvedPath"] = resolvedPath,
+            ["pathType"] = isFilePath ? "file" : "directory",
             ["documentsIndexed"] = summary.DocumentsIndexed,
             ["documentsSkipped"] = summary.DocumentsSkipped,
             ["chunksIndexed"] = summary.ChunksIndexed,
@@ -1055,7 +1080,7 @@ public sealed partial class McpTransportHandler
     }
 
     /// <summary>
-    /// Executes task update (name update and/or completion transition).
+    /// Executes task update (name update and/or status transition).
     /// </summary>
     /// <param name="arguments">Tool arguments.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
@@ -1093,12 +1118,12 @@ public sealed partial class McpTransportHandler
 
         if (!string.IsNullOrWhiteSpace(status))
         {
-            if (!string.Equals(status, "completed", StringComparison.OrdinalIgnoreCase))
+            if (!TryParseTaskStatus(status, out var parsedTaskStatus))
             {
-                return BuildToolResult("Only status='completed' is currently supported by update_task.", isError: true);
+                return BuildToolResult("status must be one of: pending, in_progress, completed, failed.", isError: true);
             }
 
-            await _taskService.CompleteTaskAsync(taskId, changedBy, "Completed via MCP update_task", cancellationToken);
+            await _taskService.UpdateTaskStatusAsync(taskId, parsedTaskStatus, changedBy, $"Status updated to {parsedTaskStatus} via MCP update_task", cancellationToken);
         }
 
         var updatedTask = await _taskService.GetTaskByIdAsync(taskId, cancellationToken);
@@ -1206,6 +1231,29 @@ public sealed partial class McpTransportHandler
         if (status.Equals("in_progress", StringComparison.OrdinalIgnoreCase))
         {
             planStatus = PlanStatus.Active;
+            return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Parses a task status string into the enum representation.
+    /// </summary>
+    /// <param name="status">Incoming status text.</param>
+    /// <param name="taskStatus">Parsed status value when successful.</param>
+    /// <returns>True when parsing succeeds.</returns>
+    private static bool TryParseTaskStatus(string status, out TaskLifecycleStatus taskStatus)
+    {
+        if (Enum.TryParse<TaskLifecycleStatus>(status, true, out taskStatus))
+        {
+            return true;
+        }
+
+        if (status.Equals("in-progress", StringComparison.OrdinalIgnoreCase)
+            || status.Equals("in_progress", StringComparison.OrdinalIgnoreCase))
+        {
+            taskStatus = TaskLifecycleStatus.InProgress;
             return true;
         }
 

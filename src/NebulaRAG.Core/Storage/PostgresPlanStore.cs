@@ -603,6 +603,72 @@ public sealed class PostgresPlanStore
     }
 
     /// <summary>
+    /// Updates a task status and records the history.
+    /// </summary>
+    /// <param name="taskId">The task identifier.</param>
+    /// <param name="newStatus">The new task status.</param>
+    /// <param name="changedBy">Identifier of who made the change.</param>
+    /// <param name="reason">Optional reason for the change.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <exception cref="PlanNotFoundException">Thrown when the task is not found.</exception>
+    public async Task UpdateTaskStatusAsync(long taskId, Models.TaskStatus newStatus, string changedBy, string? reason, CancellationToken cancellationToken = default)
+    {
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+
+        try
+        {
+            var currentTask = await GetTaskByIdAsync(taskId, cancellationToken);
+            var oldStatus = currentTask.Status.ToString().ToLowerInvariant();
+            var newStatusText = newStatus.ToString().ToLowerInvariant();
+
+            const string updateSql = @"
+                UPDATE tasks
+                SET status = @newStatus, updated_at = NOW()
+                WHERE id = @taskId";
+
+            await ExecuteNonQueryAsync(
+                connection, updateSql,
+                new Dictionary<string, object?>
+                {
+                    { "taskId", taskId },
+                    { "newStatus", newStatusText }
+                },
+                cancellationToken);
+
+            const string historySql = @"
+                INSERT INTO task_history (task_id, old_status, new_status, changed_by, changed_at, reason)
+                VALUES (@taskId, @oldStatus, @newStatus, @changedBy, NOW(), @reason)";
+
+            await ExecuteNonQueryAsync(
+                connection, historySql,
+                new Dictionary<string, object?>
+                {
+                    { "taskId", taskId },
+                    { "oldStatus", oldStatus },
+                    { "newStatus", newStatusText },
+                    { "changedBy", changedBy },
+                    { "reason", reason }
+                },
+                cancellationToken);
+
+            await transaction.CommitAsync(cancellationToken);
+        }
+        catch (PlanNotFoundException)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            throw;
+        }
+        catch
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            throw;
+        }
+    }
+
+    /// <summary>
     /// Retrieves the history of status changes for a plan.
     /// </summary>
     /// <param name="planId">The plan identifier.</param>

@@ -262,6 +262,8 @@ NebulaRAG/
 | `rag_admin` | Unified admin operations (`init_schema`, `health`, `stats`, `purge`) |
 | `system` | Runtime server metadata (`server_info`) |
 
+`rag_ingest` with `mode: "path"` accepts both directory and single-file source paths.
+
 ### Memory
 
 | Tool | Description |
@@ -273,6 +275,8 @@ NebulaRAG/
 | Tool | Description |
 |---|---|
 | `plan` | Unified plan/task operations (`create`, `get`, `list`, `update`, `complete_task`, `update_task`, `archive`) |
+
+`plan` with `action: "update_task"` supports task statuses `pending`, `in_progress`, `completed`, and `failed` (validated transitions).
 
 > The `memories` table and indexes are created automatically through `rag_admin` with action `init_schema`.
 

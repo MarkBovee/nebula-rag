@@ -162,6 +162,93 @@ public sealed class RagIndexer
     }
 
     /// <summary>
+    /// Indexes a single file.
+    /// </summary>
+    /// <param name="sourceFile">The file path to index.</param>
+    /// <param name="projectId">Optional explicit project-id prefix for stored source keys.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Summary of indexing results.</returns>
+    /// <exception cref="RagIndexingException">Thrown if indexing fails.</exception>
+    public async Task<IndexSummary> IndexFileAsync(string sourceFile, string? projectId = null, CancellationToken cancellationToken = default)
+    {
+        if (!File.Exists(sourceFile))
+        {
+            _logger.LogError("Source file does not exist: {File}", sourceFile);
+            throw new RagIndexingException($"Source file does not exist: {sourceFile}");
+        }
+
+        _logger.LogInformation("Starting index of file: {File}", sourceFile);
+
+        try
+        {
+            var summary = new IndexSummary();
+            var sourceRootPath = Path.GetFullPath(Path.GetDirectoryName(sourceFile) ?? Directory.GetCurrentDirectory());
+            var projectRootPath = Path.GetFullPath(Directory.GetCurrentDirectory());
+            var extensions = new HashSet<string>(_settings.Ingestion.IncludeExtensions, StringComparer.OrdinalIgnoreCase);
+            var excludedDirectories = new HashSet<string>(_settings.Ingestion.ExcludeDirectories, StringComparer.OrdinalIgnoreCase);
+            var excludedFileNames = new HashSet<string>(_settings.Ingestion.ExcludeFileNames, StringComparer.OrdinalIgnoreCase);
+            var excludedFileSuffixes = _settings.Ingestion.ExcludeFileSuffixes;
+            var filePath = Path.GetFullPath(sourceFile);
+
+            if (IsInExcludedDirectory(filePath, excludedDirectories)
+                || ShouldSkipGeneratedFile(filePath, excludedFileNames, excludedFileSuffixes)
+                || !extensions.Contains(Path.GetExtension(filePath)))
+            {
+                summary.DocumentsSkipped = 1;
+                return summary;
+            }
+
+            var fileInfo = new FileInfo(filePath);
+            if (fileInfo.Length > _settings.Ingestion.MaxFileSizeBytes)
+            {
+                summary.DocumentsSkipped = 1;
+                return summary;
+            }
+
+            var content = await File.ReadAllTextAsync(filePath, cancellationToken);
+            if (string.IsNullOrWhiteSpace(content))
+            {
+                summary.DocumentsSkipped = 1;
+                return summary;
+            }
+
+            var chunks = _chunker.Chunk(content, _settings.Ingestion.ChunkSize, _settings.Ingestion.ChunkOverlap);
+            if (chunks.Count == 0)
+            {
+                summary.DocumentsSkipped = 1;
+                return summary;
+            }
+
+            var chunkEmbeddings = chunks
+                .Select(chunk => new ChunkEmbedding(
+                    chunk.Index,
+                    chunk.Text,
+                    chunk.TokenCount,
+                    _embeddingGenerator.GenerateEmbedding(chunk.Text, _settings.Ingestion.VectorDimensions)))
+                .ToList();
+
+            var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(content)));
+            var sourcePath = BuildSourceStoragePath(projectRootPath, sourceRootPath, filePath, projectId);
+            var wasUpdated = await _store.UpsertDocumentAsync(sourcePath, hash, chunkEmbeddings, cancellationToken);
+
+            if (!wasUpdated)
+            {
+                summary.DocumentsSkipped = 1;
+                return summary;
+            }
+
+            summary.DocumentsIndexed = 1;
+            summary.ChunksIndexed = chunkEmbeddings.Count;
+            return summary;
+        }
+        catch (Exception ex) when (!(ex is RagException))
+        {
+            _logger.LogError(ex, "Indexing failed for file: {File}", sourceFile);
+            throw new RagIndexingException($"Failed to index file: {sourceFile}", ex);
+        }
+    }
+
+    /// <summary>
     /// Returns true when a file path contains a configured excluded directory segment.
     /// </summary>
     private static bool IsInExcludedDirectory(string filePath, HashSet<string> excludedDirectories)
