@@ -39,4 +39,4 @@ if (-not (Test-CommandExists -Name "openpencil")) {
 }
 
 Write-Step "Setup complete"
-Write-Host "Installed successfully. Next: run scripts/openpencil/start-openpencil-mcp.ps1" -ForegroundColor Green
+Write-Host "Installed successfully. Next: run .github/skills/openpencil-design/scripts/start-openpencil-mcp.ps1" -ForegroundColor Green

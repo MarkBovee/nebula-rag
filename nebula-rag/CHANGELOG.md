@@ -4,6 +4,65 @@ All notable changes to the Nebula RAG Home Assistant add-on are documented in th
 
 The format is inspired by Keep a Changelog and follows semantic versioning.
 
+## [0.3.50] - 2026-03-11
+
+- Hardened the OpenPencil live-loop to validate `.fig` archives before sync and reopen the editor URL when the latest design changes, reducing blank-canvas drift after scripted updates.
+- Added a stable repo-owned browser automation helper for OpenPencil so sessions can use `window.__OPEN_PENCIL_STORE__` and a shared fallback helper instead of reintroducing brittle Vue-tree probing and ad-hoc module hacks.
+
+## [0.3.49] - 2026-03-11
+
+- Added GitHub follow-up issues #24 and #25 to track the OpenPencil MCP blank-canvas recovery gap and the need for stable automation hooks for editor-store and module access.
+- Updated the OpenPencil skill workflow to explicitly apply the `frontend-design` skill guidance when design quality, theming, typography, or composition refinement is part of the request.
+
+## [0.3.48] - 2026-03-11
+
+- Moved the repo-owned OpenPencil helper implementation out of `scripts/openpencil/` and into `.github/skills/openpencil-design/scripts/` so the skill now carries its own runnable install, MCP, live-loop, stop, check, and container build assets.
+- Updated the OpenPencil skill docs and README commands to use the skill-local script entrypoints instead of the old top-level scripts folder.
+
+## [0.3.47] - 2026-03-11
+
+- Hardened the OpenPencil live workflow so the watcher mirrors the latest `designs/*.fig` file into the sibling local editor `public/` folder and opens the browser with an `?open=/file.fig&fit=1` URL.
+- Added OpenPencil startup restore and automatic fit-to-content so refreshes and reloads reopen the last mirrored design instead of falling back to an empty `Untitled` canvas.
+
+## [0.3.46] - 2026-03-11
+
+- Improved readability in the saved Nebula dashboard design by shortening row and sidebar copy, tightening labels, and reducing text overflow in the live OpenPencil review.
+- Kept the calmer layout from the earlier cleanup pass while making the visible project, KPI, memory, and watchlist text fit more cleanly on the canvas.
+
+## [0.3.45] - 2026-03-11
+
+- Tightened the live Nebula dashboard cleanup pass with calmer hero spacing, fewer sidebar and table distractions, and a simpler operator panel.
+- Reduced visible noise in the saved Nebula-themed design so the main project, memory, and retrieval surfaces are easier to scan while reviewing in OpenPencil.
+
+## [0.3.44] - 2026-03-11
+
+- Flattened repository design storage to `designs/*.fig` and updated the OpenPencil live-loop default plus workflow references to match.
+- Refined the live Nebula dashboard direction toward a cleaner, less noisy composition with a stronger Nebula visual identity and tighter typography targets.
+
+## [0.3.43] - 2026-03-11
+
+- Added a Nebula-themed OpenPencil variant at `designs/nebula-server-dashboard-nebula-theme.fig` with a darker stage, brighter operator surfaces, and atmospheric glow accents.
+- Refined the live dashboard composition with stronger visual hierarchy across the project rail, hero, KPI tiles, action buttons, states, and reusable pattern board.
+- Kept the dashboard grounded in real NebulaRAG project hierarchy data while adding a more distinctive visual identity.
+
+## [0.3.42] - 2026-03-11
+
+- Added a grounded OpenPencil dashboard artifact at `designs/nebula-server-dashboard-project-data.fig` using live NebulaRAG project hierarchy data from `GET /api/dashboard/projects` and `dotnet run --project src\\NebulaRAG.Cli -- stats`.
+- Reworked the visible dashboard content around real project IDs and counts, including project nodes, plans, tasks, RAG documents/chunks/tokens, and memory totals.
+- Aligned the local OpenPencil workflow env setting by pointing `OPENPENCIL_EDITOR_URL` at the active local editor and dropping the unused Podman image override when Podman is disabled.
+
+## [0.3.41] - 2026-03-11
+
+- Documented observed OpenPencil skill failure modes in `.github/skills/openpencil-design/`, including live-canvas drift to blank `Untitled` state, brittle store discovery, render notifications, and page-eval module-resolution issues.
+- Added a concrete improvement plan to the OpenPencil workflow reference for post-export verification, blank-canvas recovery, safer artifact writing, and stronger archive validation.
+- Tightened OpenPencil skill guardrails and quality gates so saved-artifact validation no longer relies on file existence alone.
+
+## [0.3.40] - 2026-03-11
+
+- Added a new OpenPencil dashboard design artifact at `designs/nebula-server-dashboard.fig` for Nebula server management.
+- Structured the dashboard around project-based navigation with a persistent project switcher, within-project sections, and operational health surfaces.
+- Included reusable pattern-board blocks and explicit loading, empty, error, and success state cards to support later implementation handoff.
+
 ## [0.3.39] - 2026-03-11
 
 - Made `.github/skills/openpencil-design/SKILL.md` project-independent by removing NebulaRAG-specific references and replacing repository-coupled wording with generic guidance.
@@ -14,7 +73,7 @@ The format is inspired by Keep a Changelog and follows semantic versioning.
 
 - Hardened `.github/skills/openpencil-design/SKILL.md` for production usage with clearer activation heuristics, explicit decision points, and concrete quality gates.
 - Fixed the skill workflow sequence to include the missing first step (`memory` + one focused `rag_query`) and aligned execution language with current OpenPencil browser-first conventions.
-- Standardized skill path guidance to `designs/openpencil/*.fig` so required outputs, defaults, and guardrails are consistent with repo OpenPencil workflow references.
+- Standardized skill path guidance to `designs/*.fig` so required outputs, defaults, and guardrails are consistent with repo OpenPencil workflow references.
 
 ## [0.3.37] - 2026-03-11
 
@@ -30,7 +89,7 @@ The format is inspired by Keep a Changelog and follows semantic versioning.
 
 ## [0.3.35] - 2026-03-11
 
-- Added the saved live OpenPencil dashboard skill asset at `designs/openpencil/nebula-live-skill-v1.fig`.
+- Added the saved live OpenPencil dashboard skill asset at `designs/nebula-live-skill-v1.fig`.
 - Extended the local OpenPencil design session into a more reusable skill baseline with pattern-library blocks and a refined overview composition for later dashboard build handoff.
 
 ## [0.3.34] - 2026-03-11
@@ -51,9 +110,9 @@ The format is inspired by Keep a Changelog and follows semantic versioning.
 
 ## [0.3.31] - 2026-03-11
 
-- Flattened OpenPencil design storage to `designs/openpencil/*.fig` so the design folder now keeps only the generated `.fig` files.
-- Removed repo-stored OpenPencil artifact subfolders under `designs/openpencil` (`runs`, `exports`, and `viewer`) as part of the simpler design handoff flow.
-- Updated `scripts/openpencil/start-openpencil-live-loop.ps1` and `docs/OpenPencil-Dashboard-Plan.md` to use the flat `designs/openpencil` folder as the automatic watch/open target.
+- Flattened OpenPencil design storage to `designs/*.fig` so the design folder now keeps only the generated `.fig` files.
+- Removed repo-stored OpenPencil artifact subfolders under `designs` (`runs`, `exports`, and `viewer`) as part of the simpler design handoff flow.
+- Updated `scripts/openpencil/start-openpencil-live-loop.ps1` and `docs/OpenPencil-Dashboard-Plan.md` to use the flat `designs` folder as the automatic watch/open target.
 
 ## [0.3.32] - 2026-03-11
 
@@ -69,8 +128,8 @@ The format is inspired by Keep a Changelog and follows semantic versioning.
 
 ## [0.3.29] - 2026-03-11
 
-- Added a new OpenPencil-generated full dashboard variant (`dashboard-agent-v3.fig`), now kept in the flattened `designs/openpencil/` folder after the later design-storage cleanup.
-- Removed the temporary custom local design viewer fallback (`designs/openpencil/viewer/**`) and related helper scripts (`scripts/openpencil/start-design-viewer.ps1`, `scripts/openpencil/stop-design-viewer.ps1`).
+- Added a new OpenPencil-generated full dashboard variant (`dashboard-agent-v3.fig`), now kept in the flattened `designs/` folder after the later design-storage cleanup.
+- Removed the temporary custom local design viewer fallback (`designs/viewer/**`) and related helper scripts (`scripts/openpencil/start-design-viewer.ps1`, `scripts/openpencil/stop-design-viewer.ps1`).
 - Updated `docs/OpenPencil-Dashboard-Plan.md` to use standalone OpenPencil workflow as the primary route for creating a new dashboard design (no AddonHost tab integration).
 
 ## [0.3.28] - 2026-03-11
