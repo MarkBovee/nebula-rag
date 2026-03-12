@@ -178,8 +178,6 @@ docker compose up -d
 
 NebulaRAG keeps OpenPencil design files flat in `designs/*.fig` and uses a browser-first MCP workflow rather than a desktop-app dependency.
 
-The repository also includes a reusable OpenPencil skill at `.github/skills/openpencil-design/` for agent-driven UI design, live canvas refinement, reliable `.fig` saving, and implementation handoff.
-
 ### OpenPencil Editor
 
 NebulaRAG no longer ships a repo-owned OpenPencil MCP wrapper. Use the upstream OpenPencil runtime directly, either local or containerized.
@@ -204,6 +202,8 @@ The live-loop script loads these values from the repository `.env` file when `-E
 Operational details for the submodule, private mirror, runtime startup, and update flow are documented in `docs/openpencil-runtime-workflow.md`.
 
 ### OpenPencil Live Watch
+
+If the OpenPencil project skill has been installed into this repo from your OpenPencil checkout:
 
 ```powershell
 pwsh ./.github/skills/openpencil-design/scripts/start-openpencil-live-loop.ps1 -VariantsRoot "designs" -Watch

@@ -48,7 +48,7 @@ If they are not set, the Nebula scripts fall back to the default local URLs abov
 
 - `open-pencil/` is the private submodule clone.
 - `designs/*.fig` contains the actual design artifacts for Nebula.
-- `.github/skills/openpencil-design/scripts/start-openpencil-live-loop.ps1` watches the design files and reopens the editor on the latest validated artifact.
+- The OpenPencil project skill can be installed into `.github/skills/openpencil-design/` from an OpenPencil checkout when Nebula needs the project-local live-loop helpers.
 
 ### In the standalone OpenPencil clone
 
@@ -102,7 +102,13 @@ pwsh .\start-openpencil.ps1 -WorkspacePath ..
 
 ## Live-Loop Flow
 
-The Nebula live-loop script is:
+If Nebula does not currently have the project-local OpenPencil skill installed, install it first from your OpenPencil checkout:
+
+```powershell
+pwsh e:\Projects\Personal\open-pencil\install-openpencil-skill.ps1 -TargetProjectRoot e:\Projects\Personal\nebula-rag -Force
+```
+
+After that, the Nebula live-loop script is:
 
 ```powershell
 pwsh .\.github\skills\openpencil-design\scripts\start-openpencil-live-loop.ps1 -VariantsRoot designs -Watch
@@ -188,7 +194,6 @@ The standalone OpenPencil `.gitignore` now ignores `public/*.fig` for exactly th
 These belong in Nebula:
 
 - `designs/*.fig`,
-- Nebula OpenPencil helper scripts,
 - `.mcp.json`,
 - `.env.example` defaults,
 - README and docs for the integration,
@@ -208,8 +213,7 @@ If the runtime contract changes, also check:
 
 - `.env.example`
 - `.mcp.json`
-- `.github/skills/openpencil-design/scripts/openpencil-common.ps1`
-- `.github/skills/openpencil-design/scripts/start-openpencil-live-loop.ps1`
+- the installed project-local OpenPencil skill scripts when this repo uses them
 
 ## Troubleshooting
 

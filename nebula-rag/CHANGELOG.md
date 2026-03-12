@@ -4,6 +4,18 @@ All notable changes to the Nebula RAG Home Assistant add-on are documented in th
 
 The format is inspired by Keep a Changelog and follows semantic versioning.
 
+## [0.3.60] - 2026-03-12
+
+- Removed the repo-owned `.github/skills/openpencil-design/` tree so NebulaRAG no longer carries the OpenPencil project skill as local source.
+- Cleaned the Nebula OpenPencil docs to treat the project-local live-loop helpers as an optional install from an OpenPencil checkout instead of a repo-owned asset.
+- Bumped the OpenPencil workflow docs to point at the new OpenPencil-root installer for downstream projects such as NebulaRAG.
+
+## [0.3.59] - 2026-03-12
+
+- Extended `.github/skills/openpencil-design/` with the newer live-run-first OpenPencil guidance so the skill now explicitly covers AI-tab run visibility, snapshot validation, invisible-node troubleshooting, and viewport-focus recovery.
+- Added `.github/skills/openpencil-design/scripts/install-openpencil-design-skill.ps1` to install the complete OpenPencil skill into the user-wide agent skill directory (`~/.agents/skills/openpencil-design` by default).
+- Updated the repository README with the new one-command OpenPencil skill installation path.
+
 ## [0.3.58] - 2026-03-12
 
 - Fixed MCP plan task status persistence so `update_task(status=in_progress)` uses the PostgreSQL-compatible `in_progress` value instead of the broken `inprogress` form.
