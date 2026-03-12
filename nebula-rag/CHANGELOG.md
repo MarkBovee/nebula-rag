@@ -9,6 +9,7 @@ The format is inspired by Keep a Changelog and follows semantic versioning.
 - Fixed MCP plan task status persistence so `update_task(status=in_progress)` uses the PostgreSQL-compatible `in_progress` value instead of the broken `inprogress` form.
 - Routed MCP `update_task(status=completed)` through the dedicated task completion flow so completion requests no longer fail with a misleading pending-to-completed transition error.
 - Blocked plan completion until all plan tasks are terminal, preventing MCP clients from marking a plan complete while tasks are still pending or in progress.
+- Refreshed merge-gate dependencies by applying the current NuGet patch updates and updating the vendored TailAdmin template runtime package ranges to their latest stable versions.
 
 ## [0.3.57] - 2026-03-11
 
