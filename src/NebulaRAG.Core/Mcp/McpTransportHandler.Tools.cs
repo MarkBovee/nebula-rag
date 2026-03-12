@@ -1123,7 +1123,14 @@ public sealed partial class McpTransportHandler
                 return BuildToolResult("status must be one of: pending, in_progress, completed, failed.", isError: true);
             }
 
-            await _taskService.UpdateTaskStatusAsync(taskId, parsedTaskStatus, changedBy, $"Status updated to {parsedTaskStatus} via MCP update_task", cancellationToken);
+            if (parsedTaskStatus == TaskLifecycleStatus.Completed)
+            {
+                await _taskService.CompleteTaskAsync(taskId, changedBy, "Completed via MCP update_task", cancellationToken);
+            }
+            else
+            {
+                await _taskService.UpdateTaskStatusAsync(taskId, parsedTaskStatus, changedBy, $"Status updated to {parsedTaskStatus} via MCP update_task", cancellationToken);
+            }
         }
 
         var updatedTask = await _taskService.GetTaskByIdAsync(taskId, cancellationToken);
