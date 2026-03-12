@@ -187,7 +187,7 @@ public sealed class PostgresPlanStore
                     { "sessionId", request.SessionId },
                     { "name", request.Name },
                     { "description", request.Description },
-                    { "status", PlanStatus.Draft.ToString().ToLowerInvariant() }
+                    { "status", PlanStatusMapper.ToDatabaseValue(PlanStatus.Draft) }
                 },
                 cancellationToken);
 
@@ -207,7 +207,7 @@ public sealed class PostgresPlanStore
                         { "title", task.Title },
                         { "description", task.Description },
                         { "priority", task.Priority },
-                        { "status", Models.TaskStatus.Pending.ToString().ToLowerInvariant() }
+                        { "status", PlanStatusMapper.ToDatabaseValue(Models.TaskStatus.Pending) }
                     },
                     cancellationToken);
                 taskIds.Add(taskId);
@@ -222,7 +222,7 @@ public sealed class PostgresPlanStore
                 new Dictionary<string, object?>
                 {
                     { "planId", planId },
-                    { "newStatus", PlanStatus.Draft.ToString().ToLowerInvariant() },
+                    { "newStatus", PlanStatusMapper.ToDatabaseValue(PlanStatus.Draft) },
                     { "changedBy", request.ChangedBy },
                     { "reason", request.Reason }
                 },
@@ -301,8 +301,8 @@ public sealed class PostgresPlanStore
         try
         {
             var currentPlan = await GetPlanByIdAsync(planId, cancellationToken);
-            var oldStatus = currentPlan.Status.ToString().ToLowerInvariant();
-            var newStatusText = newStatus.ToString().ToLowerInvariant();
+            var oldStatus = PlanStatusMapper.ToDatabaseValue(currentPlan.Status);
+            var newStatusText = PlanStatusMapper.ToDatabaseValue(newStatus);
 
             const string updateSql = @"
                 UPDATE plans
@@ -474,7 +474,7 @@ public sealed class PostgresPlanStore
                     { "title", request.Title },
                     { "description", request.Description },
                     { "priority", request.Priority },
-                    { "status", Models.TaskStatus.Pending.ToString().ToLowerInvariant() }
+                    { "status", PlanStatusMapper.ToDatabaseValue(Models.TaskStatus.Pending) }
                 },
                 cancellationToken);
 
@@ -487,7 +487,7 @@ public sealed class PostgresPlanStore
                 new Dictionary<string, object?>
                 {
                     { "taskId", taskId },
-                    { "newStatus", Models.TaskStatus.Pending.ToString().ToLowerInvariant() },
+                    { "newStatus", PlanStatusMapper.ToDatabaseValue(Models.TaskStatus.Pending) },
                     { "changedBy", request.ChangedBy },
                     { "reason", null }
                 },
@@ -560,7 +560,7 @@ public sealed class PostgresPlanStore
         try
         {
             var currentTask = await GetTaskByIdAsync(taskId, cancellationToken);
-            var oldStatus = currentTask.Status.ToString().ToLowerInvariant();
+            var oldStatus = PlanStatusMapper.ToDatabaseValue(currentTask.Status);
 
             const string updateSql = @"
                 UPDATE tasks
@@ -621,8 +621,8 @@ public sealed class PostgresPlanStore
         try
         {
             var currentTask = await GetTaskByIdAsync(taskId, cancellationToken);
-            var oldStatus = currentTask.Status.ToString().ToLowerInvariant();
-            var newStatusText = newStatus.ToString().ToLowerInvariant();
+            var oldStatus = PlanStatusMapper.ToDatabaseValue(currentTask.Status);
+            var newStatusText = PlanStatusMapper.ToDatabaseValue(newStatus);
 
             const string updateSql = @"
                 UPDATE tasks
@@ -810,7 +810,7 @@ public sealed class PostgresPlanStore
             ? null
             : reader.GetString(reader.GetOrdinal("description"));
         var statusString = reader.GetString(reader.GetOrdinal("status"));
-        var status = Enum.Parse<PlanStatus>(statusString, ignoreCase: true);
+        var status = PlanStatusMapper.ParsePlanStatus(statusString);
         var createdAt = reader.GetDateTime(reader.GetOrdinal("created_at"));
         var updatedAt = reader.GetDateTime(reader.GetOrdinal("updated_at"));
         var metadataJson = reader.GetString(reader.GetOrdinal("metadata"));
@@ -866,7 +866,7 @@ public sealed class PostgresPlanStore
             : reader.GetString(reader.GetOrdinal("description"));
         var priority = reader.GetString(reader.GetOrdinal("priority"));
         var statusString = reader.GetString(reader.GetOrdinal("status"));
-        var status = Enum.Parse<Models.TaskStatus>(statusString, ignoreCase: true);
+        var status = PlanStatusMapper.ParseTaskStatus(statusString);
         var createdAt = reader.GetDateTime(reader.GetOrdinal("created_at"));
         var updatedAt = reader.GetDateTime(reader.GetOrdinal("updated_at"));
         var metadataJson = reader.GetString(reader.GetOrdinal("metadata"));

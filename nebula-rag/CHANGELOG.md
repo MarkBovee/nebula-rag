@@ -4,6 +4,12 @@ All notable changes to the Nebula RAG Home Assistant add-on are documented in th
 
 The format is inspired by Keep a Changelog and follows semantic versioning.
 
+## [0.3.58] - 2026-03-12
+
+- Fixed MCP plan task status persistence so `update_task(status=in_progress)` uses the PostgreSQL-compatible `in_progress` value instead of the broken `inprogress` form.
+- Routed MCP `update_task(status=completed)` through the dedicated task completion flow so completion requests no longer fail with a misleading pending-to-completed transition error.
+- Blocked plan completion until all plan tasks are terminal, preventing MCP clients from marking a plan complete while tasks are still pending or in progress.
+
 ## [0.3.57] - 2026-03-11
 
 - Added `docs/openpencil-runtime-workflow.md` to document how the private OpenPencil mirror, Nebula submodule, runtime startup, live-loop flow, and submodule update process work together.

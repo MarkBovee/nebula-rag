@@ -113,6 +113,16 @@ public static class PlanValidator
     }
 
     /// <summary>
+    /// Validates that a plan can be completed with its current task states.
+    /// </summary>
+    /// <param name="tasks">The tasks that belong to the plan.</param>
+    /// <returns>True when no tasks remain open, false otherwise.</returns>
+    public static bool CanCompletePlan(IEnumerable<PlanTaskRecord> tasks)
+    {
+        return tasks.All(task => task.Status != TaskLifecycleStatus.Pending && task.Status != TaskLifecycleStatus.InProgress);
+    }
+
+    /// <summary>
     /// Validates that a plan name is unique within a project.
     /// </summary>
     /// <param name="plans">The list of existing plans.</param>
