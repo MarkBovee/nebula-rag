@@ -4,6 +4,10 @@ All notable changes to the Nebula RAG Home Assistant add-on are documented in th
 
 The format is inspired by Keep a Changelog and follows semantic versioning.
 
+## [0.3.80] - 2026-03-17
+
+- Added hybrid scoring to the query flow by combining semantic relevance with lexical source-path and filename matches, improving recall for queries that reference specific files or paths.
+
 ## [0.3.70] - 2026-03-17
 
 - Fixed Home Assistant ingress asset bootstrapping by deriving the dashboard shell base href from the effective request path base instead of emitting a literal `~/` segment.
