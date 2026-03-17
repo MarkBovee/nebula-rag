@@ -4,6 +4,15 @@ All notable changes to the Nebula RAG Home Assistant add-on are documented in th
 
 The format is inspired by Keep a Changelog and follows semantic versioning.
 
+## [0.3.82] - 2026-03-17
+
+- Fixed plan completion race handling by validating open tasks inside the same database transaction that updates plan status, avoiding false `tasks are still pending or in progress` failures after task updates.
+- Refreshed the solution restore graph so test-time `Npgsql` resolution stays aligned on `10.0.2`.
+
+## [0.3.81] - 2026-03-17
+
+- Fixed the add-on build by removing an invalid `sealed` modifier from `MemoryRecallMode`, allowing `NebulaRAG.AddonHost` publish to compile successfully again.
+
 ## [0.3.80] - 2026-03-17
 
 - Added hybrid scoring to the query flow by combining semantic relevance with lexical source-path and filename matches, improving recall for queries that reference specific files or paths.

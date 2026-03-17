@@ -102,7 +102,7 @@ public sealed record MemorySessionSummary(string SessionId, long MemoryCount, Da
 /// <summary>
 /// Recall mode preset for different ranking strategies.
 /// </summary>
-public sealed enum MemoryRecallMode
+public enum MemoryRecallMode
 {
     /// <summary>Precise mode with strict filters, no fallback, high thresholds.</summary>
     Precise,
