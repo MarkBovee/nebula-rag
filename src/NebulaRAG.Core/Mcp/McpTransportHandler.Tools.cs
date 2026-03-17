@@ -784,7 +784,7 @@ public sealed partial class McpTransportHandler
     }
 
     /// <summary>
-    /// Executes memory semantic recall.
+    /// Executes memory semantic recall with hybrid ranking.
     /// </summary>
     /// <param name="arguments">Tool arguments.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
@@ -802,23 +802,32 @@ public sealed partial class McpTransportHandler
         var tag = arguments?["tag"]?.GetValue<string>();
         var sessionId = arguments?["sessionId"]?.GetValue<string>();
         var projectId = ResolveProjectId(arguments?["projectId"]?.GetValue<string>(), tags: null);
-        var queryEmbedding = _embeddingGenerator.GenerateEmbedding(text, _settings.Ingestion.VectorDimensions);
-        var memories = await _store.SearchMemoriesAsync(queryEmbedding, limit, type, tag, sessionId, projectId, cancellationToken);
-        var usedFallback = false;
-        if (memories.Count == 0)
+
+        // Parse new hybrid ranking parameters
+        var modeStr = arguments?["mode"]?.GetValue<string>() ?? "balanced";
+        if (!Enum.TryParse<MemoryRecallMode>(modeStr, true, out var mode))
         {
-            // Fallback to recent-memory listing so recall remains useful when semantic ranking returns no hits.
-            var listedMemories = await _store.ListMemoriesAsync(limit, type, tag, sessionId, projectId, cancellationToken);
-            memories = listedMemories
-                .Select(memory => new MemorySearchResult(memory.Id, memory.SessionId, memory.ProjectId, memory.Type, memory.Content, memory.Tags, memory.CreatedAtUtc, 0d))
-                .ToList();
-            usedFallback = memories.Count > 0;
+            return BuildToolResult($"Invalid mode: {modeStr}. Use: precise, balanced, or broad.", isError: true);
         }
+
+        var preferredTagsNode = arguments?["preferredTags"]?.AsArray();
+        IReadOnlyList<string>? preferredTags = null;
+        if (preferredTagsNode != null && preferredTagsNode.Count > 0)
+        {
+            preferredTags = preferredTagsNode
+                .Select(node => node?.GetValue<string>())
+                .Where(tag => tag != null)
+                .ToList();
+        }
+
+        // Use hybrid ranking service
+        var memories = await _managementService.SearchMemoriesHybridAsync(
+            text, limit, type, tag, sessionId, projectId, mode, preferredTags, cancellationToken);
 
         var items = new JsonArray();
         foreach (var memory in memories)
         {
-            items.Add(new JsonObject
+            var memoryObj = new JsonObject
             {
                 ["id"] = memory.Id,
                 ["sessionId"] = memory.SessionId,
@@ -828,15 +837,28 @@ public sealed partial class McpTransportHandler
                 ["tags"] = JsonSerializer.SerializeToNode(memory.Tags),
                 ["createdAtUtc"] = memory.CreatedAtUtc.ToUniversalTime().ToString("O"),
                 ["score"] = memory.Score
-            });
+            };
+
+            // Add diagnostic scores if available
+            if (memory.SemanticScore.HasValue)
+                memoryObj["semanticScore"] = memory.SemanticScore.Value;
+            if (memory.LexicalScore.HasValue)
+                memoryObj["lexicalScore"] = memory.LexicalScore.Value;
+            if (memory.RecencyBoost.HasValue)
+                memoryObj["recencyBoost"] = memory.RecencyBoost.Value;
+            if (memory.TagBoost.HasValue)
+                memoryObj["tagBoost"] = memory.TagBoost.Value;
+
+            memoryObj["usedFallback"] = memory.UsedFallback;
+            items.Add(memoryObj);
         }
 
-        return BuildToolResult($"Recalled {memories.Count} memories.", new JsonObject
+        return BuildToolResult($"Recalled {memories.Count} memories with hybrid ranking.", new JsonObject
         {
             ["items"] = items,
             ["sessionId"] = sessionId,
             ["projectId"] = projectId,
-            ["fallbackUsed"] = usedFallback
+            ["mode"] = modeStr
         });
     }
 

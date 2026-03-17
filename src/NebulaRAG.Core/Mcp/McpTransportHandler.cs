@@ -399,7 +399,14 @@ public sealed partial class McpTransportHandler
                     ["type"] = BuildEnumStringSchema("Optional memory type filter.", "episodic", "semantic", "procedural"),
                     ["tag"] = BuildStringSchema("Optional memory tag filter."),
                     ["sessionId"] = BuildStringSchema("Optional session-id filter."),
-                    ["projectId"] = BuildStringSchema("Optional project-id filter.")
+                    ["projectId"] = BuildStringSchema("Optional project-id filter."),
+                    ["mode"] = BuildEnumStringSchema("Recall mode preset for ranking strategy.", "precise", "balanced", "broad"),
+                    ["preferredTags"] = new JsonObject
+                    {
+                        ["type"] = "array",
+                        ["description"] = "Optional list of tags to prefer in ranking.",
+                        ["items"] = BuildStringSchema("Memory tag to prefer.")
+                    }
                 },
                 "text"),
             MemoryListToolName => BuildObjectSchema(

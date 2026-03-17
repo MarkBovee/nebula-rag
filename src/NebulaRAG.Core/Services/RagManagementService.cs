@@ -285,4 +285,66 @@ public sealed class RagManagementService
             throw new RagDatabaseException("Failed to search memories", ex);
         }
     }
+
+    /// <summary>
+    /// Performs hybrid ranking recall over memories with BM25 + semantic similarity.
+    /// </summary>
+    /// <param name="text">Query text for embedding generation and hybrid search.</param>
+    /// <param name="limit">Maximum number of memories to return.</param>
+    /// <param name="type">Optional memory type filter.</param>
+    /// <param name="tag">Optional tag filter.</param>
+    /// <param name="sessionId">Optional session-id filter.</param>
+    /// <param name="projectId">Optional project-id filter.</param>
+    /// <param name="mode">Recall mode preset (precise/balanced/broad).</param>
+    /// <param name="preferredTags">Optional tags to prefer in ranking.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Hybrid-ranked memory results with diagnostic scores.</returns>
+    public async Task<IReadOnlyList<MemorySearchResult>> SearchMemoriesHybridAsync(
+        string text,
+        int limit,
+        string? type = null,
+        string? tag = null,
+        string? sessionId = null,
+        string? projectId = null,
+        MemoryRecallMode mode = MemoryRecallMode.Balanced,
+        IReadOnlyList<string>? preferredTags = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            throw new ArgumentException("Search text cannot be null or empty.", nameof(text));
+        }
+
+        var preset = RecallPresets.GetPreset(mode);
+        _logger.LogDebug(
+            "Searching memories with hybrid ranking (limit={Limit}, mode={Mode}, type={Type}, tag={Tag}, sessionId={SessionId}, projectId={ProjectId}, preferredTags={PreferredTags})",
+            limit,
+            mode,
+            type,
+            tag,
+            sessionId,
+            projectId,
+            preferredTags?.Count);
+
+        try
+        {
+            var queryEmbedding = _embeddingGenerator.GenerateEmbedding(text, _settings.Ingestion.VectorDimensions);
+            return await _store.SearchMemoriesHybridAsync(
+                queryEmbedding,
+                text,
+                limit,
+                type,
+                tag,
+                sessionId,
+                projectId,
+                preset,
+                preferredTags,
+                cancellationToken);
+        }
+        catch (Exception ex) when (!(ex is RagException))
+        {
+            _logger.LogError(ex, "Failed to search memories with hybrid ranking");
+            throw new RagDatabaseException("Failed to search memories with hybrid ranking", ex);
+        }
+    }
 }
