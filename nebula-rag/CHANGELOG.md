@@ -4,6 +4,10 @@ All notable changes to the Nebula RAG Home Assistant add-on are documented in th
 
 The format is inspired by Keep a Changelog and follows semantic versioning.
 
+## [0.3.69] - 2026-03-17
+
+- Fixed Home Assistant ingress mixed-content asset blocking by restoring the dashboard shell base href to the path-base-aware app root (`~/`) instead of emitting an absolute request-derived base URI.
+
 ## [0.3.68] - 2026-03-17
 
 - Restored ingress-safe dashboard startup by resolving the app base href from the active Blazor navigation base URI instead of a hard-coded relative parent path.

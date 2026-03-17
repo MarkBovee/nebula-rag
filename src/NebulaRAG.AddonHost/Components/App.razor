@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <base href="@Navigation.BaseUri" />
+    <base href="~/" />
     <title>Nebula Flight Deck</title>
     <link rel="stylesheet" href="@Assets["css/dashboard-tokens.css"]" />
     <HeadOutlet @rendermode="InteractiveServer" />
@@ -13,8 +13,3 @@
     <script src="@Assets["_framework/blazor.web.js"]"></script>
 </body>
 </html>
-
-@code {
-    [Inject]
-    private NavigationManager Navigation { get; set; } = default!;
-}
