@@ -4,6 +4,11 @@ All notable changes to the Nebula RAG Home Assistant add-on are documented in th
 
 The format is inspired by Keep a Changelog and follows semantic versioning.
 
+## [0.3.70] - 2026-03-17
+
+- Fixed Home Assistant ingress asset bootstrapping by deriving the dashboard shell base href from the effective request path base instead of emitting a literal `~/` segment.
+- Enabled proxy-forwarded scheme and host handling plus `X-Ingress-Path`/`X-Forwarded-Prefix` path-base resolution so the add-on host generates ingress-safe URLs under Home Assistant reverse proxying.
+
 ## [0.3.69] - 2026-03-17
 
 - Fixed Home Assistant ingress mixed-content asset blocking by restoring the dashboard shell base href to the path-base-aware app root (`~/`) instead of emitting an absolute request-derived base URI.

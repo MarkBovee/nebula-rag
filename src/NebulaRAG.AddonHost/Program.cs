@@ -1,6 +1,7 @@
 using System.Text.Json.Nodes;
 using System.Text.Json;
 using Microsoft.AspNetCore.Http.Json;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.StaticFiles;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
@@ -37,8 +38,15 @@ builder.WebHost.UseStaticWebAssets();
 builder.Host.UseSerilog();
 ConfigureOpenTelemetry(builder.Services);
 builder.Services.AddControllers();
+builder.Services.AddHttpContextAccessor();
 builder.Services.AddRazorComponents().AddInteractiveServerComponents();
 builder.Services.AddSingleton<HttpClient>();
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto | ForwardedHeaders.XForwardedHost;
+    options.KnownIPNetworks.Clear();
+    options.KnownProxies.Clear();
+});
 
 builder.Services.Configure<JsonOptions>(options =>
 {
@@ -85,6 +93,13 @@ await planStore.InitializeSchemaAsync();
 var app = builder.Build();
 Microsoft.Extensions.Logging.ILogger appLogger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("NebulaRAG.AddonHost.McpTransport");
 Log.Information("NebulaRAG add-on ignition sequence started.");
+
+app.UseForwardedHeaders();
+app.Use((httpContext, next) =>
+{
+    ApplyExternalPathBase(httpContext, pathBase);
+    return next();
+});
 
 if (!string.IsNullOrEmpty(pathBase))
 {
@@ -184,6 +199,51 @@ static string NormalizePathBase(string? rawPathBase)
     }
 
     return trimmed.TrimEnd('/');
+}
+
+/// <summary>
+/// Applies the externally visible path base from Home Assistant ingress or proxy headers.
+/// </summary>
+/// <param name="httpContext">Current HTTP context.</param>
+/// <param name="configuredPathBase">Configured application path base fallback.</param>
+static void ApplyExternalPathBase(HttpContext httpContext, string configuredPathBase)
+{
+    var externalPathBase = ResolveExternalPathBase(httpContext.Request, configuredPathBase);
+    if (string.IsNullOrWhiteSpace(externalPathBase))
+    {
+        return;
+    }
+
+    httpContext.Request.PathBase = new PathString(externalPathBase);
+}
+
+/// <summary>
+/// Resolves the externally visible base path for URL generation under ingress and reverse proxies.
+/// </summary>
+/// <param name="request">Current HTTP request.</param>
+/// <param name="configuredPathBase">Configured application path base fallback.</param>
+/// <returns>Normalized external path base or an empty string when none applies.</returns>
+static string ResolveExternalPathBase(HttpRequest request, string configuredPathBase)
+{
+    var ingressPath = NormalizePathBase(request.Headers["X-Ingress-Path"].ToString());
+    if (!string.IsNullOrWhiteSpace(ingressPath))
+    {
+        return ingressPath;
+    }
+
+    var forwardedPrefix = NormalizePathBase(request.Headers["X-Forwarded-Prefix"].ToString());
+    if (!string.IsNullOrWhiteSpace(forwardedPrefix))
+    {
+        return forwardedPrefix;
+    }
+
+    var requestPathBase = NormalizePathBase(request.PathBase.Value);
+    if (!string.IsNullOrWhiteSpace(requestPathBase))
+    {
+        return requestPathBase;
+    }
+
+    return configuredPathBase;
 }
 
 /// <summary>

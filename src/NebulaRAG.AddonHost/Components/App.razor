@@ -1,9 +1,11 @@
+@inject IHttpContextAccessor HttpContextAccessor
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <base href="~/" />
+    <base href="@GetBaseHref()" />
     <title>Nebula Flight Deck</title>
     <link rel="stylesheet" href="@Assets["css/dashboard-tokens.css"]" />
     <HeadOutlet @rendermode="InteractiveServer" />
@@ -13,3 +15,20 @@
     <script src="@Assets["_framework/blazor.web.js"]"></script>
 </body>
 </html>
+
+@code {
+    /// <summary>
+    /// Gets the effective app base href for static assets and router bootstrapping.
+    /// </summary>
+    /// <returns>Externally visible base path ending with a trailing slash.</returns>
+    private string GetBaseHref()
+    {
+        var pathBase = HttpContextAccessor.HttpContext?.Request.PathBase.Value;
+        if (string.IsNullOrWhiteSpace(pathBase) || string.Equals(pathBase, "/", StringComparison.Ordinal))
+        {
+            return "/";
+        }
+
+        return pathBase.EndsWith("/", StringComparison.Ordinal) ? pathBase : $"{pathBase}/";
+    }
+}
