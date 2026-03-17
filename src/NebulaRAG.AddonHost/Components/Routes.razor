@@ -1,0 +1,14 @@
+<Router AppAssembly="@typeof(App).Assembly">
+    <Found Context="routeData">
+        <RouteView RouteData="@routeData" />
+    </Found>
+    <NotFound>
+        <div class="not-found-shell">
+            <div class="not-found-card">
+                <p class="eyebrow">NebulaRAG</p>
+                <h1>Route not found</h1>
+                <p>The requested dashboard surface does not exist.</p>
+            </div>
+        </div>
+    </NotFound>
+</Router>

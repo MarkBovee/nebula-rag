@@ -3,83 +3,253 @@
 @using NebulaRAG.Core.Models
 @inject DashboardSnapshotService SnapshotService
 
-<section class="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-    <article class="rounded-xl border border-nebula-border bg-nebula-surface p-4">
-        <p class="text-xs uppercase tracking-[0.16em] text-nebula-muted">Projects</p>
-        <p class="mt-2 text-2xl font-semibold">@_projects.Count</p>
-    </article>
-    <article class="rounded-xl border border-nebula-border bg-nebula-surface p-4">
-        <p class="text-xs uppercase tracking-[0.16em] text-nebula-muted">Plans</p>
-        <p class="mt-2 text-2xl font-semibold">@_projects.Sum(project => project.Plans.PlanCount)</p>
-    </article>
-    <article class="rounded-xl border border-nebula-border bg-nebula-surface p-4">
-        <p class="text-xs uppercase tracking-[0.16em] text-nebula-muted">Chunks</p>
-        <p class="mt-2 text-2xl font-semibold">@(_dashboardSnapshot?.Stats.ChunkCount ?? 0)</p>
-    </article>
-    <article class="rounded-xl border border-nebula-border bg-nebula-surface p-4">
-        <p class="text-xs uppercase tracking-[0.16em] text-nebula-muted">Memories</p>
-        <p class="mt-2 text-2xl font-semibold">@(_dashboardSnapshot?.MemoryStats.TotalMemories ?? 0)</p>
-    </article>
-</section>
+<div class="section-stack">
+    @if (!string.IsNullOrWhiteSpace(_errorMessage))
+    {
+        <section class="status-banner error">@_errorMessage</section>
+    }
 
-<section class="mb-6 rounded-2xl border border-nebula-border bg-nebula-surface p-4 md:p-6">
-    <div class="mb-4 flex items-center justify-between">
-        <h2 class="text-xl font-semibold">Performance Metrics</h2>
-        <span class="text-xs uppercase tracking-[0.16em] text-nebula-muted">Last @GetPerformancePoints().Count samples</span>
-    </div>
-    @RenderPerformanceCard()
-</section>
+    <section class="metric-grid">
+        <article class="metric-card accent">
+            <span class="metric-label">@(HasSelectedProject() ? "Project focus" : "Projects in play")</span>
+            <span class="metric-value @(HasSelectedProject() ? "mono" : string.Empty)">@GetProjectFocusValue()</span>
+            <p class="metric-footnote">@(HasSelectedProject() ? "The dashboard is pinned to one project context." : "Project slices with plans, indexed sources, or memory activity.")</p>
+        </article>
+        <article class="metric-card secondary">
+            <span class="metric-label">@(HasSelectedProject() ? "Project sources" : "Index sources")</span>
+            <span class="metric-value">@(HasSelectedProject() ? GetSelectedProject()?.Rag.DocumentCount ?? 0 : _dashboardSnapshot?.Stats.DocumentCount ?? 0)</span>
+            <p class="metric-footnote">@(HasSelectedProject() ? $"{GetSelectedProject()?.Rag.ChunkCount ?? 0} chunks inside the selected project ledger." : $"{_dashboardSnapshot?.Sources.Count ?? 0} sources with {_dashboardSnapshot?.Stats.ChunkCount ?? 0} chunks.")</p>
+        </article>
+        <article class="metric-card tertiary">
+            <span class="metric-label">@(HasSelectedProject() ? "Project memory" : "Memory footprint")</span>
+            <span class="metric-value">@(HasSelectedProject() ? GetSelectedProject()?.Memory.MemoryCount ?? 0 : _dashboardSnapshot?.MemoryStats.TotalMemories ?? 0)</span>
+            <p class="metric-footnote">@(HasSelectedProject() ? $"Last memory {FormatOffset(GetSelectedProject()?.Memory.LastMemoryAtUtc)}." : $"{_dashboardSnapshot?.MemoryStats.Recent24HoursCount ?? 0} new memories in the last 24 hours.")</p>
+        </article>
+        <article class="metric-card warning">
+            <span class="metric-label">@(HasSelectedProject() ? "Project plans" : "Plan volume")</span>
+            <span class="metric-value">@(HasSelectedProject() ? GetSelectedProject()?.Plans.PlanCount ?? 0 : _projects.Sum(project => project.Plans.PlanCount))</span>
+            <p class="metric-footnote">@(HasSelectedProject() ? $"{GetSelectedProject()?.Plans.TaskCount ?? 0} tasks and {GetSelectedProject()?.Plans.ActivePlanCount ?? 0} active plans." : $"{_projects.Sum(project => project.Plans.ActivePlanCount)} active plans across {FormatProjectActivity()} projects.")</p>
+        </article>
+    </section>
 
-<section class="rounded-2xl border border-nebula-border bg-nebula-surface p-4 md:p-6">
-    <div class="mb-4 flex items-center justify-between">
-        <h2 class="text-xl font-semibold">Project Breakdown</h2>
-        @if (_loading)
-        {
-            <span class="text-xs uppercase tracking-[0.16em] text-nebula-ok">loading</span>
-        }
-    </div>
-    <div class="overflow-x-auto">
-        <table class="w-full border-collapse text-sm">
-            <thead>
-                <tr class="text-left text-xs uppercase tracking-[0.13em] text-nebula-muted">
-                    <th class="border-b border-nebula-border px-3 py-3">Project</th>
-                    <th class="border-b border-nebula-border px-3 py-3">Plans</th>
-                    <th class="border-b border-nebula-border px-3 py-3">RAG</th>
-                    <th class="border-b border-nebula-border px-3 py-3">Memory</th>
-                </tr>
-            </thead>
-            <tbody>
-                @foreach (var project in _projects)
+    <section class="section-panel panel">
+        <div class="panel-header">
+            <div>
+                <p class="eyebrow">System pulse</p>
+                <h2 class="panel-title">Core signals</h2>
+                <p class="panel-copy">Health, retention, and footprint indicators for the current NebulaRAG runtime.</p>
+            </div>
+            @if (_loading)
+            {
+                <span class="status-chip ok">Loading</span>
+            }
+        </div>
+
+        <div class="signal-grid">
+            <article class="signal-card">
+                <span class="signal-label">Health</span>
+                <span class="signal-value">@GetHealthSummary()</span>
+                <span class="table-note">@(_dashboardSnapshot?.Health.Message ?? "No health payload yet.")</span>
+            </article>
+            <article class="signal-card">
+                <span class="signal-label">Retention window</span>
+                <span class="signal-value">@GetIndexRetentionSummary()</span>
+                <span class="table-note">From @FormatDate(_dashboardSnapshot?.Stats.OldestIndexedAt) to @FormatDate(_dashboardSnapshot?.Stats.NewestIndexedAt)</span>
+            </article>
+            <article class="signal-card">
+                <span class="signal-label">Index size</span>
+                <span class="signal-value">@FormatBytes(_dashboardSnapshot?.Stats.IndexSizeBytes ?? 0)</span>
+                <span class="table-note">@FormatCompactNumber(_dashboardSnapshot?.Stats.TotalTokens ?? 0) estimated tokens stored.</span>
+            </article>
+        </div>
+    </section>
+
+    <section class="split-grid">
+        <article class="panel section-panel">
+            <div class="panel-header">
+                <div>
+                    <p class="eyebrow">Telemetry</p>
+                    <h2 class="panel-title">Performance history</h2>
+                    <p class="panel-copy">Rolling latency, indexing throughput, and CPU samples from the add-on host.</p>
+                </div>
+                <span class="badge">@GetPerformancePoints().Count samples</span>
+            </div>
+            @RenderPerformanceCard()
+        </article>
+
+        <article class="panel section-panel">
+            <div class="panel-header">
+                <div>
+                    <p class="eyebrow">Activity</p>
+                    <h2 class="panel-title">Recent operator events</h2>
+                    <p class="panel-copy">@(HasSelectedProject() ? $"Global activity feed while focused on {SelectedProjectId}." : "Latest queries, indexing runs, and maintenance actions captured by the dashboard telemetry sink.")</p>
+                </div>
+                <span class="badge">@(_dashboardSnapshot?.Activity.Count ?? 0) tracked</span>
+            </div>
+            @if ((_dashboardSnapshot?.Activity.Count ?? 0) == 0)
+            {
+                <div class="empty-state">No activity has been recorded yet. Search, index, or maintenance actions will appear here.</div>
+            }
+            else
+            {
+                <div class="activity-list">
+                    @foreach (var item in (_dashboardSnapshot?.Activity ?? Array.Empty<DashboardActivityEvent>()).Take(8))
+                    {
+                        <article class="activity-item">
+                            <span class="list-title">@item.Description</span>
+                            <span class="list-meta">@item.EventType.ToUpperInvariant() · @item.Timestamp.ToLocalTime().ToString("MMM dd HH:mm:ss", CultureInfo.InvariantCulture)</span>
+                        </article>
+                    }
+                </div>
+            }
+        </article>
+    </section>
+
+    <section class="split-grid">
+        <article class="panel section-panel">
+            <div class="panel-header">
+                <div>
+                    <p class="eyebrow">Memory</p>
+                    <h2 class="panel-title">Memory composition</h2>
+                    <p class="panel-copy">Type distribution and tag pressure across stored episodic, semantic, and procedural memory.</p>
+                </div>
+            </div>
+
+            <div class="stack-list">
+                @foreach (var row in _dashboardSnapshot?.MemoryStats.TypeCounts ?? Array.Empty<MemoryTypeCount>())
                 {
-                    <tr class="align-top even:bg-white/2">
-                        <td class="border-b border-nebula-border px-3 py-3 font-medium">@project.ProjectId</td>
-                        <td class="border-b border-nebula-border px-3 py-3">@project.Plans.PlanCount plans / @project.Plans.TaskCount tasks</td>
-                        <td class="border-b border-nebula-border px-3 py-3">@project.Rag.DocumentCount docs / @project.Rag.ChunkCount chunks</td>
-                        <td class="border-b border-nebula-border px-3 py-3">@project.Memory.MemoryCount @FormatOffset(project.Memory.LastMemoryAtUtc)</td>
-                    </tr>
+                    <div class="progress-row">
+                        <div class="detail-row">
+                            <strong>@row.Type</strong>
+                            <span>@FormatCompactNumber(row.Count)</span>
+                        </div>
+                        <div class="meter">
+                            <span class="meter-fill" style="width:@GetMemoryTypePercentage(row.Count)%"></span>
+                        </div>
+                    </div>
                 }
-            </tbody>
-        </table>
-    </div>
-</section>
+            </div>
+
+            <div class="panel-header" style="margin-top:1.2rem; margin-bottom:0.75rem;">
+                <div>
+                    <h3 class="panel-title" style="font-size:1.1rem;">Top tags</h3>
+                </div>
+            </div>
+
+            @if ((_dashboardSnapshot?.MemoryStats.TopTags.Count ?? 0) == 0)
+            {
+                <div class="empty-state">Tags will appear once memories are created with tag metadata.</div>
+            }
+            else
+            {
+                <div class="tag-cloud">
+                    @foreach (var tag in _dashboardSnapshot?.MemoryStats.TopTags ?? Array.Empty<MemoryTagCount>())
+                    {
+                        <span class="tag-pill">@tag.Tag (@tag.Count)</span>
+                    }
+                </div>
+            }
+        </article>
+
+        <article class="panel section-panel">
+            <div class="panel-header">
+                <div>
+                    <p class="eyebrow">Sessions</p>
+                    <h2 class="panel-title">Recent memory sessions</h2>
+                    <p class="panel-copy">The last active sessions provide a quick sense of where operator and agent work is accumulating.</p>
+                </div>
+            </div>
+
+            @if ((_dashboardSnapshot?.MemoryStats.RecentSessions.Count ?? 0) == 0)
+            {
+                <div class="empty-state">No recent memory sessions recorded yet.</div>
+            }
+            else
+            {
+                <div class="session-list">
+                    @foreach (var session in _dashboardSnapshot?.MemoryStats.RecentSessions ?? Array.Empty<MemorySessionSummary>())
+                    {
+                        <article class="session-item">
+                            <span class="list-title mono">@session.SessionId</span>
+                            <span class="list-meta">@session.MemoryCount memories · @session.LastMemoryAtUtc.ToLocalTime().ToString("MMM dd HH:mm", CultureInfo.InvariantCulture)</span>
+                        </article>
+                    }
+                </div>
+            }
+        </article>
+    </section>
+
+    <section class="panel table-panel">
+        <div class="panel-header">
+            <div>
+                <p class="eyebrow">Projects</p>
+                <h2 class="panel-title">Project breakdown</h2>
+                <p class="panel-copy">@(HasSelectedProject() ? "Selected project summary with the surrounding ledger hidden." : "Plans, RAG volume, and memory counts aligned per project identifier.")</p>
+            </div>
+            <span class="badge">@GetVisibleProjects().Count rows</span>
+        </div>
+
+        <div class="table-shell">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Project</th>
+                        <th>Plan posture</th>
+                        <th>RAG footprint</th>
+                        <th>Memory posture</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var project in GetVisibleProjects())
+                    {
+                        <tr class="@(IsSelectedProject(project) ? "selected-row" : string.Empty)">
+                            <td>
+                                <div class="cell-title mono">@project.ProjectId</div>
+                                <div class="cell-subtitle">Last activity @FormatOffset(project.Memory.LastMemoryAtUtc)</div>
+                            </td>
+                            <td>
+                                <div class="cell-title">@project.Plans.PlanCount plans / @project.Plans.TaskCount tasks</div>
+                                <div class="cell-subtitle">@project.Plans.ActivePlanCount active · updated @FormatOffset(project.Plans.LastUpdatedAtUtc)</div>
+                            </td>
+                            <td>
+                                <div class="cell-title">@project.Rag.DocumentCount docs / @project.Rag.ChunkCount chunks</div>
+                                <div class="cell-subtitle">@FormatCompactNumber(project.Rag.TotalTokens) tokens · newest @FormatDate(project.Rag.NewestIndexedAt)</div>
+                            </td>
+                            <td>
+                                <div class="cell-title">@project.Memory.MemoryCount memories</div>
+                                <div class="cell-subtitle">Last memory @FormatOffset(project.Memory.LastMemoryAtUtc)</div>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </section>
+</div>
 
 @code {
     [Parameter]
     public long RefreshNonce { get; set; }
 
+    [Parameter]
+    public string? SelectedProjectId { get; set; }
+
     private readonly List<ProjectDashboardNode> _projects = new();
     private DashboardSnapshotResponse? _dashboardSnapshot;
     private bool _loading;
     private long _lastRefreshNonce = -1;
+    private string? _lastSelectedProjectId;
+    private string? _errorMessage;
 
     protected override async Task OnParametersSetAsync()
     {
-        if (_lastRefreshNonce == RefreshNonce)
+        if (_lastRefreshNonce == RefreshNonce && string.Equals(_lastSelectedProjectId, SelectedProjectId, StringComparison.OrdinalIgnoreCase))
         {
             return;
         }
 
         _lastRefreshNonce = RefreshNonce;
+        _lastSelectedProjectId = SelectedProjectId;
         await RefreshAsync();
     }
 
@@ -92,6 +262,12 @@
             _projects.Clear();
             _projects.AddRange(projects);
             _dashboardSnapshot = await SnapshotService.GetDashboardAsync();
+            _errorMessage = null;
+            SortProjects();
+        }
+        catch (Exception exception)
+        {
+            _errorMessage = $"Overview refresh failed: {exception.Message}";
         }
         finally
         {
@@ -120,17 +296,17 @@
         var cpuSeries = BuildSeriesPoints(points, point => point.CpuUsagePercent, maxCpu, width, height);
 
         builder.AddMarkupContent(1, $@"
-            <div class='overflow-x-auto'>
-                <svg viewBox='0 0 {width} {height}' class='w-full rounded-xl border border-nebula-border bg-nebula-bg'>
+            <div class='chart-frame'>
+                <svg viewBox='0 0 {width} {height}' aria-label='Performance chart'>
                     <polyline fill='none' stroke='var(--nb-accent)' stroke-width='2' points='{latencySeries}' />
                     <polyline fill='none' stroke='var(--nb-accent-2)' stroke-width='2' points='{indexingSeries}' />
-                    <polyline fill='none' stroke='var(--nb-ok)' stroke-width='2' points='{cpuSeries}' />
+                    <polyline fill='none' stroke='var(--nb-accent-3)' stroke-width='2' points='{cpuSeries}' />
                 </svg>
             </div>
-            <div class='mt-3 flex flex-wrap gap-4 text-xs text-nebula-muted'>
-                <span><span style='color:var(--nb-accent)'>Latency ms</span> max {maxLatency:F1}</span>
-                <span><span style='color:var(--nb-accent-2)'>Index docs/s</span> max {maxIndexing:F2}</span>
-                <span><span style='color:var(--nb-ok)'>CPU %</span> max {maxCpu:F1}</span>
+            <div class='chart-legend'>
+                <span class='legend-item'><span class='legend-swatch' style='background:var(--nb-accent)'></span>Latency ms max {maxLatency:F1}</span>
+                <span class='legend-item'><span class='legend-swatch' style='background:var(--nb-accent-2)'></span>Index docs/s max {maxIndexing:F2}</span>
+                <span class='legend-item'><span class='legend-swatch' style='background:var(--nb-accent-3)'></span>CPU % max {maxCpu:F1}</span>
             </div>");
     };
 
@@ -164,7 +340,122 @@
     private static string FormatOffset(DateTimeOffset? value)
     {
         return value.HasValue
-            ? value.Value.UtcDateTime.ToString("yyyy-MM-dd HH:mm 'UTC'", CultureInfo.InvariantCulture)
+            ? value.Value.ToLocalTime().ToString("MMM dd HH:mm", CultureInfo.InvariantCulture)
             : "n/a";
+    }
+
+    private static string FormatDate(DateTime? value)
+    {
+        return value.HasValue
+            ? value.Value.ToLocalTime().ToString("MMM dd HH:mm", CultureInfo.InvariantCulture)
+            : "n/a";
+    }
+
+    private static string FormatCompactNumber(long value)
+    {
+        if (value >= 1_000_000)
+        {
+            return $"{value / 1_000_000d:0.#}M";
+        }
+
+        if (value >= 1_000)
+        {
+            return $"{value / 1_000d:0.#}K";
+        }
+
+        return value.ToString(CultureInfo.InvariantCulture);
+    }
+
+    private static string FormatBytes(long value)
+    {
+        if (value <= 0)
+        {
+            return "0 B";
+        }
+
+        string[] units = ["B", "KB", "MB", "GB", "TB"];
+        var size = (double)value;
+        var index = 0;
+        while (size >= 1024d && index < units.Length - 1)
+        {
+            size /= 1024d;
+            index++;
+        }
+
+        return $"{size:0.#} {units[index]}";
+    }
+
+    private string GetHealthSummary()
+    {
+        return _dashboardSnapshot?.Health.IsHealthy == true ? "Healthy" : "Degraded";
+    }
+
+    private bool HasSelectedProject()
+    {
+        return !string.IsNullOrWhiteSpace(SelectedProjectId) && GetSelectedProject() is not null;
+    }
+
+    private string GetProjectFocusValue()
+    {
+        return GetSelectedProject()?.ProjectId ?? _projects.Count.ToString(CultureInfo.InvariantCulture);
+    }
+
+    private string GetIndexRetentionSummary()
+    {
+        if (_dashboardSnapshot?.Stats.OldestIndexedAt is null || _dashboardSnapshot?.Stats.NewestIndexedAt is null)
+        {
+            return "No index history yet";
+        }
+
+        var span = _dashboardSnapshot.Stats.NewestIndexedAt.Value - _dashboardSnapshot.Stats.OldestIndexedAt.Value;
+        return $"{Math.Max(1, (int)Math.Ceiling(span.TotalDays))} day span";
+    }
+
+    private string FormatProjectActivity()
+    {
+        return _projects.Count(project => project.Plans.ActivePlanCount > 0).ToString(CultureInfo.InvariantCulture);
+    }
+
+    private ProjectDashboardNode? GetSelectedProject()
+    {
+        return string.IsNullOrWhiteSpace(SelectedProjectId)
+            ? null
+            : _projects.FirstOrDefault(project => string.Equals(project.ProjectId, SelectedProjectId, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private IReadOnlyList<ProjectDashboardNode> GetVisibleProjects()
+    {
+        return HasSelectedProject()
+            ? [GetSelectedProject()!]
+            : _projects;
+    }
+
+    private bool IsSelectedProject(ProjectDashboardNode project)
+    {
+        return HasSelectedProject() && string.Equals(project.ProjectId, SelectedProjectId, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private double GetMemoryTypePercentage(long count)
+    {
+        var total = _dashboardSnapshot?.MemoryStats.TotalMemories ?? 0;
+        if (total <= 0)
+        {
+            return 0;
+        }
+
+        return Math.Clamp((count / (double)total) * 100d, 0d, 100d);
+    }
+
+    private void SortProjects()
+    {
+        _projects.Sort((left, right) =>
+        {
+            var rightScore = right.Rag.DocumentCount + right.Plans.ActivePlanCount + (int)Math.Min(right.Memory.MemoryCount, int.MaxValue);
+            var leftScore = left.Rag.DocumentCount + left.Plans.ActivePlanCount + (int)Math.Min(left.Memory.MemoryCount, int.MaxValue);
+            var scoreComparison = rightScore.CompareTo(leftScore);
+            return scoreComparison != 0
+                ? scoreComparison
+                : string.Compare(left.ProjectId, right.ProjectId, StringComparison.OrdinalIgnoreCase);
+        });
     }
 }

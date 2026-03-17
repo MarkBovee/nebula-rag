@@ -33,6 +33,7 @@ if (addonDotEnvResult.FoundFile)
 }
 
 var builder = WebApplication.CreateBuilder(args);
+builder.WebHost.UseStaticWebAssets();
 builder.Host.UseSerilog();
 ConfigureOpenTelemetry(builder.Services);
 builder.Services.AddControllers();
@@ -130,6 +131,7 @@ app.Use(async (httpContext, next) =>
 });
 
 app.UseAntiforgery();
+app.MapStaticAssets();
 app.MapControllers();
 app.MapRazorComponents<NebulaRAG.AddonHost.Components.App>().AddInteractiveServerRenderMode();
 

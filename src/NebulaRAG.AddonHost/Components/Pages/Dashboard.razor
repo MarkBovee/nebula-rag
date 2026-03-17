@@ -1,51 +1,158 @@
-@page "/{*ingressPath:nonfile}"
-@rendermode InteractiveServer
+@page "/dashboard/{*ingressPath:nonfile}"
 
-<PageTitle>Nebula Management</PageTitle>
+<PageTitle>Nebula Flight Deck</PageTitle>
 
-<div class="min-h-screen bg-nebula-bg text-nebula-text">
-    <div class="mx-auto max-w-7xl px-4 py-6 md:px-8 md:py-10">
-        <section class="mb-6 rounded-2xl border border-nebula-border bg-nebula-surface/90 p-6 shadow-xl">
-            <div class="flex flex-wrap items-start justify-between gap-4">
-                <div>
-                    <p class="text-xs uppercase tracking-[0.24em] text-nebula-muted">NebulaRAG</p>
-                    <h1 class="mt-1 text-3xl font-semibold md:text-4xl">Management Dashboard</h1>
-                    <p class="mt-2 text-sm text-nebula-muted">Operational tabs for RAG, memory, plans, and telemetry.</p>
-                </div>
-                <button class="rounded-lg border border-nebula-accent px-4 py-2 text-sm font-medium text-nebula-text transition hover:bg-nebula-accent/20" @onclick="RefreshAsync">
-                    Refresh
-                </button>
+<div class="dashboard-shell">
+    <div class="dashboard-ambience"></div>
+
+    <div class="dashboard-grid">
+        <aside class="panel dashboard-sidebar">
+            <div class="brand-lockup">
+                <p class="eyebrow">NebulaRAG</p>
+                <h1>Flight Deck</h1>
+                <p>One operator surface for retrieval, memory, plans, telemetry, and index maintenance.</p>
             </div>
-        </section>
 
-        <section class="mb-6 flex flex-wrap gap-2 rounded-xl border border-nebula-border bg-nebula-surface p-2">
-            @foreach (var tab in _tabs)
+            <div class="accent-rule"></div>
+
+            <button class="button button-primary button-block" disabled="@_refreshing" @onclick="RefreshAsync">
+                @(_refreshing ? "Refreshing..." : "Refresh all surfaces")
+            </button>
+
+            <div class="detail-stack">
+                <div class="detail-row">
+                    <strong>Index health</strong>
+                    <span>@GetHealthLabel()</span>
+                </div>
+                <div class="detail-row">
+                    <strong>Projects tracked</strong>
+                    <span>@(_shellSnapshot?.Stats.ProjectCount ?? 0)</span>
+                </div>
+                <div class="detail-row">
+                    <strong>Sources indexed</strong>
+                    <span>@(_shellSnapshot?.Stats.DocumentCount ?? 0)</span>
+                </div>
+                <div class="detail-row">
+                    <strong>Generated</strong>
+                    <span>@FormatGeneratedAt()</span>
+                </div>
+            </div>
+
+            <section class="project-switcher">
+                <div class="project-switcher-header">
+                    <div>
+                        <p class="eyebrow">Project Context</p>
+                        <h2 class="panel-title">Focus</h2>
+                    </div>
+                    <span class="badge">@(_projects.Count + 1) views</span>
+                </div>
+
+                <div class="project-pill-list" aria-label="Project switcher">
+                    <button class="project-pill @GetProjectChipClass(null)" @onclick="() => SetSelectedProject(null)">
+                        <span class="project-pill-copy">
+                            <span class="nav-title">All projects</span>
+                            <span class="nav-meta">Cross-project operations</span>
+                        </span>
+                        <span class="nav-pill">@(_shellSnapshot?.Stats.ProjectCount ?? 0)</span>
+                    </button>
+
+                    @foreach (var project in _projects)
+                    {
+                        <button class="project-pill @GetProjectChipClass(project.ProjectId)" @onclick="() => SetSelectedProject(project.ProjectId)">
+                            <span class="project-pill-copy">
+                                <span class="nav-title mono">@project.ProjectId</span>
+                                <span class="nav-meta">@project.Rag.DocumentCount docs, @project.Memory.MemoryCount memories</span>
+                            </span>
+                            <span class="nav-pill">@project.Plans.PlanCount</span>
+                        </button>
+                    }
+                </div>
+            </section>
+
+            <nav class="nav-stack" aria-label="Dashboard sections">
+                @foreach (var tab in _tabs)
+                {
+                    <button class="nav-button @GetTabClass(tab)" @onclick="() => SetActiveTab(tab)">
+                        <span class="nav-copy">
+                            <span class="nav-title">@tab</span>
+                            <span class="nav-meta">@GetTabSubtitle(tab)</span>
+                        </span>
+                        <span class="nav-pill">@GetTabMetric(tab)</span>
+                    </button>
+                }
+            </nav>
+
+            <div class="sidebar-footer">
+                <span class="status-chip @(GetHealthChipClass())">@GetHealthLabel()</span>
+                <span class="badge">@((_shellSnapshot?.Activity.Count ?? 0).ToString()) activity events</span>
+                <span class="badge">@((_shellSnapshot?.MemoryStats.TotalMemories ?? 0).ToString()) memories</span>
+            </div>
+        </aside>
+
+        <main class="dashboard-main">
+            <section class="panel context-panel">
+                <div class="context-layout">
+                    <div class="context-copy">
+                        <p class="eyebrow">@GetProjectEyebrow()</p>
+                        <h2>@GetContextHeading()</h2>
+                        <p>@GetContextDescription()</p>
+                    </div>
+
+                    <div class="context-kpis">
+                        <div class="context-kpi">
+                            <span class="mini-stat-label">Sources</span>
+                            <span class="mini-stat-value">@GetFocusedSourceCount()</span>
+                        </div>
+                        <div class="context-kpi">
+                            <span class="mini-stat-label">Memories</span>
+                            <span class="mini-stat-value">@GetFocusedMemoryCount()</span>
+                        </div>
+                        <div class="context-kpi">
+                            <span class="mini-stat-label">Plans</span>
+                            <span class="mini-stat-value">@GetFocusedPlanCount()</span>
+                        </div>
+                        <div class="context-kpi">
+                            <span class="mini-stat-label">Tasks</span>
+                            <span class="mini-stat-value">@GetFocusedTaskCount()</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="chip-row">
+                    <span class="status-chip @(GetHealthChipClass())">@GetHealthLabel()</span>
+                    <span class="badge">@GetTabHeading(_activeTab)</span>
+                    <span class="badge">@GetFocusedChunkCount() chunks</span>
+                    <span class="badge">@FormatBytes(_shellSnapshot?.Stats.IndexSizeBytes ?? 0) index size</span>
+                    <span class="badge">@FormatGeneratedAt()</span>
+                </div>
+            </section>
+
+            @if (!string.IsNullOrWhiteSpace(_shellError))
             {
-                <button class="rounded-lg px-4 py-2 text-sm font-medium transition @GetTabClass(tab)" @onclick="() => _activeTab = tab">
-                    @tab
-                </button>
+                <section class="status-banner error">
+                    @_shellError
+                </section>
             }
-        </section>
 
-        @if (_activeTab == DashboardTab.Overview)
-        {
-            <OverviewManagementTab RefreshNonce="@_refreshNonce" />
-        }
+            @if (_activeTab == DashboardTab.Overview)
+            {
+                <OverviewManagementTab RefreshNonce="@_refreshNonce" SelectedProjectId="@_selectedProjectId" />
+            }
 
-        @if (_activeTab == DashboardTab.Rag)
-        {
-            <RagManagementTab RefreshNonce="@_refreshNonce" />
-        }
+            @if (_activeTab == DashboardTab.Rag)
+            {
+                <RagManagementTab RefreshNonce="@_refreshNonce" SelectedProjectId="@_selectedProjectId" />
+            }
 
-        @if (_activeTab == DashboardTab.Memory)
-        {
-            <MemoryManagementTab RefreshNonce="@_refreshNonce" />
-        }
+            @if (_activeTab == DashboardTab.Memory)
+            {
+                <MemoryManagementTab RefreshNonce="@_refreshNonce" SelectedProjectId="@_selectedProjectId" />
+            }
 
-        @if (_activeTab == DashboardTab.Plans)
-        {
-            <PlansManagementTab RefreshNonce="@_refreshNonce" />
-        }
-
+            @if (_activeTab == DashboardTab.Plans)
+            {
+                <PlansManagementTab RefreshNonce="@_refreshNonce" SelectedProjectId="@_selectedProjectId" />
+            }
+        </main>
     </div>
 </div>

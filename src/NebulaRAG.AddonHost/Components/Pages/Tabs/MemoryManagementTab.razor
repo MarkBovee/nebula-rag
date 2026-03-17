@@ -9,129 +9,375 @@
 @inject IEmbeddingGenerator EmbeddingGenerator
 @inject RagSettings Settings
 
-<section class="mb-6 grid gap-4 lg:grid-cols-2">
-    <article class="rounded-xl border border-nebula-border bg-nebula-surface p-4">
-        <h2 class="mb-3 text-lg font-semibold">Create Memory</h2>
-        <div class="space-y-3">
-            <input class="w-full rounded-lg border border-nebula-border bg-nebula-bg px-3 py-2" @bind="_memorySessionId" placeholder="Session ID (optional)" />
-            <input class="w-full rounded-lg border border-nebula-border bg-nebula-bg px-3 py-2" @bind="_memoryProjectId" placeholder="Project ID (optional)" />
-            <select class="w-full rounded-lg border border-nebula-border bg-nebula-bg px-3 py-2" @bind="_memoryType">
-                <option value="episodic">episodic</option>
-                <option value="semantic">semantic</option>
-                <option value="procedural">procedural</option>
-            </select>
-            <input class="w-full rounded-lg border border-nebula-border bg-nebula-bg px-3 py-2" @bind="_memoryTagsText" placeholder="Comma tags" />
-            <textarea class="h-24 w-full rounded-lg border border-nebula-border bg-nebula-bg px-3 py-2" @bind="_memoryContent" placeholder="Memory content"></textarea>
-            <button class="rounded-lg border border-nebula-accent px-3 py-2 text-sm hover:bg-nebula-accent/20" @onclick="CreateMemoryAsync">Create Memory</button>
+<div class="section-stack">
+    <section class="panel section-panel compact">
+        <div class="panel-header">
+            <div>
+                <p class="eyebrow">Scope</p>
+                <h2 class="panel-title">@GetMemoryScopeHeading()</h2>
+                <p class="panel-copy">@GetMemoryScopeDescription()</p>
+            </div>
+            <span class="badge">@(_memoryStats?.TotalMemories ?? 0) visible</span>
         </div>
-    </article>
-
-    <article class="rounded-xl border border-nebula-border bg-nebula-surface p-4">
-        <h2 class="mb-3 text-lg font-semibold">Search Memories</h2>
-        <div class="space-y-3">
-            <input class="w-full rounded-lg border border-nebula-border bg-nebula-bg px-3 py-2" @bind="_memorySearchText" placeholder="Semantic search text" />
-            <input class="w-full rounded-lg border border-nebula-border bg-nebula-bg px-3 py-2" type="number" min="1" max="100" @bind="_memorySearchLimit" />
-            <button class="rounded-lg border border-nebula-accent px-3 py-2 text-sm hover:bg-nebula-accent/20" @onclick="SearchMemoriesAsync">Search</button>
-        </div>
-    </article>
-</section>
-
-@if (!string.IsNullOrWhiteSpace(_statusMessage))
-{
-    <section class="mb-4 rounded-xl border p-4 text-sm @(_statusIsError ? "border-amber-500/70 bg-amber-500/10" : "border-nebula-ok/70 bg-nebula-ok/10")">
-        @_statusMessage
     </section>
-}
 
-<section class="mb-6 rounded-xl border border-nebula-border bg-nebula-surface p-4">
-    <h3 class="mb-3 text-base font-semibold">Memory Filters</h3>
-    <div class="grid gap-3 md:grid-cols-5">
-        <select class="rounded-lg border border-nebula-border bg-nebula-bg px-3 py-2" @bind="_memoryScope">
-            <option value="global">global</option>
-            <option value="project">project</option>
-            <option value="session">session</option>
-        </select>
-        <input class="rounded-lg border border-nebula-border bg-nebula-bg px-3 py-2" @bind="_memoryScopeProjectId" placeholder="Scope projectId" />
-        <input class="rounded-lg border border-nebula-border bg-nebula-bg px-3 py-2" @bind="_memoryScopeSessionId" placeholder="Scope sessionId" />
-        <input class="rounded-lg border border-nebula-border bg-nebula-bg px-3 py-2" @bind="_memoryListTag" placeholder="Tag filter" />
-        <button class="rounded-lg border border-nebula-accent px-3 py-2 text-sm hover:bg-nebula-accent/20" @onclick="LoadMemoriesAsync">Load</button>
-    </div>
-</section>
+    <section class="metric-grid">
+        <article class="metric-card accent">
+            <span class="metric-label">Scoped memories</span>
+            <span class="metric-value">@(_memoryStats?.TotalMemories ?? 0)</span>
+            <p class="metric-footnote">Current scope: @_memoryScope with @(_memoryStats?.DistinctSessionCount ?? 0) sessions.</p>
+        </article>
+        <article class="metric-card secondary">
+            <span class="metric-label">Recent growth</span>
+            <span class="metric-value">@(_memoryStats?.Recent24HoursCount ?? 0)</span>
+            <p class="metric-footnote">New memories in the trailing 24-hour window.</p>
+        </article>
+        <article class="metric-card tertiary">
+            <span class="metric-label">Projects represented</span>
+            <span class="metric-value">@(_memoryStats?.DistinctProjectCount ?? 0)</span>
+            <p class="metric-footnote">Average @((_memoryStats?.AverageTagsPerMemory ?? 0).ToString("F1", CultureInfo.InvariantCulture)) tags per memory.</p>
+        </article>
+        <article class="metric-card warning">
+            <span class="metric-label">Search results</span>
+            <span class="metric-value">@_memorySearchResults.Count</span>
+            <p class="metric-footnote">Semantic recall matches for the latest search request.</p>
+        </article>
+    </section>
 
-<section class="mb-6 rounded-xl border border-nebula-border bg-nebula-surface p-4">
-    <h3 class="mb-3 text-base font-semibold">Edit Memory</h3>
-    <div class="grid gap-3 md:grid-cols-2">
-        <input class="rounded-lg border border-nebula-border bg-nebula-bg px-3 py-2" type="number" @bind="_editMemoryId" placeholder="Memory ID" />
-        <select class="rounded-lg border border-nebula-border bg-nebula-bg px-3 py-2" @bind="_editMemoryType">
-            <option value="episodic">episodic</option>
-            <option value="semantic">semantic</option>
-            <option value="procedural">procedural</option>
-        </select>
-        <input class="rounded-lg border border-nebula-border bg-nebula-bg px-3 py-2 md:col-span-2" @bind="_editMemoryTagsText" placeholder="Comma tags" />
-        <textarea class="h-24 rounded-lg border border-nebula-border bg-nebula-bg px-3 py-2 md:col-span-2" @bind="_editMemoryContent" placeholder="Updated memory content"></textarea>
-        <button class="rounded-lg border border-nebula-accent px-3 py-2 text-sm hover:bg-nebula-accent/20" @onclick="UpdateMemoryAsync">Update</button>
-        <button class="rounded-lg border border-red-500 px-3 py-2 text-sm hover:bg-red-500/20" @onclick="OpenDeleteEditorConfirm">Delete</button>
-    </div>
-</section>
+    @if (!string.IsNullOrWhiteSpace(_statusMessage))
+    {
+        <section class="status-banner @(_statusIsError ? "error" : "ok")">
+            @_statusMessage
+        </section>
+    }
 
-<section class="mb-6 rounded-xl border border-nebula-border bg-nebula-surface p-4">
-    <h3 class="mb-3 text-base font-semibold">Memory Search Results</h3>
-    <div class="overflow-x-auto">
-        <table class="w-full border-collapse text-sm">
-            <thead>
-                <tr class="text-left text-xs uppercase tracking-[0.12em] text-nebula-muted">
-                    <th class="border-b border-nebula-border px-3 py-2">Id</th>
-                    <th class="border-b border-nebula-border px-3 py-2">Score</th>
-                    <th class="border-b border-nebula-border px-3 py-2">Type</th>
-                    <th class="border-b border-nebula-border px-3 py-2">Content</th>
-                </tr>
-            </thead>
-            <tbody>
-                @foreach (var row in _memorySearchResults)
+    <section class="panel section-panel">
+        <div class="panel-header">
+            <div>
+                <p class="eyebrow">Scope</p>
+                <h2 class="panel-title">Memory filters</h2>
+                <p class="panel-copy">Slice the memory store by global, project, or session scope before browsing or searching.</p>
+            </div>
+        </div>
+
+        <div class="form-grid">
+            <label class="field">
+                <span class="field-label">Scope</span>
+                <select class="select-input" @bind="_memoryScope">
+                    <option value="global">global</option>
+                    <option value="project">project</option>
+                    <option value="session">session</option>
+                </select>
+            </label>
+            <label class="field">
+                <span class="field-label">Type filter</span>
+                <select class="select-input" @bind="_memoryListType">
+                    <option value="">all</option>
+                    <option value="episodic">episodic</option>
+                    <option value="semantic">semantic</option>
+                    <option value="procedural">procedural</option>
+                </select>
+            </label>
+            <label class="field">
+                <span class="field-label">Project id</span>
+                <input class="text-input mono" @bind="_memoryScopeProjectId" placeholder="Scope project id" />
+            </label>
+            <label class="field">
+                <span class="field-label">Session id</span>
+                <input class="text-input mono" @bind="_memoryScopeSessionId" placeholder="Scope session id" />
+            </label>
+            <label class="field span-2">
+                <span class="field-label">Tag filter</span>
+                <input class="text-input" @bind="_memoryListTag" placeholder="Optional tag filter" />
+            </label>
+            <div class="field span-2">
+                <button class="button button-primary" @onclick="LoadMemoriesAsync">Refresh scoped memory view</button>
+            </div>
+        </div>
+    </section>
+
+    <section class="split-grid">
+        <article class="panel section-panel compact">
+            <div class="panel-header">
+                <div>
+                    <p class="eyebrow">Create</p>
+                    <h2 class="panel-title">Store new memory</h2>
+                    <p class="panel-copy">Create explicit episodic, semantic, or procedural entries with scope-aware metadata.</p>
+                </div>
+            </div>
+
+            <div class="form-grid">
+                <label class="field">
+                    <span class="field-label">Session id</span>
+                    <input class="text-input mono" @bind="_memorySessionId" placeholder="Optional session id" />
+                </label>
+                <label class="field">
+                    <span class="field-label">Project id</span>
+                    <input class="text-input mono" @bind="_memoryProjectId" placeholder="Optional project id" />
+                </label>
+                <label class="field">
+                    <span class="field-label">Type</span>
+                    <select class="select-input" @bind="_memoryType">
+                        <option value="episodic">episodic</option>
+                        <option value="semantic">semantic</option>
+                        <option value="procedural">procedural</option>
+                    </select>
+                </label>
+                <label class="field">
+                    <span class="field-label">Tags</span>
+                    <input class="text-input" @bind="_memoryTagsText" placeholder="Comma-separated tags" />
+                </label>
+                <label class="field span-2">
+                    <span class="field-label">Content</span>
+                    <textarea class="textarea-input" @bind="_memoryContent" placeholder="Memory content"></textarea>
+                </label>
+                <div class="field span-2">
+                    <button class="button button-secondary" @onclick="CreateMemoryAsync">Create memory</button>
+                </div>
+            </div>
+        </article>
+
+        <article class="panel section-panel compact">
+            <div class="panel-header">
+                <div>
+                    <p class="eyebrow">Recall</p>
+                    <h2 class="panel-title">Search memories</h2>
+                    <p class="panel-copy">Use semantic search within the currently selected scope and filters.</p>
+                </div>
+            </div>
+
+            <div class="form-grid">
+                <label class="field span-2">
+                    <span class="field-label">Search text</span>
+                    <input class="text-input" @bind="_memorySearchText" placeholder="What should Nebula remember or recall?" />
+                </label>
+                <label class="field">
+                    <span class="field-label">Limit</span>
+                    <input class="text-input" type="number" min="1" max="100" @bind="_memorySearchLimit" />
+                </label>
+                <label class="field">
+                    <span class="field-label">Search type</span>
+                    <select class="select-input" @bind="_memorySearchType">
+                        <option value="">all</option>
+                        <option value="episodic">episodic</option>
+                        <option value="semantic">semantic</option>
+                        <option value="procedural">procedural</option>
+                    </select>
+                </label>
+                <div class="field span-2">
+                    <button class="button button-primary" @onclick="SearchMemoriesAsync">Search scoped memories</button>
+                </div>
+            </div>
+
+            <div class="panel-header" style="margin-top:1.2rem; margin-bottom:0.8rem;">
+                <div>
+                    <h3 class="panel-title" style="font-size:1.08rem;">Scope summary</h3>
+                </div>
+            </div>
+
+            <div class="stack-list">
+                @foreach (var row in _memoryStats?.TypeCounts ?? Array.Empty<MemoryTypeCount>())
                 {
-                    <tr>
-                        <td class="border-b border-nebula-border px-3 py-2">@row.Id</td>
-                        <td class="border-b border-nebula-border px-3 py-2">@row.Score.ToString("F3", CultureInfo.InvariantCulture)</td>
-                        <td class="border-b border-nebula-border px-3 py-2">@row.Type</td>
-                        <td class="border-b border-nebula-border px-3 py-2">@TrimText(row.Content, 120)</td>
-                    </tr>
+                    <div class="progress-row">
+                        <div class="detail-row">
+                            <strong>@row.Type</strong>
+                            <span>@row.Count</span>
+                        </div>
+                        <div class="meter">
+                            <span class="meter-fill secondary" style="width:@GetMemoryTypePercentage(row.Count)%"></span>
+                        </div>
+                    </div>
                 }
-            </tbody>
-        </table>
-    </div>
-</section>
+            </div>
+        </article>
+    </section>
 
-<section class="rounded-xl border border-nebula-border bg-nebula-surface p-4">
-    <h3 class="mb-3 text-base font-semibold">Memory Records</h3>
-    <div class="overflow-x-auto">
-        <table class="w-full border-collapse text-sm">
-            <thead>
-                <tr class="text-left text-xs uppercase tracking-[0.12em] text-nebula-muted">
-                    <th class="border-b border-nebula-border px-3 py-2">Id</th>
-                    <th class="border-b border-nebula-border px-3 py-2">Session/Project</th>
-                    <th class="border-b border-nebula-border px-3 py-2">Type</th>
-                    <th class="border-b border-nebula-border px-3 py-2">Content</th>
-                    <th class="border-b border-nebula-border px-3 py-2">Actions</th>
-                </tr>
-            </thead>
-            <tbody>
-                @foreach (var memory in _memories)
-                {
+    <section class="split-grid">
+        <article class="panel section-panel compact">
+            <div class="panel-header">
+                <div>
+                    <p class="eyebrow">Signals</p>
+                    <h2 class="panel-title">Top tags</h2>
+                    <p class="panel-copy">Most frequent tag pressure inside the current memory slice.</p>
+                </div>
+            </div>
+
+            @if ((_memoryStats?.TopTags.Count ?? 0) == 0)
+            {
+                <div class="empty-state">No tags found for the current memory scope.</div>
+            }
+            else
+            {
+                <div class="tag-cloud">
+                    @foreach (var tag in _memoryStats?.TopTags ?? Array.Empty<MemoryTagCount>())
+                    {
+                        <span class="tag-pill">@tag.Tag (@tag.Count)</span>
+                    }
+                </div>
+            }
+        </article>
+
+        <article class="panel section-panel compact">
+            <div class="panel-header">
+                <div>
+                    <p class="eyebrow">Sessions</p>
+                    <h2 class="panel-title">Recent sessions</h2>
+                    <p class="panel-copy">Latest memory sessions in the active slice.</p>
+                </div>
+            </div>
+
+            @if ((_memoryStats?.RecentSessions.Count ?? 0) == 0)
+            {
+                <div class="empty-state">No recent sessions to display.</div>
+            }
+            else
+            {
+                <div class="session-list">
+                    @foreach (var session in _memoryStats?.RecentSessions ?? Array.Empty<MemorySessionSummary>())
+                    {
+                        <article class="session-item">
+                            <span class="list-title mono">@session.SessionId</span>
+                            <span class="list-meta">@session.MemoryCount memories · @session.LastMemoryAtUtc.ToLocalTime().ToString("MMM dd HH:mm", CultureInfo.InvariantCulture)</span>
+                        </article>
+                    }
+                </div>
+            }
+        </article>
+    </section>
+
+    <section class="panel section-panel">
+        <div class="panel-header">
+            <div>
+                <p class="eyebrow">Editor</p>
+                <h2 class="panel-title">Update or delete memory</h2>
+                <p class="panel-copy">Load an existing row from the ledger, then refine or remove it safely.</p>
+            </div>
+        </div>
+
+        <div class="form-grid">
+            <label class="field">
+                <span class="field-label">Memory id</span>
+                <input class="text-input" type="number" @bind="_editMemoryId" placeholder="Memory id" />
+            </label>
+            <label class="field">
+                <span class="field-label">Type</span>
+                <select class="select-input" @bind="_editMemoryType">
+                    <option value="episodic">episodic</option>
+                    <option value="semantic">semantic</option>
+                    <option value="procedural">procedural</option>
+                </select>
+            </label>
+            <label class="field span-2">
+                <span class="field-label">Tags</span>
+                <input class="text-input" @bind="_editMemoryTagsText" placeholder="Comma-separated tags" />
+            </label>
+            <label class="field span-2">
+                <span class="field-label">Content</span>
+                <textarea class="textarea-input" @bind="_editMemoryContent" placeholder="Updated memory content"></textarea>
+            </label>
+            <div class="field">
+                <button class="button button-secondary" @onclick="UpdateMemoryAsync">Update memory</button>
+            </div>
+            <div class="field">
+                <button class="button button-danger" @onclick="OpenDeleteEditorConfirm">Delete memory</button>
+            </div>
+        </div>
+    </section>
+
+    <section class="panel table-panel">
+        <div class="panel-header">
+            <div>
+                <p class="eyebrow">Recall matches</p>
+                <h2 class="panel-title">Memory search results</h2>
+                <p class="panel-copy">Semantic recall results scored within the current scope.</p>
+            </div>
+            <span class="badge">@_memorySearchResults.Count matches</span>
+        </div>
+
+        <div class="table-shell">
+            @if (_memorySearchResults.Count == 0)
+            {
+                <div class="empty-state">No search results yet. Run a memory search inside the current scope.</div>
+            }
+            else
+            {
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Id</th>
+                            <th>Scope</th>
+                            <th>Score</th>
+                            <th>Type</th>
+                            <th>Content</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var row in _memorySearchResults)
+                        {
+                            <tr>
+                                <td><div class="cell-title">@row.Id</div></td>
+                                <td>
+                                    <div class="cell-title mono">@row.SessionId</div>
+                                    <div class="cell-subtitle mono">@(row.ProjectId ?? "no project")</div>
+                                </td>
+                                <td><div class="cell-title">@row.Score.ToString("F3", CultureInfo.InvariantCulture)</div></td>
+                                <td><div class="cell-title">@row.Type</div></td>
+                                <td class="truncate-cell"><div class="cell-title">@TrimText(row.Content, 180)</div></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </div>
+    </section>
+
+    <section class="panel table-panel">
+        <div class="panel-header">
+            <div>
+                <p class="eyebrow">Ledger</p>
+                <h2 class="panel-title">Memory records</h2>
+                <p class="panel-copy">Browse, inspect, and load individual memories into the editor.</p>
+            </div>
+            <span class="badge">@_memories.Count rows</span>
+        </div>
+
+        <div class="table-shell">
+            <table class="data-table">
+                <thead>
                     <tr>
-                        <td class="border-b border-nebula-border px-3 py-2">@memory.Id</td>
-                        <td class="border-b border-nebula-border px-3 py-2">@memory.SessionId / @memory.ProjectId</td>
-                        <td class="border-b border-nebula-border px-3 py-2">@memory.Type</td>
-                        <td class="border-b border-nebula-border px-3 py-2">@TrimText(memory.Content, 140)</td>
-                        <td class="border-b border-nebula-border px-3 py-2">
-                            <button class="mr-2 rounded border border-nebula-accent px-2 py-1 text-xs" @onclick="() => LoadMemoryIntoEditor(memory)">Edit</button>
-                            <button class="rounded border border-red-500 px-2 py-1 text-xs" @onclick="() => OpenDeleteRowConfirm(memory.Id)">Delete</button>
-                        </td>
+                        <th>Id</th>
+                        <th>Session / Project</th>
+                        <th>Type</th>
+                        <th>Content</th>
+                        <th>Tags</th>
+                        <th>Actions</th>
                     </tr>
-                }
-            </tbody>
-        </table>
-    </div>
-</section>
+                </thead>
+                <tbody>
+                    @foreach (var memory in _memories)
+                    {
+                        <tr>
+                            <td><div class="cell-title">@memory.Id</div></td>
+                            <td>
+                                <div class="cell-title mono">@memory.SessionId</div>
+                                <div class="cell-subtitle mono">@(memory.ProjectId ?? "no project")</div>
+                            </td>
+                            <td><div class="cell-title">@memory.Type</div></td>
+                            <td class="truncate-cell"><div class="cell-title">@TrimText(memory.Content, 160)</div></td>
+                            <td><div class="cell-title">@string.Join(", ", memory.Tags)</div></td>
+                            <td>
+                                <div class="table-actions">
+                                    <button class="button button-muted" @onclick="() => LoadMemoryIntoEditor(memory)">Edit</button>
+                                    <button class="button button-danger" @onclick="() => OpenDeleteRowConfirm(memory.Id)">Delete</button>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </section>
+</div>
 
 <ConfirmationModal IsOpen="@_showDeleteMemoryConfirm" Title="Delete Memory" Message="Delete selected memory entry permanently?" OnConfirm="ConfirmDeleteMemoryAsync" OnCancel="CloseDeleteConfirm" />
 
@@ -139,12 +385,17 @@
     [Parameter]
     public long RefreshNonce { get; set; }
 
+    [Parameter]
+    public string? SelectedProjectId { get; set; }
+
     private readonly List<MemoryRecord> _memories = new();
     private readonly List<MemorySearchResult> _memorySearchResults = new();
     private long _lastRefreshNonce = -1;
+    private string? _lastSelectedProjectId;
     private bool _statusIsError;
     private bool _showDeleteMemoryConfirm;
     private long _pendingDeleteMemoryId;
+    private MemoryDashboardStats? _memoryStats;
     private string? _statusMessage;
     private string _memorySessionId = string.Empty;
     private string _memoryProjectId = string.Empty;
@@ -153,10 +404,12 @@
     private string _memoryContent = string.Empty;
     private string _memorySearchText = string.Empty;
     private int _memorySearchLimit = 20;
+    private string _memorySearchType = string.Empty;
     private string _memoryScope = "global";
     private string _memoryScopeSessionId = string.Empty;
     private string _memoryScopeProjectId = string.Empty;
     private string _memoryListTag = string.Empty;
+    private string _memoryListType = string.Empty;
     private long _editMemoryId;
     private string _editMemoryType = "semantic";
     private string _editMemoryTagsText = string.Empty;
@@ -164,12 +417,14 @@
 
     protected override async Task OnParametersSetAsync()
     {
-        if (_lastRefreshNonce == RefreshNonce)
+        if (_lastRefreshNonce == RefreshNonce && string.Equals(_lastSelectedProjectId, SelectedProjectId, StringComparison.OrdinalIgnoreCase))
         {
             return;
         }
 
         _lastRefreshNonce = RefreshNonce;
+        _lastSelectedProjectId = SelectedProjectId;
+        ApplyProjectSelectionDefaults();
         await LoadMemoriesAsync();
     }
 
@@ -184,6 +439,7 @@
         try
         {
             var tags = ParseTags(_memoryTagsText);
+            ApplyProjectSelectionDefaults();
             var embedding = EmbeddingGenerator.GenerateEmbedding(_memoryContent.Trim(), Settings.Ingestion.VectorDimensions);
             var id = await RagStore.CreateMemoryAsync(
                 sessionId: NormalizeOptional(_memorySessionId),
@@ -205,9 +461,9 @@
     {
         try
         {
-            var scopeSession = _memoryScope == "session" ? NormalizeOptional(_memoryScopeSessionId) : null;
-            var scopeProject = _memoryScope == "project" ? NormalizeOptional(_memoryScopeProjectId) : null;
-            var memories = await ManagementService.ListMemoriesAsync(limit: 300, tag: NormalizeOptional(_memoryListTag), sessionId: scopeSession, projectId: scopeProject);
+            var (scopeSession, scopeProject) = ResolveScope();
+            var memories = await ManagementService.ListMemoriesAsync(limit: 300, type: NormalizeOptional(_memoryListType), tag: NormalizeOptional(_memoryListTag), sessionId: scopeSession, projectId: scopeProject);
+            _memoryStats = await ManagementService.GetMemoryStatsAsync(sessionId: scopeSession, projectId: scopeProject);
             _memories.Clear();
             _memories.AddRange(memories);
             SetStatus($"Loaded {_memories.Count} memories.");
@@ -228,7 +484,15 @@
 
         try
         {
-            var results = await ManagementService.SearchMemoriesAsync(_memorySearchText.Trim(), Math.Clamp(_memorySearchLimit, 1, 100));
+            var (scopeSession, scopeProject) = ResolveScope();
+            var results = await ManagementService.SearchMemoriesAsync(
+                _memorySearchText.Trim(),
+                Math.Clamp(_memorySearchLimit, 1, 100),
+                type: NormalizeOptional(_memorySearchType),
+                tag: NormalizeOptional(_memoryListTag),
+                sessionId: scopeSession,
+                projectId: scopeProject);
+
             _memorySearchResults.Clear();
             _memorySearchResults.AddRange(results);
             SetStatus($"Memory search returned {_memorySearchResults.Count} rows.");
@@ -330,9 +594,71 @@
             .ToList();
     }
 
-    private static string? NormalizeOptional(string value)
+    private static string? NormalizeOptional(string? value)
     {
         return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+    }
+
+    private (string? sessionId, string? projectId) ResolveScope()
+    {
+        if (_memoryScope == "session")
+        {
+            return (NormalizeOptional(_memoryScopeSessionId), GetEffectiveProjectId());
+        }
+
+        if (!string.IsNullOrWhiteSpace(GetEffectiveProjectId()))
+        {
+            return (null, GetEffectiveProjectId());
+        }
+
+        return _memoryScope switch
+        {
+            "session" => (NormalizeOptional(_memoryScopeSessionId), null),
+            "project" => (null, NormalizeOptional(_memoryScopeProjectId)),
+            _ => (null, null)
+        };
+    }
+
+    private string GetMemoryScopeHeading()
+    {
+        return string.IsNullOrWhiteSpace(SelectedProjectId)
+            ? "Memory CRUD across all projects"
+            : $"Memory CRUD for {SelectedProjectId}";
+    }
+
+    private string GetMemoryScopeDescription()
+    {
+        return string.IsNullOrWhiteSpace(SelectedProjectId)
+            ? "Create, search, update, and delete memory records globally, then narrow further by session when needed."
+            : "The active project pins memory listing and search by default so CRUD stays inside one project context.";
+    }
+
+    private void ApplyProjectSelectionDefaults()
+    {
+        if (string.IsNullOrWhiteSpace(SelectedProjectId))
+        {
+            return;
+        }
+
+        _memoryScope = "project";
+        _memoryScopeProjectId = SelectedProjectId;
+        _memoryProjectId = SelectedProjectId;
+    }
+
+    private string? GetEffectiveProjectId()
+    {
+        return NormalizeOptional(_memoryScopeProjectId) ?? NormalizeOptional(SelectedProjectId);
+    }
+
+    private double GetMemoryTypePercentage(long count)
+    {
+        var total = _memoryStats?.TotalMemories ?? 0;
+        if (total <= 0)
+        {
+            return 0;
+        }
+
+        return Math.Clamp((count / (double)total) * 100d, 0d, 100d);
     }
 
     private static string TrimText(string value, int maxLength)

@@ -4,6 +4,18 @@ All notable changes to the Nebula RAG Home Assistant add-on are documented in th
 
 The format is inspired by Keep a Changelog and follows semantic versioning.
 
+## [0.3.67] - 2026-03-17
+
+- Shifted the live add-on dashboard to a project-first operator flow with an explicit project switcher in the shell.
+- Propagated the selected project through the RAG, memory, and plans tabs so CRUD actions operate in one project context by default.
+- Replaced the oversized hero with a compact context header that keeps navigation visible while exposing focused project metrics.
+
+## [0.3.66] - 2026-03-17
+
+- Rebuilt the live Nebula add-on dashboard as a local-styled Blazor flight deck with dedicated overview, RAG, memory, and plan management surfaces.
+- Removed the runtime Tailwind CDN dependency from the dashboard shell and moved the UI onto versioned local static assets.
+- Fixed local dashboard interactivity by routing render mode through a dedicated `Routes` component and enabling static web assets during development so the Blazor runtime loads correctly.
+
 ## [0.3.65] - 2026-03-17
 
 - Removed the remaining NebulaRAG-owned OpenPencil integration points, including the tracked `open-pencil` submodule, `.mcp.json` entry, and dedicated workflow documentation.

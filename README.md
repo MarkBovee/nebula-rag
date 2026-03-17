@@ -94,7 +94,7 @@ It combines:
 - A **.NET core retrieval engine** — chunking, embeddings, pgvector storage
 - A **local CLI** for indexing and querying
 - **MCP endpoints** for agents and editor tooling (VS Code, Claude Code, Cursor)
-- A **Home Assistant add-on** with a built-in Blazor web dashboard
+- A **Home Assistant add-on** with a built-in Blazor flight deck for overview, RAG, memory, and plan operations
 
 ---
 
@@ -176,6 +176,14 @@ docker compose up -d
 2. Install the **Nebula RAG** add-on
 3. Configure `database.*` options
 4. Start the add-on and open ingress
+
+The ingress dashboard exposes a project switcher and four operator tabs:
+
+- `Project switcher` to keep the dashboard centered on one project when doing CRUD or investigation work.
+- `Overview` for health, telemetry, activity, and project breakdown.
+- `Rag` for semantic query, indexing, and source maintenance.
+- `Memory` for scoped analytics, recall, and memory editing.
+- `Plans` for session-filtered plans, task updates, and status changes.
 
 | Endpoint | URL |
 |---|---|
