@@ -1,9 +1,5 @@
 ﻿{
     "mcpServers": {
-        "open-pencil": {
-            "type": "http",
-            "url": "http://localhost:3100/mcp"
-        },
         "nebula-rag": {
             "type": "http",
             "url": "http://homeassistant.local:8099/nebula/mcp"

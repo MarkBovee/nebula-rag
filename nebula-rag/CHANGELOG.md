@@ -4,6 +4,11 @@ All notable changes to the Nebula RAG Home Assistant add-on are documented in th
 
 The format is inspired by Keep a Changelog and follows semantic versioning.
 
+## [0.3.65] - 2026-03-17
+
+- Removed the remaining NebulaRAG-owned OpenPencil integration points, including the tracked `open-pencil` submodule, `.mcp.json` entry, and dedicated workflow documentation.
+- Cleaned the README and roadmap so NebulaRAG no longer presents OpenPencil-specific setup or structure as part of the project.
+
 ## [0.3.64] - 2026-03-17
 
 - Refreshed the safe stable dependency set across the .NET projects and vendored TailAdmin template before merge.

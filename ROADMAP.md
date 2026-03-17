@@ -60,5 +60,4 @@ This repository change starts Phase 1 by:
 
 1. No polyglot sandbox executor.
 2. No hook-routing parity with context-mode.
-3. No OpenPencil coupling.
-4. No full session-snapshot implementation yet.
+3. No full session-snapshot implementation yet.
