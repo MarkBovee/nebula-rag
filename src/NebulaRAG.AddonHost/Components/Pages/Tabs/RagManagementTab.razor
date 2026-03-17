@@ -14,7 +14,7 @@
 
     <section class="metric-grid">
         <article class="metric-card accent">
-            <span class="metric-label">@(HasSelectedProject() ? "Project sources" : "Indexed sources")</span>
+            <span class="metric-label">@(HasSelectedProject() ? "Project documents" : "Indexed documents")</span>
             <span class="metric-value">@_sources.Count</span>
             <p class="metric-footnote">@(HasSelectedProject() ? "The source ledger is filtered to the active project." : "Total sources currently surfaced by the dashboard snapshot.")</p>
         </article>
@@ -29,7 +29,7 @@
             <p class="metric-footnote">Last semantic query result count.</p>
         </article>
         <article class="metric-card warning">
-            <span class="metric-label">Latest source</span>
+            <span class="metric-label">Latest index</span>
             <span class="metric-value">@GetLatestIndexTime()</span>
             <p class="metric-footnote">Most recent indexed timestamp across visible sources.</p>
         </article>
@@ -47,7 +47,7 @@
             <div class="panel-header">
                 <div>
                     <p class="eyebrow">Retrieval</p>
-                    <h2 class="panel-title">Semantic search</h2>
+                    <h2 class="panel-title">Query index</h2>
                     <p class="panel-copy">Probe the index quickly from the dashboard before reaching for MCP clients.</p>
                 </div>
             </div>
@@ -73,7 +73,7 @@
                 <div>
                     <p class="eyebrow">Ingestion</p>
                     <h2 class="panel-title">Index source path</h2>
-                    <p class="panel-copy">Start a filesystem indexing pass directly from the add-on host.</p>
+                    <p class="panel-copy">Run a filesystem indexing pass directly from the add-on host.</p>
                 </div>
             </div>
 
@@ -92,7 +92,7 @@
             <div class="panel-header">
                 <div>
                     <p class="eyebrow">Maintenance</p>
-                    <h2 class="panel-title">Destructive actions</h2>
+                    <h2 class="panel-title">Index maintenance</h2>
                     <p class="panel-copy">Use guarded deletion and purge actions when the index needs correction.</p>
                 </div>
             </div>
@@ -116,7 +116,7 @@
         <div class="panel-header">
             <div>
                 <p class="eyebrow">Matches</p>
-                <h2 class="panel-title">Query results</h2>
+                <h2 class="panel-title">Result ledger</h2>
                 <p class="panel-copy">Semantic matches ordered by score.</p>
             </div>
             <span class="badge">@_queryResults.Count results</span>
@@ -162,7 +162,7 @@
         <div class="panel-header">
             <div>
                 <p class="eyebrow">Sources</p>
-                <h2 class="panel-title">Indexed source ledger</h2>
+                <h2 class="panel-title">Document ledger</h2>
                 <p class="panel-copy">Review source ownership, chunk volume, and hashes before reindexing or deletion.</p>
             </div>
             <span class="badge">@_sources.Count tracked</span>

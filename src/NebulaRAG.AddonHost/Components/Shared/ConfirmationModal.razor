@@ -1,16 +1,16 @@
 @if (IsOpen)
 {
     <div class="modal-backdrop">
-        <div class="panel modal-card">
-            <p class="eyebrow">Confirm</p>
-            <h3 class="panel-title">@Title</h3>
+        <div class="panel modal-card" role="dialog" aria-modal="true" aria-labelledby="confirmation-title">
+            <p class="eyebrow">Warning</p>
+            <h3 class="panel-title" id="confirmation-title">@Title</h3>
             <p class="panel-copy">@Message</p>
             <div class="modal-actions">
                 <button class="button button-muted" @onclick="OnCancel">
                     Cancel
                 </button>
                 <button class="button button-danger" @onclick="OnConfirm">
-                    Confirm
+                    Confirm delete
                 </button>
             </div>
         </div>

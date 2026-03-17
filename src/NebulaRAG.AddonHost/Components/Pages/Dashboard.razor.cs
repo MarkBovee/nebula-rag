@@ -164,11 +164,11 @@ public partial class Dashboard : IAsyncDisposable
     {
         return tab switch
         {
-            DashboardTab.Overview => "Pulse, projects, activity",
-            DashboardTab.Rag => "Query, index, source control",
-            DashboardTab.Memory => "Scope, analytics, recall",
+            DashboardTab.Overview => "Telemetry, projects, events",
+            DashboardTab.Rag => "Documents, search, maintenance",
+            DashboardTab.Memory => "Scope, recall, ledger",
             DashboardTab.Plans => "Sessions, status, tasks",
-            _ => "Operations"
+            _ => "Admin"
         };
     }
 
@@ -182,10 +182,10 @@ public partial class Dashboard : IAsyncDisposable
         return tab switch
         {
             DashboardTab.Overview => "Overview",
-            DashboardTab.Rag => "RAG",
-            DashboardTab.Memory => "Memory",
+            DashboardTab.Rag => "Documents",
+            DashboardTab.Memory => "Memories",
             DashboardTab.Plans => "Plans",
-            _ => "Nebula operations"
+            _ => "Nebula Admin"
         };
     }
 
@@ -198,11 +198,11 @@ public partial class Dashboard : IAsyncDisposable
     {
         return tab switch
         {
-            DashboardTab.Overview => "Watch health, throughput, memory growth, and project balance in one pass. This is the system-wide control room for NebulaRAG.",
-            DashboardTab.Rag => "Run semantic search, trigger indexing, inspect indexed sources, and guard destructive maintenance actions with explicit confirmation.",
-            DashboardTab.Memory => "Browse scoped memory slices, review recent sessions, create durable records, and refine or remove entries when project memory drifts.",
-            DashboardTab.Plans => "List plans by session, create new execution tracks, adjust plan status, and close tasks without bouncing between tools.",
-            _ => "Operational dashboard"
+            DashboardTab.Overview => "Review runtime status, project distribution, recent activity, and storage pressure from one operator surface.",
+            DashboardTab.Rag => "Query indexed content, inspect document ownership, and handle guarded maintenance actions for the retrieval store.",
+            DashboardTab.Memory => "Browse scoped memory ledgers, run recall, and correct records when stored context needs maintenance.",
+            DashboardTab.Plans => "Inspect session plans, update execution state, and close tasks from a single administrative ledger.",
+            _ => "Administrative dashboard"
         };
     }
 
@@ -243,7 +243,7 @@ public partial class Dashboard : IAsyncDisposable
     /// <returns>Eyebrow text.</returns>
     private string GetProjectEyebrow()
     {
-        return string.IsNullOrWhiteSpace(_selectedProjectId) ? "Cross-project operations" : "Project operations";
+        return string.IsNullOrWhiteSpace(_selectedProjectId) ? "Global scope" : "Project scope";
     }
 
     /// <summary>
@@ -252,7 +252,7 @@ public partial class Dashboard : IAsyncDisposable
     /// <returns>Heading text.</returns>
     private string GetContextHeading()
     {
-        return GetSelectedProject()?.ProjectId ?? "All Nebula data";
+        return GetSelectedProject()?.ProjectId ?? "All projects";
     }
 
     /// <summary>
@@ -263,15 +263,15 @@ public partial class Dashboard : IAsyncDisposable
     {
         return _activeTab switch
         {
-            DashboardTab.Overview when GetSelectedProject() is null => "A compact control view across all indexed projects, memory, plans, and recent operator activity.",
-            DashboardTab.Overview => "Project-centered telemetry, footprint, and execution posture without an oversized landing page.",
-            DashboardTab.Rag when GetSelectedProject() is null => "Query, ingest, inspect, and delete indexed sources across the full Nebula corpus.",
-            DashboardTab.Rag => "RAG CRUD and source maintenance narrowed to the selected project ledger.",
-            DashboardTab.Memory when GetSelectedProject() is null => "Create, search, update, and delete memory records across the shared store.",
-            DashboardTab.Memory => "Memory CRUD pinned to the selected project while still allowing session drill-down.",
-            DashboardTab.Plans when GetSelectedProject() is null => "Plan creation, task completion, and status changes across all current sessions.",
-            DashboardTab.Plans => "Project-first plan CRUD filtered from the session stream for the active project.",
-            _ => "Nebula operations"
+            DashboardTab.Overview when GetSelectedProject() is null => "System-wide telemetry, activity, and project ledgers for the current Nebula runtime.",
+            DashboardTab.Overview => "Project-scoped telemetry, footprint, and execution posture for the selected ledger.",
+            DashboardTab.Rag when GetSelectedProject() is null => "Document search, indexing, and deletion controls across the full retrieval corpus.",
+            DashboardTab.Rag => "Document operations narrowed to the selected project ledger.",
+            DashboardTab.Memory when GetSelectedProject() is null => "Scoped recall, analytics, and record maintenance across the shared memory store.",
+            DashboardTab.Memory => "Memory operations pinned to the selected project while keeping session drill-down available.",
+            DashboardTab.Plans when GetSelectedProject() is null => "Session-filtered plan review, task completion, and status control across all projects.",
+            DashboardTab.Plans => "Plan and task administration filtered to the selected project.",
+            _ => "Nebula Admin"
         };
     }
 
@@ -359,7 +359,7 @@ public partial class Dashboard : IAsyncDisposable
             return _refreshing ? "Refreshing" : "Unavailable";
         }
 
-        return _shellSnapshot.Health.IsHealthy ? "Healthy" : "Degraded";
+        return _shellSnapshot.Health.IsHealthy ? "Online" : "Degraded";
     }
 
     /// <summary>

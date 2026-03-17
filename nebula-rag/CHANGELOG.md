@@ -4,6 +4,15 @@ All notable changes to the Nebula RAG Home Assistant add-on are documented in th
 
 The format is inspired by Keep a Changelog and follows semantic versioning.
 
+## [0.3.84] - 2026-03-17
+
+- Fixed PostgreSQL schema initialization for existing `memories` tables by adding the missing generated `content_tsv` column before creating its GIN index, preventing add-on startup failures on upgraded databases.
+
+## [0.3.83] - 2026-03-17
+
+- Reworked the Home Assistant dashboard into a denser industrial admin surface with a project-ledger sidebar, operator status rail, and table-first visual system.
+- Updated the add-on shell copy and titles to present the browser UI as an admin dashboard instead of a flight deck.
+
 ## [0.3.82] - 2026-03-17
 
 - Fixed plan completion race handling by validating open tasks inside the same database transaction that updates plan status, avoiding false `tasks are still pending or in progress` failures after task updates.

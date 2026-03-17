@@ -2,65 +2,77 @@
 @page "/dashboard"
 @page "/dashboard/{*ingressPath:nonfile}"
 
-<PageTitle>Nebula Flight Deck</PageTitle>
+<PageTitle>Nebula Admin</PageTitle>
+
+<a class="skip-link" href="#dashboard-main">Skip to main content</a>
 
 <div class="dashboard-shell">
-    <div class="dashboard-ambience"></div>
+    <div class="dashboard-ambience" aria-hidden="true"></div>
 
     <div class="dashboard-grid">
-        <aside class="panel dashboard-sidebar">
-            <div class="brand-lockup">
-                <p class="eyebrow">NebulaRAG</p>
-                <h1>Flight Deck</h1>
-                <p>One operator surface for retrieval, memory, plans, telemetry, and index maintenance.</p>
+        <aside class="panel dashboard-sidebar" aria-label="Nebula admin navigation">
+            <div class="sidebar-top">
+                <div class="brand-lockup">
+                    <p class="eyebrow">NebulaRAG</p>
+                    <h2>Admin</h2>
+                    <p>Database-first controls for projects, documents, memories, plans, and runtime telemetry.</p>
+                </div>
+
+                <button class="button button-primary button-block" disabled="@_refreshing" @onclick="RefreshAsync">
+                    @(_refreshing ? "Refreshing..." : "Refresh dashboard")
+                </button>
             </div>
 
-            <div class="accent-rule"></div>
+            <section class="sidebar-block">
+                <div class="project-switcher-header">
+                    <div>
+                        <p class="eyebrow">Runtime</p>
+                        <h2 class="panel-title">Status</h2>
+                    </div>
+                    <span class="status-chip @(GetHealthChipClass())">@GetHealthLabel()</span>
+                </div>
 
-            <button class="button button-primary button-block" disabled="@_refreshing" @onclick="RefreshAsync">
-                @(_refreshing ? "Refreshing..." : "Refresh all surfaces")
-            </button>
-
-            <div class="detail-stack">
-                <div class="detail-row">
-                    <strong>Index health</strong>
-                    <span>@GetHealthLabel()</span>
+                <div class="detail-stack status-list">
+                    <div class="detail-row">
+                        <strong>Projects</strong>
+                        <span>@(_shellSnapshot?.Stats.ProjectCount ?? 0)</span>
+                    </div>
+                    <div class="detail-row">
+                        <strong>Documents</strong>
+                        <span>@(_shellSnapshot?.Stats.DocumentCount ?? 0)</span>
+                    </div>
+                    <div class="detail-row">
+                        <strong>Memories</strong>
+                        <span>@(_shellSnapshot?.MemoryStats.TotalMemories ?? 0)</span>
+                    </div>
+                    <div class="detail-row">
+                        <strong>Generated</strong>
+                        <span>@FormatGeneratedAt()</span>
+                    </div>
                 </div>
-                <div class="detail-row">
-                    <strong>Projects tracked</strong>
-                    <span>@(_shellSnapshot?.Stats.ProjectCount ?? 0)</span>
-                </div>
-                <div class="detail-row">
-                    <strong>Sources indexed</strong>
-                    <span>@(_shellSnapshot?.Stats.DocumentCount ?? 0)</span>
-                </div>
-                <div class="detail-row">
-                    <strong>Generated</strong>
-                    <span>@FormatGeneratedAt()</span>
-                </div>
-            </div>
+            </section>
 
             <section class="project-switcher">
                 <div class="project-switcher-header">
                     <div>
-                        <p class="eyebrow">Project Context</p>
-                        <h2 class="panel-title">Focus</h2>
+                        <p class="eyebrow">Scope</p>
+                        <h2 class="panel-title">Projects</h2>
                     </div>
-                    <span class="badge">@(_projects.Count + 1) views</span>
+                    <span class="badge">@(_projects.Count + 1) contexts</span>
                 </div>
 
                 <div class="project-pill-list" aria-label="Project switcher">
-                    <button class="project-pill @GetProjectChipClass(null)" @onclick="() => SetSelectedProject(null)">
+                    <button class="project-pill @GetProjectChipClass(null)" aria-pressed="@string.IsNullOrWhiteSpace(_selectedProjectId)" @onclick="() => SetSelectedProject(null)">
                         <span class="project-pill-copy">
                             <span class="nav-title">All projects</span>
-                            <span class="nav-meta">Cross-project operations</span>
+                            <span class="nav-meta">Cross-project ledgers and bulk visibility</span>
                         </span>
                         <span class="nav-pill">@(_shellSnapshot?.Stats.ProjectCount ?? 0)</span>
                     </button>
 
                     @foreach (var project in _projects)
                     {
-                        <button class="project-pill @GetProjectChipClass(project.ProjectId)" @onclick="() => SetSelectedProject(project.ProjectId)">
+                        <button class="project-pill @GetProjectChipClass(project.ProjectId)" aria-pressed="@string.Equals(_selectedProjectId, project.ProjectId, StringComparison.OrdinalIgnoreCase)" @onclick="() => SetSelectedProject(project.ProjectId)">
                             <span class="project-pill-copy">
                                 <span class="nav-title mono">@project.ProjectId</span>
                                 <span class="nav-meta">@project.Rag.DocumentCount docs, @project.Memory.MemoryCount memories</span>
@@ -74,9 +86,10 @@
             <nav class="nav-stack" aria-label="Dashboard sections">
                 @foreach (var tab in _tabs)
                 {
-                    <button class="nav-button @GetTabClass(tab)" @onclick="() => SetActiveTab(tab)">
+                    <button class="nav-button @GetTabClass(tab)" aria-pressed="@(_activeTab == tab)" @onclick="() => SetActiveTab(tab)">
+                        <span class="nav-index">@string.Format("{0:00}", (int)tab + 1)</span>
                         <span class="nav-copy">
-                            <span class="nav-title">@tab</span>
+                            <span class="nav-title">@GetTabHeading(tab)</span>
                             <span class="nav-meta">@GetTabSubtitle(tab)</span>
                         </span>
                         <span class="nav-pill">@GetTabMetric(tab)</span>
@@ -85,53 +98,57 @@
             </nav>
 
             <div class="sidebar-footer">
-                <span class="status-chip @(GetHealthChipClass())">@GetHealthLabel()</span>
-                <span class="badge">@((_shellSnapshot?.Activity.Count ?? 0).ToString()) activity events</span>
-                <span class="badge">@((_shellSnapshot?.MemoryStats.TotalMemories ?? 0).ToString()) memories</span>
+                <span class="badge">@((_shellSnapshot?.Activity.Count ?? 0).ToString()) events</span>
+                <span class="badge">@FormatBytes(_shellSnapshot?.Stats.IndexSizeBytes ?? 0) index</span>
+                <span class="badge">@GetFocusedChunkCount() chunks</span>
             </div>
         </aside>
 
-        <main class="dashboard-main">
+        <main id="dashboard-main" class="dashboard-main">
             <section class="panel context-panel">
-                <div class="context-layout">
+                <div class="context-header">
                     <div class="context-copy">
                         <p class="eyebrow">@GetProjectEyebrow()</p>
-                        <h2>@GetContextHeading()</h2>
+                        <h1 class="context-heading">@GetContextHeading()</h1>
                         <p>@GetContextDescription()</p>
                     </div>
 
-                    <div class="context-kpis">
-                        <div class="context-kpi">
-                            <span class="mini-stat-label">Sources</span>
-                            <span class="mini-stat-value">@GetFocusedSourceCount()</span>
-                        </div>
-                        <div class="context-kpi">
-                            <span class="mini-stat-label">Memories</span>
-                            <span class="mini-stat-value">@GetFocusedMemoryCount()</span>
-                        </div>
-                        <div class="context-kpi">
-                            <span class="mini-stat-label">Plans</span>
-                            <span class="mini-stat-value">@GetFocusedPlanCount()</span>
-                        </div>
-                        <div class="context-kpi">
-                            <span class="mini-stat-label">Tasks</span>
-                            <span class="mini-stat-value">@GetFocusedTaskCount()</span>
-                        </div>
+                    <div class="context-actions">
+                        <span class="status-chip @(GetHealthChipClass())">@GetHealthLabel()</span>
+                        <span class="badge">@GetTabHeading(_activeTab)</span>
+                    </div>
+                </div>
+
+                <div class="context-kpis">
+                    <div class="context-kpi">
+                        <span class="mini-stat-label">Documents</span>
+                        <span class="mini-stat-value">@GetFocusedSourceCount()</span>
+                    </div>
+                    <div class="context-kpi">
+                        <span class="mini-stat-label">Memories</span>
+                        <span class="mini-stat-value">@GetFocusedMemoryCount()</span>
+                    </div>
+                    <div class="context-kpi">
+                        <span class="mini-stat-label">Plans</span>
+                        <span class="mini-stat-value">@GetFocusedPlanCount()</span>
+                    </div>
+                    <div class="context-kpi">
+                        <span class="mini-stat-label">Tasks</span>
+                        <span class="mini-stat-value">@GetFocusedTaskCount()</span>
                     </div>
                 </div>
 
                 <div class="chip-row">
-                    <span class="status-chip @(GetHealthChipClass())">@GetHealthLabel()</span>
-                    <span class="badge">@GetTabHeading(_activeTab)</span>
+                    <span class="badge">@GetTabSubtitle(_activeTab)</span>
                     <span class="badge">@GetFocusedChunkCount() chunks</span>
-                    <span class="badge">@FormatBytes(_shellSnapshot?.Stats.IndexSizeBytes ?? 0) index size</span>
-                    <span class="badge">@FormatGeneratedAt()</span>
+                    <span class="badge">@FormatBytes(_shellSnapshot?.Stats.IndexSizeBytes ?? 0) storage</span>
+                    <span class="badge">Snapshot @FormatGeneratedAt()</span>
                 </div>
             </section>
 
             @if (!string.IsNullOrWhiteSpace(_shellError))
             {
-                <section class="status-banner error">
+                <section class="status-banner error" role="alert">
                     @_shellError
                 </section>
             }

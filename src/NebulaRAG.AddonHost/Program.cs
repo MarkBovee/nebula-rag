@@ -151,7 +151,7 @@ app.MapControllers();
 app.MapRazorComponents<NebulaRAG.AddonHost.Components.App>().AddInteractiveServerRenderMode();
 
 Log.Information(
-    "NebulaRAG flight deck online. Dashboard: {DashboardPath} | MCP: {McpPath}",
+    "NebulaRAG admin dashboard online. Dashboard: {DashboardPath} | MCP: {McpPath}",
     PrefixPath(pathBase, "/dashboard/"),
     PrefixPath(pathBase, "/mcp"));
 

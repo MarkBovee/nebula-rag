@@ -94,7 +94,7 @@ It combines:
 - A **.NET core retrieval engine** — chunking, embeddings, pgvector storage
 - A **local CLI** for indexing and querying
 - **MCP endpoints** for agents and editor tooling (VS Code, Claude Code, Cursor)
-- A **Home Assistant add-on** with a built-in Blazor flight deck for overview, RAG, memory, and plan operations
+- A **Home Assistant add-on** with a built-in Blazor admin dashboard for overview, RAG, memory, and plan operations
 
 ---
 
@@ -179,7 +179,7 @@ docker compose up -d
 
 The ingress dashboard exposes a project switcher and four operator tabs:
 
-- `Project switcher` to keep the dashboard centered on one project when doing CRUD or investigation work.
+- `Project switcher` to keep the admin surface centered on one project when doing CRUD or investigation work.
 - `Overview` for health, telemetry, activity, and project breakdown.
 - `Rag` for semantic query, indexing, and source maintenance.
 - `Memory` for scoped analytics, recall, and memory editing.
