@@ -4,6 +4,11 @@ All notable changes to the Nebula RAG Home Assistant add-on are documented in th
 
 The format is inspired by Keep a Changelog and follows semantic versioning.
 
+## [0.3.68] - 2026-03-17
+
+- Restored ingress-safe dashboard startup by resolving the app base href from the active Blazor navigation base URI instead of a hard-coded relative parent path.
+- Re-added root and `/dashboard` page routes so Home Assistant ingress slug URLs load the dashboard shell directly instead of falling through to a blank startup state.
+
 ## [0.3.67] - 2026-03-17
 
 - Shifted the live add-on dashboard to a project-first operator flow with an explicit project switcher in the shell.
