@@ -1,0 +1,15 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Nebula RAG: Dashboard",
+      "type": "dotnet",
+      "request": "launch",
+      "projectPath": "${workspaceFolder}/src/NebulaRAG.AddonHost/NebulaRAG.AddonHost.csproj",
+      "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}/.env",
+      "launchBrowser": false,
+      "console": "integratedTerminal"
+    }
+  ]
+}

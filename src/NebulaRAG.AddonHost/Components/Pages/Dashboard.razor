@@ -138,22 +138,22 @@
 
             @if (_activeTab == DashboardTab.Overview)
             {
-                <OverviewManagementTab RefreshNonce="@_refreshNonce" SelectedProjectId="@_selectedProjectId" />
+                <OverviewManagementTab RefreshNonce="@_refreshNonce" SelectedProjectId="@_selectedProjectId" OnDataChanged="RefreshAsync" />
             }
 
             @if (_activeTab == DashboardTab.Rag)
             {
-                <RagManagementTab RefreshNonce="@_refreshNonce" SelectedProjectId="@_selectedProjectId" />
+                <RagManagementTab RefreshNonce="@_refreshNonce" SelectedProjectId="@_selectedProjectId" OnDataChanged="RefreshAsync" />
             }
 
             @if (_activeTab == DashboardTab.Memory)
             {
-                <MemoryManagementTab RefreshNonce="@_refreshNonce" SelectedProjectId="@_selectedProjectId" />
+                <MemoryManagementTab RefreshNonce="@_refreshNonce" SelectedProjectId="@_selectedProjectId" OnDataChanged="RefreshAsync" />
             }
 
             @if (_activeTab == DashboardTab.Plans)
             {
-                <PlansManagementTab RefreshNonce="@_refreshNonce" SelectedProjectId="@_selectedProjectId" />
+                <PlansManagementTab RefreshNonce="@_refreshNonce" SelectedProjectId="@_selectedProjectId" OnDataChanged="RefreshAsync" />
             }
         </main>
     </div>

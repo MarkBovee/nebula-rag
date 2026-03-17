@@ -382,6 +382,136 @@ public sealed class PostgresPlanStore
     }
 
     /// <summary>
+    /// Lists plans across the workspace or for one project when a project id is provided.
+    /// </summary>
+    /// <param name="projectId">Optional project identifier used to scope the result set.</param>
+    /// <param name="limit">Maximum number of plans to return.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Plan records ordered by latest update.</returns>
+    public async Task<IReadOnlyList<PlanRecord>> ListPlansAsync(string? projectId = null, int limit = 300, CancellationToken cancellationToken = default)
+    {
+        if (limit <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(limit), "Limit must be greater than 0.");
+        }
+
+        const string sql = @"
+            SELECT id, project_id, session_id, name, description, status, created_at, updated_at, metadata
+            FROM plans
+            WHERE (@projectId::text IS NULL OR project_id = @projectId::text)
+            ORDER BY updated_at DESC, created_at DESC
+            LIMIT @limit";
+
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await using var command = new NpgsqlCommand(sql, connection);
+
+        command.Parameters.AddWithValue("limit", limit);
+        command.Parameters.AddWithValue("projectId", string.IsNullOrWhiteSpace(projectId) ? DBNull.Value : projectId.Trim());
+
+        await connection.OpenAsync(cancellationToken);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+
+        var plans = new List<PlanRecord>();
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            plans.Add(ReadPlanFromReader(reader));
+        }
+
+        return plans;
+    }
+
+    /// <summary>
+    /// Lists all plans for a given project identifier.
+    /// </summary>
+    /// <param name="projectId">The project identifier.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A read-only list of plan records ordered by latest update.</returns>
+    public Task<IReadOnlyList<PlanRecord>> ListPlansByProjectAsync(string projectId, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(projectId))
+        {
+            throw new ArgumentException("Project id cannot be null or empty.", nameof(projectId));
+        }
+
+        return ListPlansAsync(projectId.Trim(), 300, cancellationToken);
+    }
+
+    /// <summary>
+    /// Deletes a plan and cascades tasks and history rows.
+    /// </summary>
+    /// <param name="planId">The plan identifier.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>True when the plan existed and was deleted.</returns>
+    public async Task<bool> DeletePlanAsync(long planId, CancellationToken cancellationToken = default)
+    {
+        const string sql = "DELETE FROM plans WHERE id = @planId";
+
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await using var command = new NpgsqlCommand(sql, connection);
+
+        command.Parameters.AddWithValue("planId", planId);
+
+        await connection.OpenAsync(cancellationToken);
+        var rowsAffected = await command.ExecuteNonQueryAsync(cancellationToken);
+        return rowsAffected > 0;
+    }
+
+    /// <summary>
+    /// Deletes all plans for a project and cascades their tasks and history rows.
+    /// </summary>
+    /// <param name="projectId">Project identifier.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Number of deleted plans.</returns>
+    public async Task<int> DeletePlansByProjectAsync(string projectId, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(projectId))
+        {
+            throw new ArgumentException("Project id cannot be null or empty.", nameof(projectId));
+        }
+
+        const string sql = "DELETE FROM plans WHERE project_id = @projectId";
+
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await using var command = new NpgsqlCommand(sql, connection);
+
+        command.Parameters.AddWithValue("projectId", projectId.Trim());
+
+        await connection.OpenAsync(cancellationToken);
+        return await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Renames the project identifier on all plans belonging to a project.
+    /// </summary>
+    /// <param name="projectId">Existing project identifier.</param>
+    /// <param name="targetProjectId">Replacement project identifier.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Number of updated plans.</returns>
+    public async Task<int> RenameProjectAsync(string projectId, string targetProjectId, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(projectId))
+        {
+            throw new ArgumentException("Project id cannot be null or empty.", nameof(projectId));
+        }
+
+        if (string.IsNullOrWhiteSpace(targetProjectId))
+        {
+            throw new ArgumentException("Target project id cannot be null or empty.", nameof(targetProjectId));
+        }
+
+        const string sql = "UPDATE plans SET project_id = @targetProjectId WHERE project_id = @projectId";
+
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await using var command = new NpgsqlCommand(sql, connection);
+
+        command.Parameters.AddWithValue("projectId", projectId.Trim());
+        command.Parameters.AddWithValue("targetProjectId", targetProjectId.Trim());
+
+        await connection.OpenAsync(cancellationToken);
+        return await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    /// <summary>
     /// Retrieves all tasks for a given plan identifier.
     /// </summary>
     /// <param name="planId">The plan identifier.</param>

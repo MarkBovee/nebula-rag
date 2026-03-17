@@ -4,6 +4,13 @@ All notable changes to the Nebula RAG Home Assistant add-on are documented in th
 
 The format is inspired by Keep a Changelog and follows semantic versioning.
 
+## [0.3.71] - 2026-03-17
+
+- Refocused the dashboard around project-owned operations by adding project rename/delete flows with plan, memory, and indexed-document cascades.
+- Rebuilt the plans tab around project-scoped list, view, edit, delete, task inspection, and purge flows instead of session-first browsing.
+- Rebuilt the memory tab around project-scoped ledger, search, edit, delete, and purge flows while keeping session ids as optional lineage only.
+- Rebuilt the RAG tab around indexed-document list, search, view, edit, delete, and project purge flows, rather than only source-level maintenance.
+
 ## [0.3.70] - 2026-03-17
 
 - Fixed Home Assistant ingress asset bootstrapping by deriving the dashboard shell base href from the effective request path base instead of emitting a literal `~/` segment.

@@ -156,7 +156,7 @@ internal static class ProgramMain
                 case "stats":
                     {
                         var mgmtLogger = loggerFactory.CreateLogger<RagManagementService>();
-                           var mgmtService = new RagManagementService(store, embeddingGenerator, settings, mgmtLogger);
+                           var mgmtService = new RagManagementService(store, chunker, embeddingGenerator, settings, mgmtLogger);
                         var stats = await mgmtService.GetStatsAsync();
                         var projectStats = await mgmtService.GetProjectRagStatsAsync();
                         Console.WriteLine($"✓ Index Statistics:");
@@ -185,7 +185,7 @@ internal static class ProgramMain
                 case "list-sources":
                     {
                         var mgmtLogger = loggerFactory.CreateLogger<RagManagementService>();
-                           var mgmtService = new RagManagementService(store, embeddingGenerator, settings, mgmtLogger);
+                           var mgmtService = new RagManagementService(store, chunker, embeddingGenerator, settings, mgmtLogger);
                         var sources = await mgmtService.ListSourcesAsync();
                         if (sources.Count == 0)
                         {
@@ -208,7 +208,7 @@ internal static class ProgramMain
                             return 1;
                         }
                         var mgmtLogger = loggerFactory.CreateLogger<RagManagementService>();
-                           var mgmtService = new RagManagementService(store, embeddingGenerator, settings, mgmtLogger);
+                           var mgmtService = new RagManagementService(store, chunker, embeddingGenerator, settings, mgmtLogger);
                         var result = await mgmtService.DeleteSourceAsync(deleteSource);
                         if (result > 0)
                         {
@@ -229,7 +229,7 @@ internal static class ProgramMain
                         if (confirmation == "yes")
                         {
                             var mgmtLogger = loggerFactory.CreateLogger<RagManagementService>();
-                               var mgmtService = new RagManagementService(store, embeddingGenerator, settings, mgmtLogger);
+                               var mgmtService = new RagManagementService(store, chunker, embeddingGenerator, settings, mgmtLogger);
                             await mgmtService.PurgeAllAsync();
                             await TrySyncRagSourcesManifestAsync(sourcesManifestService, null, logger);
                             Console.WriteLine("✓ Database purged successfully.");
@@ -244,7 +244,7 @@ internal static class ProgramMain
                 case "health-check":
                     {
                         var mgmtLogger = loggerFactory.CreateLogger<RagManagementService>();
-                           var mgmtService = new RagManagementService(store, embeddingGenerator, settings, mgmtLogger);
+                           var mgmtService = new RagManagementService(store, chunker, embeddingGenerator, settings, mgmtLogger);
                         var health = await mgmtService.HealthCheckAsync();
                         if (health.IsHealthy)
                         {

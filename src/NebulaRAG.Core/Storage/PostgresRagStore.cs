@@ -509,6 +509,129 @@ public sealed class PostgresRagStore
     }
 
     /// <summary>
+    /// Lists indexed documents with optional project and text filters for dashboard document management.
+    /// </summary>
+    /// <param name="projectId">Optional project identifier used to scope document rows.</param>
+    /// <param name="searchText">Optional text filter matched against source paths and chunk text.</param>
+    /// <param name="limit">Maximum number of documents to return.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Indexed document summary rows ordered by latest index time.</returns>
+    public async Task<IReadOnlyList<IndexedDocumentRecord>> ListIndexedDocumentsAsync(string? projectId, string? searchText, int limit = 300, CancellationToken cancellationToken = default)
+    {
+        if (limit <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(limit), "Limit must be greater than 0.");
+        }
+
+        const string sql = """
+            SELECT
+                d.source_path,
+                COUNT(c.id)::int AS chunk_count,
+                COALESCE(SUM(c.token_count), 0)::int AS token_count,
+                d.indexed_at,
+                d.content_hash,
+                LEFT(COALESCE(string_agg(c.chunk_text, E'\n' ORDER BY c.chunk_index), ''), 320) AS preview_text
+            FROM rag_documents d
+            LEFT JOIN rag_chunks c ON d.id = c.document_id
+            WHERE (@projectId::text IS NULL OR COALESCE(NULLIF(
+                    CASE
+                        WHEN d.source_path ~* '^https?://' THEN split_part(split_part(d.source_path, '://', 2), '/', 1)
+                        ELSE split_part(replace(d.source_path, '\\', '/'), '/', 1)
+                    END,
+                    ''
+                ), 'unscoped') = @projectId::text)
+              AND (
+                    @searchText::text IS NULL
+                    OR d.source_path ILIKE ('%' || @searchText::text || '%')
+                    OR EXISTS (
+                        SELECT 1
+                        FROM rag_chunks c2
+                        WHERE c2.document_id = d.id
+                          AND c2.chunk_text ILIKE ('%' || @searchText::text || '%')
+                    )
+                )
+            GROUP BY d.id, d.source_path, d.indexed_at, d.content_hash
+            ORDER BY d.indexed_at DESC, d.source_path ASC
+            LIMIT @limit
+            """;
+
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+
+        var rows = new List<IndexedDocumentRecord>();
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("limit", limit);
+        command.Parameters.Add(CreateNullableTextParameter("projectId", NormalizeProjectId(projectId)));
+        command.Parameters.Add(CreateNullableTextParameter("searchText", NormalizeOptionalText(searchText)));
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var sourcePath = reader.GetString(0);
+            rows.Add(new IndexedDocumentRecord(
+                SourcePath: sourcePath,
+                ProjectId: ExtractProjectId(sourcePath),
+                ChunkCount: reader.GetInt32(1),
+                TokenCount: reader.GetInt32(2),
+                IndexedAt: reader.GetDateTime(3),
+                ContentHash: reader.GetString(4),
+                PreviewText: reader.IsDBNull(5) ? string.Empty : reader.GetString(5)));
+        }
+
+        return rows.AsReadOnly();
+    }
+
+    /// <summary>
+    /// Retrieves one indexed document with reconstructed content for dashboard viewing or editing.
+    /// </summary>
+    /// <param name="sourcePath">Stored indexed source path.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Document detail when found; otherwise <c>null</c>.</returns>
+    public async Task<IndexedDocumentDetail?> GetIndexedDocumentAsync(string sourcePath, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(sourcePath))
+        {
+            throw new ArgumentException("Source path cannot be null or empty.", nameof(sourcePath));
+        }
+
+        const string sql = """
+            SELECT
+                d.source_path,
+                COUNT(c.id)::int AS chunk_count,
+                COALESCE(SUM(c.token_count), 0)::int AS token_count,
+                d.indexed_at,
+                d.content_hash,
+                COALESCE(string_agg(c.chunk_text, E'\n' ORDER BY c.chunk_index), '') AS content
+            FROM rag_documents d
+            LEFT JOIN rag_chunks c ON d.id = c.document_id
+            WHERE d.source_path = @sourcePath
+            GROUP BY d.id, d.source_path, d.indexed_at, d.content_hash
+            LIMIT 1
+            """;
+
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("sourcePath", sourcePath.Trim());
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        var resolvedSourcePath = reader.GetString(0);
+        return new IndexedDocumentDetail(
+            SourcePath: resolvedSourcePath,
+            ProjectId: ExtractProjectId(resolvedSourcePath),
+            ChunkCount: reader.GetInt32(1),
+            TokenCount: reader.GetInt32(2),
+            IndexedAt: reader.GetDateTime(3),
+            ContentHash: reader.GetString(4),
+            Content: reader.IsDBNull(5) ? string.Empty : reader.GetString(5));
+    }
+
+    /// <summary>
     /// Returns per-project aggregates for indexed RAG content.
     /// </summary>
     /// <param name="cancellationToken">Cancellation token.</param>
@@ -778,6 +901,38 @@ public sealed class PostgresRagStore
 
         await transaction.CommitAsync(cancellationToken);
         return (updatedCount, duplicatesRemoved);
+    }
+
+    /// <summary>
+    /// Deletes all indexed documents assigned to a project bucket.
+    /// </summary>
+    /// <param name="projectId">Project identifier.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Number of deleted documents.</returns>
+    public async Task<int> DeleteDocumentsByProjectAsync(string projectId, CancellationToken cancellationToken = default)
+    {
+        var normalizedProjectId = NormalizeProjectId(projectId);
+        if (string.IsNullOrWhiteSpace(normalizedProjectId))
+        {
+            throw new ArgumentException("Project id cannot be null or empty.", nameof(projectId));
+        }
+
+        const string sql = """
+            DELETE FROM rag_documents
+            WHERE COALESCE(NULLIF(
+                    CASE
+                        WHEN source_path ~* '^https?://' THEN split_part(split_part(source_path, '://', 2), '/', 1)
+                        ELSE split_part(replace(source_path, '\\', '/'), '/', 1)
+                    END,
+                    ''
+                ), 'unscoped') = @projectId
+            """;
+
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("projectId", normalizedProjectId);
+        return await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     /// <summary>
@@ -1543,6 +1698,60 @@ public sealed class PostgresRagStore
     }
 
     /// <summary>
+    /// Deletes all memory entries for a project.
+    /// </summary>
+    /// <param name="projectId">Project identifier.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Number of deleted memory rows.</returns>
+    public async Task<int> DeleteMemoriesByProjectAsync(string projectId, CancellationToken cancellationToken = default)
+    {
+        var normalizedProjectId = NormalizeProjectId(projectId);
+        if (string.IsNullOrWhiteSpace(normalizedProjectId))
+        {
+            throw new ArgumentException("Project id cannot be null or empty.", nameof(projectId));
+        }
+
+        const string sql = "DELETE FROM memories WHERE project_id = @projectId";
+
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("projectId", normalizedProjectId);
+        return await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Renames the project identifier on all matching memory rows.
+    /// </summary>
+    /// <param name="projectId">Existing project identifier.</param>
+    /// <param name="targetProjectId">Replacement project identifier.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Number of updated memory rows.</returns>
+    public async Task<int> RenameProjectMemoriesAsync(string projectId, string targetProjectId, CancellationToken cancellationToken = default)
+    {
+        var normalizedProjectId = NormalizeProjectId(projectId);
+        var normalizedTargetProjectId = NormalizeProjectId(targetProjectId);
+        if (string.IsNullOrWhiteSpace(normalizedProjectId))
+        {
+            throw new ArgumentException("Project id cannot be null or empty.", nameof(projectId));
+        }
+
+        if (string.IsNullOrWhiteSpace(normalizedTargetProjectId))
+        {
+            throw new ArgumentException("Target project id cannot be null or empty.", nameof(targetProjectId));
+        }
+
+        const string sql = "UPDATE memories SET project_id = @targetProjectId WHERE project_id = @projectId";
+
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("projectId", normalizedProjectId);
+        command.Parameters.AddWithValue("targetProjectId", normalizedTargetProjectId);
+        return await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    /// <summary>
     /// Validates common memory insertion arguments.
     /// </summary>
     /// <param name="type">Memory type value.</param>
@@ -1607,6 +1816,18 @@ public sealed class PostgresRagStore
         return string.IsNullOrWhiteSpace(projectId)
             ? null
             : projectId.Trim();
+    }
+
+    /// <summary>
+    /// Resolves an optional free-text filter value for dashboard list queries.
+    /// </summary>
+    /// <param name="value">Optional caller-provided text filter.</param>
+    /// <returns>Trimmed value or <c>null</c> when empty.</returns>
+    private static string? NormalizeOptionalText(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value)
+            ? null
+            : value.Trim();
     }
 
     /// <summary>

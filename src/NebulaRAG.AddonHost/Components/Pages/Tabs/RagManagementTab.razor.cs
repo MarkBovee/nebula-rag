@@ -6,7 +6,7 @@ using NebulaRAG.Core.Models;
 namespace NebulaRAG.AddonHost.Components.Pages.Tabs;
 
 /// <summary>
-/// Code-behind for RAG operations and source list interactions in the dashboard.
+/// Code-behind for project-scoped indexed-document management in the dashboard.
 /// </summary>
 public partial class RagManagementTab
 {
@@ -25,23 +25,30 @@ public partial class RagManagementTab
     [Parameter]
     public string? SelectedProjectId { get; set; }
 
-    private readonly List<RagSearchResult> _queryResults = [];
-    private readonly List<SourceInfo> _sources = [];
+    /// <summary>
+    /// Gets or sets the callback used to refresh the parent shell after data mutations.
+    /// </summary>
+    [Parameter]
+    public EventCallback OnDataChanged { get; set; }
+
+    private readonly List<IndexedDocumentRecord> _documents = [];
     private long _lastRefreshNonce = -1;
     private string? _lastSelectedProjectId;
     private bool _statusIsError;
-    private bool _showPurgeConfirm;
-    private bool _showDeleteSourceConfirm;
+    private bool _showPurgeProjectConfirm;
+    private bool _showDeleteDocumentConfirm;
     private string? _statusMessage;
-    private string _queryText = string.Empty;
-    private int _queryLimit = 5;
+    private string _projectFilter = string.Empty;
+    private string _documentSearchText = string.Empty;
     private string _indexPath = "/share";
-    private string _deleteSourcePath = string.Empty;
+    private string _editSourcePath = string.Empty;
+    private string _editProjectId = string.Empty;
+    private string _editContent = string.Empty;
+    private string _pendingDeleteSourcePath = string.Empty;
 
     /// <summary>
-    /// Synchronizes source list whenever the dashboard refresh nonce changes.
+    /// Synchronizes document list whenever the dashboard refresh nonce changes.
     /// </summary>
-    /// <returns>Completion task.</returns>
     protected override async Task OnParametersSetAsync()
     {
         if (_lastRefreshNonce == RefreshNonce && string.Equals(_lastSelectedProjectId, SelectedProjectId, StringComparison.OrdinalIgnoreCase))
@@ -51,38 +58,10 @@ public partial class RagManagementTab
 
         _lastRefreshNonce = RefreshNonce;
         _lastSelectedProjectId = SelectedProjectId;
-        await RefreshSourcesAsync();
+        ApplyProjectSelectionDefaults();
+        await RefreshDocumentsAsync();
     }
 
-    /// <summary>
-    /// Executes semantic query from UI input.
-    /// </summary>
-    /// <returns>Completion task.</returns>
-    private async Task RunQueryAsync()
-    {
-        if (string.IsNullOrWhiteSpace(_queryText))
-        {
-            SetStatus("Query text is required.", isError: true);
-            return;
-        }
-
-        try
-        {
-            var matches = await RagOperationsService.QueryAsync(_queryText.Trim(), _queryLimit);
-            _queryResults.Clear();
-            _queryResults.AddRange(ApplyQueryProjectFilter(matches));
-            SetStatus($"Query completed with {_queryResults.Count} matches.");
-        }
-        catch (Exception exception)
-        {
-            SetStatus($"Query failed: {exception.Message}", isError: true);
-        }
-    }
-
-    /// <summary>
-    /// Starts indexing for the user-provided source path.
-    /// </summary>
-    /// <returns>Completion task.</returns>
     private async Task IndexSourceAsync()
     {
         if (string.IsNullOrWhiteSpace(_indexPath))
@@ -94,8 +73,8 @@ public partial class RagManagementTab
         try
         {
             var summary = await RagOperationsService.IndexPathAsync(_indexPath.Trim());
-            SetStatus($"Index finished. Docs: {summary.DocumentsIndexed}, Chunks: {summary.ChunksIndexed}.");
-            await RefreshSourcesAsync();
+            SetStatus($"Index finished. Docs: {summary.DocumentsIndexed}, chunks: {summary.ChunksIndexed}.");
+            await NotifyDataChangedAsync();
         }
         catch (Exception exception)
         {
@@ -103,43 +82,122 @@ public partial class RagManagementTab
         }
     }
 
-    /// <summary>
-    /// Opens source delete confirmation after validating source input.
-    /// </summary>
-    private void OpenDeleteSourceConfirm()
+    private async Task RefreshDocumentsAsync()
     {
-        if (string.IsNullOrWhiteSpace(_deleteSourcePath))
+        try
         {
-            SetStatus("Source path to delete is required.", isError: true);
+            var rows = await RagOperationsService.ListDocumentsAsync(GetActiveProjectFilter(), NormalizeOptional(_documentSearchText), 300);
+            _documents.Clear();
+            _documents.AddRange(rows);
+            SetStatus($"Loaded {_documents.Count} indexed documents.");
+        }
+        catch (Exception exception)
+        {
+            SetStatus($"Document refresh failed: {exception.Message}", isError: true);
+        }
+    }
+
+    private async Task LoadSelectedDocumentAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_editSourcePath))
+        {
+            SetStatus("Source path is required to load a document.", isError: true);
             return;
         }
 
-        _showDeleteSourceConfirm = true;
+        await LoadDocumentIntoEditorAsync(_editSourcePath);
     }
 
-    /// <summary>
-    /// Opens full-purge confirmation modal.
-    /// </summary>
-    private void OpenPurgeConfirm()
-    {
-        _showPurgeConfirm = true;
-    }
-
-    /// <summary>
-    /// Confirms source delete and refreshes source view.
-    /// </summary>
-    /// <returns>Completion task.</returns>
-    private async Task ConfirmDeleteSourceAsync()
+    private async Task LoadDocumentIntoEditorAsync(string sourcePath)
     {
         try
         {
-            var deleted = await RagOperationsService.DeleteSourceAsync(_deleteSourcePath.Trim());
-            SetStatus($"Deleted {deleted} source rows.");
-            await RefreshSourcesAsync();
+            var document = await RagOperationsService.GetDocumentAsync(sourcePath.Trim());
+            if (document is null)
+            {
+                SetStatus($"Indexed document not found: {sourcePath}", isError: true);
+                return;
+            }
+
+            _editSourcePath = document.SourcePath;
+            _editProjectId = document.ProjectId ?? string.Empty;
+            _editContent = document.Content;
+            SetStatus($"Loaded indexed document {_editSourcePath}.");
         }
         catch (Exception exception)
         {
-            SetStatus($"Delete source failed: {exception.Message}", isError: true);
+            SetStatus($"Load document failed: {exception.Message}", isError: true);
+        }
+    }
+
+    private async Task SaveDocumentAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_editSourcePath) || string.IsNullOrWhiteSpace(_editContent))
+        {
+            SetStatus("Source path and content are required to save a document.", isError: true);
+            return;
+        }
+
+        try
+        {
+            var updated = await RagOperationsService.UpdateDocumentAsync(_editSourcePath.Trim(), NormalizeOptional(_editProjectId), _editContent.Trim());
+            _editSourcePath = updated.SourcePath;
+            _editProjectId = updated.ProjectId ?? string.Empty;
+            _editContent = updated.Content;
+            SetStatus($"Updated indexed document {updated.SourcePath}.");
+            await NotifyDataChangedAsync();
+        }
+        catch (Exception exception)
+        {
+            SetStatus($"Save document failed: {exception.Message}", isError: true);
+        }
+    }
+
+    private void OpenDeleteDocumentConfirm()
+    {
+        if (string.IsNullOrWhiteSpace(_editSourcePath))
+        {
+            SetStatus("Load a document before deleting it.", isError: true);
+            return;
+        }
+
+        _pendingDeleteSourcePath = _editSourcePath;
+        _showDeleteDocumentConfirm = true;
+    }
+
+    private void OpenDeleteDocumentConfirm(string sourcePath)
+    {
+        _pendingDeleteSourcePath = sourcePath;
+        _showDeleteDocumentConfirm = true;
+    }
+
+    private void OpenPurgeProjectConfirm()
+    {
+        if (string.IsNullOrWhiteSpace(GetActiveProjectFilter()))
+        {
+            SetStatus("Select or enter a project id before purging documents.", isError: true);
+            return;
+        }
+
+        _showPurgeProjectConfirm = true;
+    }
+
+    private async Task ConfirmDeleteDocumentAsync()
+    {
+        try
+        {
+            var deleted = await RagOperationsService.DeleteSourceAsync(_pendingDeleteSourcePath.Trim());
+            if (string.Equals(_editSourcePath, _pendingDeleteSourcePath, StringComparison.OrdinalIgnoreCase))
+            {
+                ResetDocumentEditor();
+            }
+
+            SetStatus($"Deleted {deleted} indexed document row(s).");
+            await NotifyDataChangedAsync();
+        }
+        catch (Exception exception)
+        {
+            SetStatus($"Delete document failed: {exception.Message}", isError: true);
         }
         finally
         {
@@ -147,21 +205,25 @@ public partial class RagManagementTab
         }
     }
 
-    /// <summary>
-    /// Confirms full purge and refreshes source view.
-    /// </summary>
-    /// <returns>Completion task.</returns>
-    private async Task ConfirmPurgeAsync()
+    private async Task ConfirmPurgeProjectAsync()
     {
         try
         {
-            await RagOperationsService.PurgeAllAsync();
-            SetStatus("Entire index purged.");
-            await RefreshSourcesAsync();
+            var projectId = GetActiveProjectFilter();
+            if (string.IsNullOrWhiteSpace(projectId))
+            {
+                SetStatus("Project id is required for purge.", isError: true);
+                return;
+            }
+
+            var deleted = await RagOperationsService.DeleteProjectDocumentsAsync(projectId);
+            ResetDocumentEditor();
+            SetStatus($"Deleted {deleted} indexed documents from {projectId}.");
+            await NotifyDataChangedAsync();
         }
         catch (Exception exception)
         {
-            SetStatus($"Purge failed: {exception.Message}", isError: true);
+            SetStatus($"Project document purge failed: {exception.Message}", isError: true);
         }
         finally
         {
@@ -169,134 +231,86 @@ public partial class RagManagementTab
         }
     }
 
-    /// <summary>
-    /// Closes all active confirmation dialogs.
-    /// </summary>
     private void CloseAllConfirm()
     {
-        _showPurgeConfirm = false;
-        _showDeleteSourceConfirm = false;
+        _showPurgeProjectConfirm = false;
+        _showDeleteDocumentConfirm = false;
+        _pendingDeleteSourcePath = string.Empty;
     }
 
-    /// <summary>
-    /// Updates user-facing status banner content.
-    /// </summary>
-    /// <param name="message">Status text to display.</param>
-    /// <param name="isError">Whether status represents an error state.</param>
+    private async Task NotifyDataChangedAsync()
+    {
+        await RefreshDocumentsAsync();
+        if (OnDataChanged.HasDelegate)
+        {
+            await OnDataChanged.InvokeAsync();
+        }
+    }
+
     private void SetStatus(string message, bool isError = false)
     {
         _statusMessage = message;
         _statusIsError = isError;
     }
 
-    /// <summary>
-    /// Refreshes source table from backend dashboard data.
-    /// </summary>
-    /// <returns>Completion task.</returns>
-    private async Task RefreshSourcesAsync()
-    {
-        var sources = await RagOperationsService.ListSourcesAsync(limit: 300);
-        _sources.Clear();
-        _sources.AddRange(FilterSourcesForProject(sources));
-    }
-
-    /// <summary>
-    /// Returns whether the tab is scoped to one selected project.
-    /// </summary>
-    /// <returns>True when a project filter is active.</returns>
     private bool HasSelectedProject()
     {
-        return !string.IsNullOrWhiteSpace(SelectedProjectId);
+        return !string.IsNullOrWhiteSpace(GetActiveProjectFilter());
     }
 
-    /// <summary>
-    /// Gets the scope heading shown above the RAG controls.
-    /// </summary>
-    /// <returns>Scope heading text.</returns>
     private string GetScopeHeading()
     {
-        return HasSelectedProject() ? $"RAG ledger for {SelectedProjectId}" : "RAG ledger for all projects";
+        return HasSelectedProject() ? $"RAG documents for {GetActiveProjectFilter()}" : "RAG documents for all projects";
     }
 
-    /// <summary>
-    /// Gets the scope description shown above the RAG controls.
-    /// </summary>
-    /// <returns>Scope description text.</returns>
     private string GetScopeDescription()
     {
         return HasSelectedProject()
-            ? "Query results and source CRUD stay aligned to the selected project wherever the underlying model supports it."
-            : "Use the shell project switcher to narrow source CRUD to one project without changing the RAG toolset.";
+            ? "The selected project owns document search, view, edit, delete, and purge actions on this screen."
+            : "Select a project from the shell to pin the document ledger, or browse the full index when you need a global view.";
     }
 
-    /// <summary>
-    /// Filters visible sources for the selected project.
-    /// </summary>
-    /// <param name="sources">Unfiltered source list.</param>
-    /// <returns>Filtered source list.</returns>
-    private IReadOnlyList<SourceInfo> FilterSourcesForProject(IReadOnlyList<SourceInfo> sources)
-    {
-        return HasSelectedProject()
-            ? sources.Where(source => string.Equals(source.ProjectId, SelectedProjectId, StringComparison.OrdinalIgnoreCase)).ToList()
-            : sources;
-    }
-
-    /// <summary>
-    /// Filters semantic matches to the selected project by source membership.
-    /// </summary>
-    /// <param name="matches">Unfiltered semantic matches.</param>
-    /// <returns>Filtered semantic matches.</returns>
-    private IReadOnlyList<RagSearchResult> ApplyQueryProjectFilter(IReadOnlyList<RagSearchResult> matches)
-    {
-        if (!HasSelectedProject())
-        {
-            return matches;
-        }
-
-        var allowedSources = _sources.Select(source => source.SourcePath).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        return matches.Where(match => allowedSources.Contains(match.SourcePath)).ToList();
-    }
-
-    /// <summary>
-    /// Uses a source path as the next query text for targeted searches.
-    /// </summary>
-    /// <param name="sourcePath">Source path selected from the source ledger.</param>
-    private void UseSourceForQuery(string sourcePath)
-    {
-        _queryText = sourcePath;
-        SetStatus($"Loaded source path into query box: {sourcePath}");
-    }
-
-    /// <summary>
-    /// Starts delete confirmation using a source selected from the table.
-    /// </summary>
-    /// <param name="sourcePath">Source path chosen for deletion.</param>
-    private void ConfirmDeleteFromRow(string sourcePath)
-    {
-        _deleteSourcePath = sourcePath;
-        _showDeleteSourceConfirm = true;
-    }
-
-    /// <summary>
-    /// Gets the latest indexed timestamp across visible sources.
-    /// </summary>
-    /// <returns>Formatted latest index timestamp.</returns>
     private string GetLatestIndexTime()
     {
-        if (_sources.Count == 0)
+        if (_documents.Count == 0)
         {
             return "n/a";
         }
 
-        return _sources.MaxBy(source => source.IndexedAt)?.IndexedAt.ToLocalTime().ToString("MMM dd HH:mm", CultureInfo.InvariantCulture) ?? "n/a";
+        return _documents.MaxBy(document => document.IndexedAt)?.IndexedAt.ToLocalTime().ToString("MMM dd HH:mm", CultureInfo.InvariantCulture) ?? "n/a";
     }
 
-    /// <summary>
-    /// Trims text previews for table display.
-    /// </summary>
-    /// <param name="value">Source text.</param>
-    /// <param name="maxLength">Max output length.</param>
-    /// <returns>Trimmed or original text.</returns>
+    private void ApplyProjectSelectionDefaults()
+    {
+        if (string.IsNullOrWhiteSpace(SelectedProjectId))
+        {
+            return;
+        }
+
+        _projectFilter = SelectedProjectId;
+        if (string.IsNullOrWhiteSpace(_editProjectId))
+        {
+            _editProjectId = SelectedProjectId;
+        }
+    }
+
+    private string? GetActiveProjectFilter()
+    {
+        return NormalizeOptional(_projectFilter) ?? NormalizeOptional(SelectedProjectId);
+    }
+
+    private static string? NormalizeOptional(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+    }
+
+    private void ResetDocumentEditor()
+    {
+        _editSourcePath = string.Empty;
+        _editProjectId = string.Empty;
+        _editContent = string.Empty;
+    }
+
     private static string TrimText(string value, int maxLength)
     {
         if (string.IsNullOrWhiteSpace(value) || value.Length <= maxLength)

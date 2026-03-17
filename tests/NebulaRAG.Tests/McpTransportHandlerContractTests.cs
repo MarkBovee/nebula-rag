@@ -266,7 +266,7 @@ public sealed class McpTransportHandlerContractTests
         var embeddingGenerator = new HashEmbeddingGenerator();
         var chunker = new TextChunker();
         var queryService = new RagQueryService(store, embeddingGenerator, settings, NullLogger<RagQueryService>.Instance);
-        var managementService = new RagManagementService(store, embeddingGenerator, settings, NullLogger<RagManagementService>.Instance);
+        var managementService = new RagManagementService(store, chunker, embeddingGenerator, settings, NullLogger<RagManagementService>.Instance);
         var sourcesManifestService = new RagSourcesManifestService(store, settings, NullLogger<RagSourcesManifestService>.Instance);
         var indexer = new RagIndexer(store, chunker, embeddingGenerator, settings, NullLogger<RagIndexer>.Instance);
 

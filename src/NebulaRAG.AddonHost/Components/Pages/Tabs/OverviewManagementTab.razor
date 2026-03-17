@@ -1,9 +1,16 @@
 @using System.Globalization
 @using NebulaRAG.AddonHost.Services
 @using NebulaRAG.Core.Models
+@using NebulaRAG.Core.Storage
 @inject DashboardSnapshotService SnapshotService
+@inject PostgresProjectStore ProjectStore
 
 <div class="section-stack">
+    @if (!string.IsNullOrWhiteSpace(_statusMessage))
+    {
+        <section class="status-banner @(_statusIsError ? "error" : "ok")">@_statusMessage</section>
+    }
+
     @if (!string.IsNullOrWhiteSpace(_errorMessage))
     {
         <section class="status-banner error">@_errorMessage</section>
@@ -65,6 +72,33 @@
     </section>
 
     <section class="split-grid">
+        <article class="panel section-panel">
+            <div class="panel-header">
+                <div>
+                    <p class="eyebrow">Projects</p>
+                    <h2 class="panel-title">Project lifecycle</h2>
+                    <p class="panel-copy">Rename or remove one project and let the change cascade through plans, memories, and indexed documents.</p>
+                </div>
+            </div>
+
+            <div class="form-grid">
+                <label class="field">
+                    <span class="field-label">Project id</span>
+                    <input class="text-input mono" @bind="_projectEditorProjectId" placeholder="Project id" />
+                </label>
+                <label class="field">
+                    <span class="field-label">Rename to</span>
+                    <input class="text-input mono" @bind="_projectEditorTargetId" placeholder="New project id" />
+                </label>
+                <div class="field">
+                    <button class="button button-secondary" @onclick="RenameProjectAsync">Rename project</button>
+                </div>
+                <div class="field">
+                    <button class="button button-danger" @onclick="OpenDeleteProjectConfirm">Delete project</button>
+                </div>
+            </div>
+        </article>
+
         <article class="panel section-panel">
             <div class="panel-header">
                 <div>
@@ -197,6 +231,7 @@
                         <th>Plan posture</th>
                         <th>RAG footprint</th>
                         <th>Memory posture</th>
+                        <th>Actions</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -219,6 +254,12 @@
                                 <div class="cell-title">@project.Memory.MemoryCount memories</div>
                                 <div class="cell-subtitle">Last memory @FormatOffset(project.Memory.LastMemoryAtUtc)</div>
                             </td>
+                            <td>
+                                <div class="table-actions">
+                                    <button class="button button-muted" @onclick="() => LoadProjectIntoEditor(project.ProjectId)">Manage</button>
+                                    <button class="button button-danger" @onclick="() => OpenDeleteProjectConfirm(project.ProjectId)">Delete</button>
+                                </div>
+                            </td>
                         </tr>
                     }
                 </tbody>
@@ -227,6 +268,8 @@
     </section>
 </div>
 
+<ConfirmationModal IsOpen="@_showDeleteProjectConfirm" Title="Delete Project" Message="Delete this project and all underlying plans, memories, and indexed documents?" OnConfirm="ConfirmDeleteProjectAsync" OnCancel="CloseDeleteProjectConfirm" />
+
 @code {
     [Parameter]
     public long RefreshNonce { get; set; }
@@ -234,12 +277,20 @@
     [Parameter]
     public string? SelectedProjectId { get; set; }
 
+    [Parameter]
+    public EventCallback OnDataChanged { get; set; }
+
     private readonly List<ProjectDashboardNode> _projects = new();
     private DashboardSnapshotResponse? _dashboardSnapshot;
     private bool _loading;
     private long _lastRefreshNonce = -1;
     private string? _lastSelectedProjectId;
     private string? _errorMessage;
+    private string? _statusMessage;
+    private bool _statusIsError;
+    private bool _showDeleteProjectConfirm;
+    private string _projectEditorProjectId = string.Empty;
+    private string _projectEditorTargetId = string.Empty;
 
     protected override async Task OnParametersSetAsync()
     {
@@ -263,6 +314,7 @@
             _projects.AddRange(projects);
             _dashboardSnapshot = await SnapshotService.GetDashboardAsync();
             _errorMessage = null;
+            ApplyProjectSelectionDefaults();
             SortProjects();
         }
         catch (Exception exception)
@@ -457,5 +509,106 @@
                 ? scoreComparison
                 : string.Compare(left.ProjectId, right.ProjectId, StringComparison.OrdinalIgnoreCase);
         });
+    }
+
+    private async Task RenameProjectAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_projectEditorProjectId) || string.IsNullOrWhiteSpace(_projectEditorTargetId))
+        {
+            SetStatus("Project id and target project id are required.", isError: true);
+            return;
+        }
+
+        try
+        {
+            var result = await ProjectStore.RenameProjectAsync(_projectEditorProjectId.Trim(), _projectEditorTargetId.Trim());
+            SetStatus($"Renamed {result.ProjectId} to {result.TargetProjectId}. Plans: {result.PlansAffected}, memories: {result.MemoriesAffected}, documents: {result.DocumentsAffected}.");
+            _projectEditorProjectId = result.TargetProjectId ?? _projectEditorProjectId;
+            _projectEditorTargetId = string.Empty;
+            await NotifyDataChangedAsync();
+        }
+        catch (Exception exception)
+        {
+            SetStatus($"Project rename failed: {exception.Message}", isError: true);
+        }
+    }
+
+    private void LoadProjectIntoEditor(string projectId)
+    {
+        _projectEditorProjectId = projectId;
+        _projectEditorTargetId = string.Empty;
+        SetStatus($"Loaded {projectId} into the project lifecycle editor.");
+    }
+
+    private void OpenDeleteProjectConfirm()
+    {
+        if (string.IsNullOrWhiteSpace(_projectEditorProjectId))
+        {
+            SetStatus("Project id is required before delete.", isError: true);
+            return;
+        }
+
+        _showDeleteProjectConfirm = true;
+    }
+
+    private void OpenDeleteProjectConfirm(string projectId)
+    {
+        _projectEditorProjectId = projectId;
+        _showDeleteProjectConfirm = true;
+    }
+
+    private async Task ConfirmDeleteProjectAsync()
+    {
+        try
+        {
+            var deletedProjectId = _projectEditorProjectId.Trim();
+            var result = await ProjectStore.DeleteProjectAsync(deletedProjectId);
+            SetStatus($"Deleted {result.ProjectId}. Plans: {result.PlansAffected}, memories: {result.MemoriesAffected}, documents: {result.DocumentsAffected}.");
+            _projectEditorProjectId = string.Empty;
+            _projectEditorTargetId = string.Empty;
+            await NotifyDataChangedAsync();
+        }
+        catch (Exception exception)
+        {
+            SetStatus($"Project delete failed: {exception.Message}", isError: true);
+        }
+        finally
+        {
+            CloseDeleteProjectConfirm();
+        }
+    }
+
+    private void CloseDeleteProjectConfirm()
+    {
+        _showDeleteProjectConfirm = false;
+    }
+
+    private async Task NotifyDataChangedAsync()
+    {
+        await RefreshAsync();
+        if (OnDataChanged.HasDelegate)
+        {
+            await OnDataChanged.InvokeAsync();
+        }
+    }
+
+    private void ApplyProjectSelectionDefaults()
+    {
+        if (string.IsNullOrWhiteSpace(SelectedProjectId))
+        {
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(_projectEditorProjectId)
+            || !string.Equals(_projectEditorProjectId, SelectedProjectId, StringComparison.OrdinalIgnoreCase))
+        {
+            _projectEditorProjectId = SelectedProjectId;
+        }
+    }
+
+    private void SetStatus(string message, bool isError = false)
+    {
+        _statusMessage = message;
+        _statusIsError = isError;
     }
 }

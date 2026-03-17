@@ -83,4 +83,52 @@ public sealed class RagOperationsService
         var snapshot = await _snapshotService.GetDashboardAsync(cancellationToken);
         return snapshot.Sources.Take(Math.Clamp(limit, 1, 500)).ToList();
     }
+
+    /// <summary>
+    /// Lists indexed documents with optional project and text filters.
+    /// </summary>
+    /// <param name="projectId">Optional project identifier.</param>
+    /// <param name="searchText">Optional text filter.</param>
+    /// <param name="limit">Maximum number of rows to return.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Indexed document summary rows.</returns>
+    public Task<IReadOnlyList<IndexedDocumentRecord>> ListDocumentsAsync(string? projectId, string? searchText, int limit, CancellationToken cancellationToken = default)
+    {
+        return _managementService.ListIndexedDocumentsAsync(projectId, searchText, Math.Clamp(limit, 1, 500), cancellationToken);
+    }
+
+    /// <summary>
+    /// Loads one indexed document for viewing or editing.
+    /// </summary>
+    /// <param name="sourcePath">Stored source path.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Indexed document detail when found.</returns>
+    public Task<IndexedDocumentDetail?> GetDocumentAsync(string sourcePath, CancellationToken cancellationToken = default)
+    {
+        return _managementService.GetIndexedDocumentAsync(sourcePath, cancellationToken);
+    }
+
+    /// <summary>
+    /// Updates one indexed document by regenerating chunks and embeddings from replacement content.
+    /// </summary>
+    /// <param name="sourcePath">Stored source path.</param>
+    /// <param name="projectId">Optional project identifier.</param>
+    /// <param name="content">Replacement document content.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Updated document detail.</returns>
+    public Task<IndexedDocumentDetail> UpdateDocumentAsync(string sourcePath, string? projectId, string content, CancellationToken cancellationToken = default)
+    {
+        return _managementService.UpdateIndexedDocumentAsync(sourcePath, projectId, content, cancellationToken);
+    }
+
+    /// <summary>
+    /// Deletes all indexed documents for a project.
+    /// </summary>
+    /// <param name="projectId">Project identifier.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Number of deleted documents.</returns>
+    public Task<int> DeleteProjectDocumentsAsync(string projectId, CancellationToken cancellationToken = default)
+    {
+        return _managementService.DeleteIndexedDocumentsByProjectAsync(projectId, cancellationToken);
+    }
 }

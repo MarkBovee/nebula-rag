@@ -1,8 +1,12 @@
+using System.Security.Cryptography;
+using System.Text;
+using NebulaRAG.Core.Chunking;
 using Microsoft.Extensions.Logging;
 using NebulaRAG.Core.Configuration;
 using NebulaRAG.Core.Embeddings;
 using NebulaRAG.Core.Exceptions;
 using NebulaRAG.Core.Models;
+using NebulaRAG.Core.Pathing;
 using NebulaRAG.Core.Storage;
 
 namespace NebulaRAG.Core.Services;
@@ -13,6 +17,7 @@ namespace NebulaRAG.Core.Services;
 public sealed class RagManagementService
 {
     private readonly PostgresRagStore _store;
+    private readonly TextChunker _chunker;
     private readonly IEmbeddingGenerator _embeddingGenerator;
     private readonly RagSettings _settings;
     private readonly ILogger<RagManagementService> _logger;
@@ -21,12 +26,14 @@ public sealed class RagManagementService
     /// Initializes a new instance of the <see cref="RagManagementService"/> class.
     /// </summary>
     /// <param name="store">The PostgreSQL RAG store.</param>
+    /// <param name="chunker">Chunker used when updating indexed document content.</param>
     /// <param name="embeddingGenerator">Embedding generator used for memory semantic search.</param>
     /// <param name="settings">Runtime settings for vector dimensions and retrieval defaults.</param>
     /// <param name="logger">The logger instance.</param>
-    public RagManagementService(PostgresRagStore store, IEmbeddingGenerator embeddingGenerator, RagSettings settings, ILogger<RagManagementService> logger)
+    public RagManagementService(PostgresRagStore store, TextChunker chunker, IEmbeddingGenerator embeddingGenerator, RagSettings settings, ILogger<RagManagementService> logger)
     {
         _store = store ?? throw new ArgumentNullException(nameof(store));
+        _chunker = chunker ?? throw new ArgumentNullException(nameof(chunker));
         _embeddingGenerator = embeddingGenerator ?? throw new ArgumentNullException(nameof(embeddingGenerator));
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -106,6 +113,128 @@ public sealed class RagManagementService
         {
             _logger.LogError(ex, "Failed to list sources");
             throw new RagDatabaseException("Failed to list sources", ex);
+        }
+    }
+
+    /// <summary>
+    /// Lists indexed documents with optional project and text filters.
+    /// </summary>
+    /// <param name="projectId">Optional project identifier.</param>
+    /// <param name="searchText">Optional search text.</param>
+    /// <param name="limit">Maximum number of rows to return.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Indexed document summary rows.</returns>
+    public async Task<IReadOnlyList<IndexedDocumentRecord>> ListIndexedDocumentsAsync(string? projectId, string? searchText, int limit = 300, CancellationToken cancellationToken = default)
+    {
+        _logger.LogDebug("Listing indexed documents (projectId={ProjectId}, searchText={SearchText}, limit={Limit})", projectId, searchText, limit);
+
+        try
+        {
+            return await _store.ListIndexedDocumentsAsync(projectId, searchText, limit, cancellationToken);
+        }
+        catch (Exception ex) when (!(ex is RagException))
+        {
+            _logger.LogError(ex, "Failed to list indexed documents");
+            throw new RagDatabaseException("Failed to list indexed documents", ex);
+        }
+    }
+
+    /// <summary>
+    /// Retrieves one indexed document with reconstructed content.
+    /// </summary>
+    /// <param name="sourcePath">Stored source path.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Document detail when found; otherwise <c>null</c>.</returns>
+    public async Task<IndexedDocumentDetail?> GetIndexedDocumentAsync(string sourcePath, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(sourcePath))
+        {
+            throw new ArgumentException("Source path cannot be null or empty.", nameof(sourcePath));
+        }
+
+        try
+        {
+            return await _store.GetIndexedDocumentAsync(sourcePath.Trim(), cancellationToken);
+        }
+        catch (Exception ex) when (!(ex is RagException))
+        {
+            _logger.LogError(ex, "Failed to load indexed document {SourcePath}", sourcePath);
+            throw new RagDatabaseException($"Failed to load indexed document: {sourcePath}", ex);
+        }
+    }
+
+    /// <summary>
+    /// Rewrites the content of an indexed document by regenerating its chunks and embeddings.
+    /// </summary>
+    /// <param name="sourcePath">Stored source path or source key.</param>
+    /// <param name="projectId">Optional explicit project id for source-key prefixing.</param>
+    /// <param name="content">Replacement content.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Updated document detail after the write.</returns>
+    public async Task<IndexedDocumentDetail> UpdateIndexedDocumentAsync(string sourcePath, string? projectId, string content, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(sourcePath))
+        {
+            throw new ArgumentException("Source path cannot be null or empty.", nameof(sourcePath));
+        }
+
+        if (string.IsNullOrWhiteSpace(content))
+        {
+            throw new ArgumentException("Document content cannot be null or empty.", nameof(content));
+        }
+
+        var chunks = _chunker.Chunk(content, _settings.Ingestion.ChunkSize, _settings.Ingestion.ChunkOverlap);
+        if (chunks.Count == 0)
+        {
+            throw new InvalidOperationException("No indexable chunks were produced from the replacement document content.");
+        }
+
+        var chunkEmbeddings = chunks
+            .Select(chunk => new ChunkEmbedding(
+                chunk.Index,
+                chunk.Text,
+                chunk.TokenCount,
+                _embeddingGenerator.GenerateEmbedding(chunk.Text, _settings.Ingestion.VectorDimensions)))
+            .ToList();
+
+        var contentHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(content)));
+        var normalizedSourcePath = SourcePathNormalizer.NormalizeForStorage(sourcePath.Trim(), Directory.GetCurrentDirectory());
+        var storedSourcePath = SourcePathNormalizer.ApplyExplicitProjectPrefix(normalizedSourcePath, projectId);
+
+        try
+        {
+            await _store.UpsertDocumentAsync(storedSourcePath, contentHash, chunkEmbeddings, cancellationToken);
+            return await _store.GetIndexedDocumentAsync(storedSourcePath, cancellationToken)
+                ?? throw new InvalidOperationException("Indexed document could not be reloaded after update.");
+        }
+        catch (Exception ex) when (!(ex is RagException))
+        {
+            _logger.LogError(ex, "Failed to update indexed document {SourcePath}", storedSourcePath);
+            throw new RagDatabaseException($"Failed to update indexed document: {storedSourcePath}", ex);
+        }
+    }
+
+    /// <summary>
+    /// Deletes all indexed documents for a project.
+    /// </summary>
+    /// <param name="projectId">Project identifier.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Number of deleted documents.</returns>
+    public async Task<int> DeleteIndexedDocumentsByProjectAsync(string projectId, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(projectId))
+        {
+            throw new ArgumentException("Project id cannot be null or empty.", nameof(projectId));
+        }
+
+        try
+        {
+            return await _store.DeleteDocumentsByProjectAsync(projectId.Trim(), cancellationToken);
+        }
+        catch (Exception ex) when (!(ex is RagException))
+        {
+            _logger.LogError(ex, "Failed to delete indexed documents for project {ProjectId}", projectId);
+            throw new RagDatabaseException($"Failed to delete indexed documents for project: {projectId}", ex);
         }
     }
 
