@@ -585,13 +585,15 @@ function Setup-Project {
     }
 
     $copilotInstructionsSource = Resolve-TemplateFile -TemplateRoot $TemplateRoot -RelativePath ".github/copilot-instructions.md" -RawBaseUrl $RawBaseUrl -Required
+    $nebulaInstructionsSource = Resolve-TemplateFile -TemplateRoot $TemplateRoot -RelativePath ".github/nebula.instructions.md" -RawBaseUrl $RawBaseUrl -Required
     $ragInstructionsSource = Resolve-TemplateFile -TemplateRoot $TemplateRoot -RelativePath ".github/instructions/rag.instructions.md" -RawBaseUrl $RawBaseUrl -Required
     $agentsSource = Resolve-TemplateFile -TemplateRoot $TemplateRoot -RelativePath "AGENTS.md" -RawBaseUrl $RawBaseUrl -Required
 
+    Copy-FileSafe -Source $nebulaInstructionsSource -Destination (Join-Path $targetRoot ".github/nebula.instructions.md") -ForceWrite:$ForceWrite
     Copy-FileSafe -Source $copilotInstructionsSource -Destination (Join-Path $targetRoot ".github/copilot-instructions.md") -ForceWrite:$ForceWrite
     Copy-FileSafe -Source $ragInstructionsSource -Destination (Join-Path $targetRoot ".github/instructions/rag.instructions.md") -ForceWrite:$ForceWrite
     Copy-FileSafe -Source $agentsSource -Destination (Join-Path $targetRoot "AGENTS.md") -ForceWrite:$ForceWrite
-    Write-Host "Applied memory routing templates for project setup (Nebula memory + VS Code memory, recall/store cadence, and secret-safe memory rules)."
+    Write-Host "Applied canonical Nebula instructions and memory-routing templates for project setup."
 
     if (-not $SkipSkillFile) {
         $skillSource = Resolve-TemplateFile -TemplateRoot $TemplateRoot -RelativePath ".github/skills/nebularag/SKILL.md" -RawBaseUrl $RawBaseUrl -Required

@@ -153,7 +153,7 @@ public sealed class IngestionSettings
 /// </summary>
 public sealed class RetrievalSettings
 {
-    public int DefaultTopK { get; init; } = 5;
+    public int DefaultTopK { get; init; } = 3;
 
     internal void Validate(List<string> errors)
     {

@@ -64,7 +64,20 @@ public sealed class RagQueryService
             var timer = Stopwatch.StartNew();
 
             var embedding = _embeddingGenerator.GenerateEmbedding(queryText, _settings.Ingestion.VectorDimensions);
-            var results = await _store.SearchAsync(embedding, resultCount, cancellationToken);
+            var semanticResults = await _store.SearchAsync(embedding, resultCount, cancellationToken);
+            var results = semanticResults;
+
+            if (RagSearchResultRanker.ShouldUseLexicalFallback(semanticResults, resultCount))
+            {
+                var lexicalResults = await _store.SearchLexicalAsync(queryText, resultCount, cancellationToken);
+                results = RagSearchResultRanker.MergePrimaryWithFallback(queryText, semanticResults, lexicalResults, resultCount);
+
+                _logger.LogDebug(
+                    "Applied lexical fallback (semantic={SemanticCount}, lexical={LexicalCount}, merged={MergedCount})",
+                    semanticResults.Count,
+                    lexicalResults.Count,
+                    results.Count);
+            }
 
             timer.Stop();
 

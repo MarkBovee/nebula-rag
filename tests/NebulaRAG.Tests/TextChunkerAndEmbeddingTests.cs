@@ -18,6 +18,39 @@ public class TextChunkerAndEmbeddingTests
 
         Assert.True(chunks.Count > 1);
         Assert.All(chunks, chunk => Assert.True(chunk.TokenCount > 0));
+        Assert.All(chunks, chunk => Assert.True(chunk.Text.Length <= 100));
+    }
+
+    /// <summary>
+    /// Validates that the TextChunker prefers paragraph boundaries when they fit within the chunk size budget.
+    /// </summary>
+    [Fact]
+    public void Chunker_PrefersParagraphBoundaries_WhenAvailable()
+    {
+        var chunker = new TextChunker();
+        var text = "Alpha paragraph keeps together.\n\nBeta paragraph also stays together.\n\nGamma paragraph finishes the sample.";
+
+        var chunks = chunker.Chunk(text, chunkSize: 40, overlap: 0);
+
+        Assert.True(chunks.Count >= 3);
+        Assert.Equal("Alpha paragraph keeps together.", chunks[0].Text);
+        Assert.Equal("Beta paragraph also stays together.", chunks[1].Text);
+    }
+
+    /// <summary>
+    /// Validates that the TextChunker trims leading overlap whitespace when advancing between boundary-aware chunks.
+    /// </summary>
+    [Fact]
+    public void Chunker_TrimsLeadingWhitespace_WhenOverlapAdvancesAcrossBoundaries()
+    {
+        var chunker = new TextChunker();
+        var text = "Header section\n\nSecond section carries enough text to require another chunk boundary.";
+
+        var chunks = chunker.Chunk(text, chunkSize: 35, overlap: 8);
+
+        Assert.True(chunks.Count >= 2);
+        Assert.False(chunks[1].Text.StartsWith("\n", StringComparison.Ordinal));
+        Assert.False(chunks[1].Text.StartsWith(" ", StringComparison.Ordinal));
     }
 
     /// <summary>

@@ -4,6 +4,31 @@ All notable changes to the Nebula RAG Home Assistant add-on are documented in th
 
 The format is inspired by Keep a Changelog and follows semantic versioning.
 
+## [0.3.64] - 2026-03-17
+
+- Refreshed the safe stable dependency set across the .NET projects and vendored TailAdmin template before merge.
+- Kept the retrieval-quality improvements from this workstream and revalidated the solution after the dependency updates.
+
+## [0.3.63] - 2026-03-17
+
+- Boosted exact filename and source-path matches during semantic-plus-lexical result merging so targeted file queries rank higher.
+- Updated lexical fallback to search both source paths and chunk text with source-path weighting.
+- Made chunking boundary-aware so paragraph and line breaks are preferred before falling back to whitespace splits.
+- Added unit coverage for exact-match boosting and boundary-aware chunking behavior.
+
+## [0.3.62] - 2026-03-17
+
+- Reduced the default retrieval fan-out from 5 results to 3 so NebulaRAG returns less low-signal context by default.
+- Added PostgreSQL full-text lexical fallback beneath semantic search when semantic recall is empty, partial, or weak.
+- Added unit coverage for the semantic-plus-lexical result merge rules.
+
+## [0.3.61] - 2026-03-17
+
+- Added `ROADMAP.md` to track the context-mode-inspired NebulaRAG evolution path and the current first implementation slice.
+- Added `.github/nebula.instructions.md` as the canonical Nebula setup and operating guide above the client-specific instruction compatibility files.
+- Updated `scripts/setup-nebula-rag.ps1` to scaffold the canonical Nebula instructions file into target projects.
+- Updated `README.md` to describe the unified setup story around the setup script, roadmap, and canonical Nebula instructions.
+
 ## [0.3.60] - 2026-03-12
 
 - Removed the repo-owned `.github/skills/openpencil-design/` tree so NebulaRAG no longer carries the OpenPencil project skill as local source.

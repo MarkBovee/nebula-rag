@@ -102,9 +102,18 @@ It combines:
 
 - **Local-first** — PostgreSQL + pgvector, nothing leaves your machine
 - **Agent-ready** — MCP tooling surface with RAG + persistent memory
+- **Lean retrieval defaults** — semantic queries default to a smaller result fan-out, boost exact path hits, and fall back to PostgreSQL full-text search when semantic recall is weak
 - **Clean architecture** — core engine, transport adapters, and host runtime are fully separated
 - **Operational from day one** — indexing, source management, health checks, and stats all included
 - **One-line install** — PowerShell setup script handles MCP registration for VS Code and Claude Code
+
+---
+
+## Roadmap
+
+The current product roadmap is tracked in `ROADMAP.md`.
+
+That roadmap is focused on making NebulaRAG the default setup, MCP, RAG, memory, planning, and session-continuity stack for Nebula-centric workflows.
 
 ---
 
@@ -132,6 +141,8 @@ Invoke-WebRequest -Uri $scriptUrl -OutFile $scriptPath -ErrorAction Stop
 ```
 
 Downloads the setup script and configures user-level MCP registration for VS Code and Claude Code.
+
+The same script is also the canonical way to scaffold Nebula instruction files into a project.
 
 ---
 
@@ -286,6 +297,7 @@ NebulaRAG/
 │   └── NebulaRAG.Tests/
 ├── .mcp.json                  # MCP config (Claude Code)
 ├── copilot.mcp.json           # MCP config (VS Code Copilot)
+├── ROADMAP.md                 # Product roadmap and adoption phases
 ├── AGENTS.md                  # Agent instruction file
 ├── compose.yaml               # Docker Compose stack
 └── .env.example               # Environment template
@@ -328,6 +340,16 @@ NebulaRAG/
 ## Agent Setup
 
 NebulaRAG ships with `AGENTS.md` — an instruction file that tells your agent when to query RAG vs memory, when to write to memory, and which conventions this project follows.
+
+NebulaRAG now also ships with `.github/nebula.instructions.md` as the canonical human-facing setup and operating guide. The setup script scaffolds this file alongside the client-specific compatibility files.
+
+The current scaffolded instruction bundle is:
+
+- `.github/nebula.instructions.md`
+- `AGENTS.md`
+- `.github/copilot-instructions.md`
+- `.github/instructions/rag.instructions.md`
+- `.github/skills/nebularag/SKILL.md`
 
 MCP configs for Claude Code (`.mcp.json`) and VS Code Copilot (`copilot.mcp.json`) are included in the repository root and registered automatically by the setup script.
 

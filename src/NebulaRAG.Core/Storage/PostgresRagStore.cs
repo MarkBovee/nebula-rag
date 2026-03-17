@@ -292,6 +292,75 @@ public sealed class PostgresRagStore
     }
 
     /// <summary>
+    /// Executes a lexical fallback search using PostgreSQL full-text search.
+    /// </summary>
+    /// <param name="queryText">The raw query text.</param>
+    /// <param name="topK">Maximum number of results to return.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>List of lexically matched search results ranked by text relevance.</returns>
+    /// <exception cref="ArgumentException">Thrown if queryText is null or whitespace.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown if topK is not greater than 0.</exception>
+    public async Task<IReadOnlyList<RagSearchResult>> SearchLexicalAsync(
+        string queryText,
+        int topK,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(queryText))
+        {
+            throw new ArgumentException("Query text cannot be null or empty.", nameof(queryText));
+        }
+
+        if (topK <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(topK), "TopK must be greater than 0.");
+        }
+
+        const string sql = """
+            WITH query AS (
+                SELECT websearch_to_tsquery('english', @queryText) AS tsquery
+            )
+            SELECT d.source_path,
+                   c.chunk_index,
+                   c.chunk_text,
+                                     ts_rank_cd(
+                                             setweight(to_tsvector('english', COALESCE(d.source_path, '')), 'A') ||
+                                             setweight(to_tsvector('english', c.chunk_text), 'B'),
+                                             query.tsquery) AS score
+            FROM rag_chunks c
+            INNER JOIN rag_documents d ON c.document_id = d.id
+            CROSS JOIN query
+            WHERE numnode(query.tsquery) > 0
+                            AND (
+                                     setweight(to_tsvector('english', COALESCE(d.source_path, '')), 'A') ||
+                                     setweight(to_tsvector('english', c.chunk_text), 'B')
+                            ) @@ query.tsquery
+            ORDER BY score DESC, d.source_path ASC, c.chunk_index ASC
+            LIMIT @topK
+            """;
+
+        var results = new List<RagSearchResult>();
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("queryText", queryText);
+        command.Parameters.AddWithValue("topK", topK);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var scoreOrdinal = ResolveScoreOrdinal(reader);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            results.Add(new RagSearchResult(
+                reader.GetString(0),
+                reader.GetInt32(1),
+                reader.GetString(2),
+                TryReadScore(reader, scoreOrdinal, fallbackOrdinal: 3)));
+        }
+
+        return results;
+    }
+
+    /// <summary>
     /// Retrieves the most recently indexed documents.
     /// </summary>
     /// <param name=\"limit\">Maximum number of documents to return.</param>

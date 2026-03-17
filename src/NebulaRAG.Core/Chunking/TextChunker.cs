@@ -1,7 +1,7 @@
 namespace NebulaRAG.Core.Chunking;
 
 /// <summary>
-/// Splits text content into fixed-size chunks with optional overlap.
+/// Splits text content into boundary-aware chunks with optional overlap.
 /// </summary>
 public sealed class TextChunker
 {
@@ -32,37 +32,160 @@ public sealed class TextChunker
 
         // Normalize line endings for consistent processing
         var normalizedContent = content.Replace("\r\n", "\n");
-        var step = chunkSize - overlap;
         var chunks = new List<TextChunk>();
-        var chunkIndex = 0;
 
-        // Slide a window across content with the calculated step size
-        for (var start = 0; start < normalizedContent.Length; start += step)
+        if (normalizedContent.Length <= chunkSize)
         {
-            var length = Math.Min(chunkSize, normalizedContent.Length - start);
-            var chunkText = normalizedContent.Substring(start, length).Trim();
+            return CreateSingleChunk(normalizedContent);
+        }
 
-            if (chunkText.Length == 0)
-            {
-                continue;
-            }
+        var chunkStartIndex = 0;
+        while (chunkStartIndex < normalizedContent.Length)
+        {
+            var chunkEndIndex = FindChunkEnd(normalizedContent, chunkStartIndex, chunkSize);
+            AppendChunk(chunks, normalizedContent, chunkStartIndex, chunkEndIndex);
 
-            chunks.Add(new TextChunk(chunkIndex, chunkText, CountTokens(chunkText)));
-            chunkIndex++;
-
-            if (start + length >= normalizedContent.Length)
+            if (chunkEndIndex >= normalizedContent.Length)
             {
                 break;
             }
+
+            chunkStartIndex = FindNextChunkStart(normalizedContent, chunkStartIndex, chunkEndIndex, overlap);
         }
 
         return chunks;
     }
 
     /// <summary>
+    /// Creates a single chunk for content that already fits within the configured size.
+    /// </summary>
+    /// <param name="normalizedContent">Normalized content string.</param>
+    /// <returns>Single chunk preserving the trimmed content.</returns>
+    private static IReadOnlyList<TextChunk> CreateSingleChunk(string normalizedContent)
+    {
+        var chunkText = normalizedContent.Trim();
+        return chunkText.Length == 0
+            ? []
+            : [new TextChunk(0, chunkText, CountTokens(chunkText))];
+    }
+
+    /// <summary>
+    /// Locates the best chunk end near the target size, preferring paragraph and line boundaries.
+    /// </summary>
+    /// <param name="content">Normalized content string.</param>
+    /// <param name="startIndex">Current chunk start index.</param>
+    /// <param name="chunkSize">Target maximum chunk size.</param>
+    /// <returns>Chosen end index for the current chunk.</returns>
+    private static int FindChunkEnd(string content, int startIndex, int chunkSize)
+    {
+        var idealEndIndex = Math.Min(startIndex + chunkSize, content.Length);
+        if (idealEndIndex >= content.Length)
+        {
+            return content.Length;
+        }
+
+        var minimumEndIndex = Math.Min(content.Length, startIndex + Math.Max(chunkSize / 2, 1));
+        return FindPreferredBoundary(content, minimumEndIndex, idealEndIndex)
+            ?? idealEndIndex;
+    }
+
+    /// <summary>
+    /// Searches for a paragraph, line, or whitespace boundary within the preferred chunk window.
+    /// </summary>
+    /// <param name="content">Normalized content string.</param>
+    /// <param name="minimumEndIndex">Earliest acceptable boundary index.</param>
+    /// <param name="idealEndIndex">Ideal boundary index near the chunk-size limit.</param>
+    /// <returns>Boundary index when one is found; otherwise <c>null</c>.</returns>
+    private static int? FindPreferredBoundary(string content, int minimumEndIndex, int idealEndIndex)
+    {
+        return FindBoundary(content, "\n\n", minimumEndIndex, idealEndIndex)
+            ?? FindBoundary(content, "\n", minimumEndIndex, idealEndIndex)
+            ?? FindWhitespaceBoundary(content, minimumEndIndex, idealEndIndex);
+    }
+
+    /// <summary>
+    /// Searches backward for a specific delimiter and returns the index immediately after it.
+    /// </summary>
+    /// <param name="content">Normalized content string.</param>
+    /// <param name="delimiter">Preferred boundary delimiter.</param>
+    /// <param name="minimumEndIndex">Earliest acceptable boundary index.</param>
+    /// <param name="idealEndIndex">Latest preferred boundary index.</param>
+    /// <returns>Boundary index when the delimiter is found; otherwise <c>null</c>.</returns>
+    private static int? FindBoundary(string content, string delimiter, int minimumEndIndex, int idealEndIndex)
+    {
+        var searchLength = idealEndIndex - minimumEndIndex;
+        if (searchLength <= 0)
+        {
+            return null;
+        }
+
+        var boundaryIndex = content.LastIndexOf(delimiter, idealEndIndex - 1, searchLength, StringComparison.Ordinal);
+        return boundaryIndex >= minimumEndIndex ? boundaryIndex + delimiter.Length : null;
+    }
+
+    /// <summary>
+    /// Searches backward for whitespace to avoid cutting a chunk in the middle of a word.
+    /// </summary>
+    /// <param name="content">Normalized content string.</param>
+    /// <param name="minimumEndIndex">Earliest acceptable boundary index.</param>
+    /// <param name="idealEndIndex">Latest preferred boundary index.</param>
+    /// <returns>Whitespace boundary index when found; otherwise <c>null</c>.</returns>
+    private static int? FindWhitespaceBoundary(string content, int minimumEndIndex, int idealEndIndex)
+    {
+        for (var candidateIndex = idealEndIndex - 1; candidateIndex >= minimumEndIndex; candidateIndex--)
+        {
+            if (char.IsWhiteSpace(content[candidateIndex]))
+            {
+                return candidateIndex + 1;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Appends a chunk slice when the trimmed content is non-empty.
+    /// </summary>
+    /// <param name="chunks">Destination chunk list.</param>
+    /// <param name="content">Normalized content string.</param>
+    /// <param name="startIndex">Chunk start index.</param>
+    /// <param name="endIndex">Chunk end index.</param>
+    private static void AppendChunk(List<TextChunk> chunks, string content, int startIndex, int endIndex)
+    {
+        var chunkText = content[startIndex..endIndex].Trim();
+        if (chunkText.Length == 0)
+        {
+            return;
+        }
+
+        chunks.Add(new TextChunk(chunks.Count, chunkText, CountTokens(chunkText)));
+    }
+
+    /// <summary>
+    /// Computes the next chunk start index and skips leading whitespace-only overlap.
+    /// </summary>
+    /// <param name="content">Normalized content string.</param>
+    /// <param name="currentStartIndex">Current chunk start index.</param>
+    /// <param name="currentEndIndex">Current chunk end index.</param>
+    /// <param name="overlap">Configured overlap size.</param>
+    /// <returns>Next chunk start index.</returns>
+    private static int FindNextChunkStart(string content, int currentStartIndex, int currentEndIndex, int overlap)
+    {
+        var nextStartIndex = Math.Max(currentStartIndex + 1, currentEndIndex - overlap);
+        while (nextStartIndex < content.Length && char.IsWhiteSpace(content[nextStartIndex]))
+        {
+            nextStartIndex++;
+        }
+
+        return nextStartIndex;
+    }
+
+    /// <summary>
     /// Estimates token count using simple whitespace-based splitting.
     /// For development use; not a precise tokenizer.
     /// </summary>
+    /// <param name="chunkText">Chunk text to tokenize approximately.</param>
+    /// <returns>Whitespace-delimited token count estimate.</returns>
     private static int CountTokens(string chunkText)
     {
         return chunkText
