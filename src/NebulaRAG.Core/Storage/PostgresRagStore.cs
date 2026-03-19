@@ -91,12 +91,10 @@ public sealed class PostgresRagStore
             CREATE INDEX IF NOT EXISTS ix_memories_type ON memories (type);
             CREATE INDEX IF NOT EXISTS ix_memories_project_id ON memories (project_id);
             CREATE INDEX IF NOT EXISTS ix_memories_tags_gin ON memories USING GIN (tags);
-            CREATE INDEX IF NOT EXISTS ix_memories_text_search
+            DROP INDEX IF EXISTS ix_memories_text_search;
+            CREATE INDEX IF NOT EXISTS ix_memories_content_text_search
                 ON memories
-                USING gin ((
-                    setweight(to_tsvector('english', COALESCE(array_to_string(tags, ' '), '')), 'A') ||
-                    setweight(to_tsvector('english', content), 'B')
-                ));
+                USING gin (to_tsvector('english', content));
             CREATE INDEX IF NOT EXISTS ix_memories_embedding_ivfflat
                 ON memories
                 USING ivfflat (embedding vector_cosine_ops)
