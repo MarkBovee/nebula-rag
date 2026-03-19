@@ -1552,11 +1552,7 @@ public sealed class PostgresRagStore
         command.Parameters.Add(CreateNullableTextParameter("content", content));
         command.Parameters.Add(CreateNullableTextParameter("embedding", embedding is null ? null : ToVectorLiteral(embedding)));
 
-        var tagsParameter = new NpgsqlParameter("tags", NpgsqlDbType.Array | NpgsqlDbType.Text)
-        {
-            Value = tags is null ? DBNull.Value : tags.ToArray()
-        };
-        command.Parameters.Add(tagsParameter);
+        command.Parameters.Add(CreateNullableTextArrayParameter("tags", tags, treatEmptyAsNull: false));
 
         var updated = await command.ExecuteNonQueryAsync(cancellationToken);
         return updated > 0;
@@ -1938,6 +1934,22 @@ public sealed class PostgresRagStore
         return new NpgsqlParameter(name, NpgsqlDbType.Text)
         {
             Value = value is null ? DBNull.Value : value
+        };
+    }
+
+    /// <summary>
+    /// Creates a nullable PostgreSQL <c>text[]</c> parameter with an explicit provider type.
+    /// </summary>
+    /// <param name="name">Parameter name.</param>
+    /// <param name="values">Nullable text collection value.</param>
+    /// <param name="treatEmptyAsNull">When <c>true</c>, empty collections are written as database null.</param>
+    /// <returns>Configured typed array parameter for PostgreSQL commands.</returns>
+    private static NpgsqlParameter CreateNullableTextArrayParameter(string name, IReadOnlyList<string>? values, bool treatEmptyAsNull = true)
+    {
+        var shouldWriteNull = values is null || (treatEmptyAsNull && values.Count == 0);
+        return new NpgsqlParameter(name, NpgsqlDbType.Array | NpgsqlDbType.Text)
+        {
+            Value = shouldWriteNull ? DBNull.Value : values!.ToArray()
         };
     }
 

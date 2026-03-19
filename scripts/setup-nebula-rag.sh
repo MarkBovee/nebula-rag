@@ -161,6 +161,18 @@ copy_file_safe() {
 
   ensure_directory "$(dirname "$destination")"
   cp "$source" "$destination"
+  if [[ "${destination##*.}" == "sh" ]]; then
+    python3 - "$destination" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+content = path.read_text(encoding="utf-8")
+normalized = content.replace("\r\n", "\n").replace("\r", "\n")
+if normalized != content:
+    path.write_text(normalized, encoding="utf-8", newline="\n")
+PY
+  fi
   printf 'Copied file: %s\n' "$destination"
 }
 

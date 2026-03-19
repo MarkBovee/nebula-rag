@@ -222,6 +222,21 @@ function Write-JsonObject {
     Write-Host "Wrote config: $Path"
 }
 
+function Normalize-ShellScriptLineEndings {
+    param([string]$Path)
+
+    if ([System.IO.Path]::GetExtension($Path) -ne ".sh" -or -not (Test-Path -LiteralPath $Path)) {
+        return
+    }
+
+    $content = [System.IO.File]::ReadAllText($Path)
+    $normalized = $content -replace "`r`n", "`n"
+    if ($normalized -ne $content) {
+        $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
+        [System.IO.File]::WriteAllText($Path, $normalized, $utf8NoBom)
+    }
+}
+
 function Copy-FileSafe {
     param(
         [string]$Source,
@@ -256,6 +271,7 @@ function Copy-FileSafe {
 
     Ensure-Directory -Path (Split-Path -Parent $Destination)
     Copy-Item -LiteralPath $Source -Destination $Destination -Force -ErrorAction Stop
+    Normalize-ShellScriptLineEndings -Path $Destination
     Write-Host "Copied file: $Destination"
 }
 
