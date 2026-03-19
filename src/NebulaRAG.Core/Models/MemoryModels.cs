@@ -26,6 +26,19 @@ public sealed record MemoryRecord(long Id, string SessionId, string? ProjectId, 
 public sealed record MemorySearchResult(long Id, string SessionId, string? ProjectId, string Type, string Content, IReadOnlyList<string> Tags, DateTimeOffset CreatedAtUtc, double Score);
 
 /// <summary>
+/// Represents the outcome of hybrid memory recall, including fallback diagnostics.
+/// </summary>
+/// <param name="Results">Ranked memory recall results.</param>
+/// <param name="LexicalFallbackUsed">Whether lexical fallback contributed to the final result set.</param>
+/// <param name="SemanticSearchFailed">Whether semantic recall failed before fallback handling completed.</param>
+/// <param name="Warning">Optional warning that explains degraded recall behavior.</param>
+public sealed record MemorySearchOutcome(
+    IReadOnlyList<MemorySearchResult> Results,
+    bool LexicalFallbackUsed,
+    bool SemanticSearchFailed,
+    string? Warning);
+
+/// <summary>
 /// Aggregated memory analytics payload used by dashboard and API consumers.
 /// </summary>
 /// <param name="TotalMemories">Total number of stored memories.</param>

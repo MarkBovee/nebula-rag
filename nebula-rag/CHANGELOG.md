@@ -11,6 +11,19 @@ The format is inspired by Keep a Changelog and follows semantic versioning.
 - Rebuilt the memory tab around project-scoped ledger, search, edit, delete, and purge flows while keeping session ids as optional lineage only.
 - Rebuilt the RAG tab around indexed-document list, search, view, edit, delete, and project purge flows, rather than only source-level maintenance.
 
+## [0.3.73] - 2026-03-19
+
+- Added `scripts/setup-nebula-rag.sh` so Linux and macOS users can install the same Nebula MCP plus hook workflow without requiring `pwsh`.
+- Added a Bash-capable shared hook runner and updated the balanced Copilot/Claude hook templates so project scaffolds work on Unix while keeping the existing PowerShell path for Windows.
+- Updated the PowerShell installer to scaffold the Unix hook asset too, so mixed-platform repositories keep one complete hook bundle.
+- Refreshed the direct test dependency gate by updating `coverlet.collector` to the latest stable patch release available during pre-merge validation.
+
+## [0.3.72] - 2026-03-19
+
+- Replaced the Nebula setup installer with a hook-aware Claude Code and Copilot CLI workflow that writes user-level MCP registration, project-local hook scaffolding, and canonical Nebula instruction files in one pass.
+- Added balanced shared hook assets for Claude Code and Copilot CLI, including session-start context injection, dangerous shell command guardrails, and Nebula failure capture logging.
+- Fixed memory recall resilience by adding lexical fallback and hybrid ranking to Nebula memory search so MCP recall can recover when semantic search is weak or degraded.
+
 ## [0.3.70] - 2026-03-17
 
 - Fixed Home Assistant ingress asset bootstrapping by deriving the dashboard shell base href from the effective request path base instead of emitting a literal `~/` segment.

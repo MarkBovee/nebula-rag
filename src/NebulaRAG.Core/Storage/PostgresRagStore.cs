@@ -91,6 +91,12 @@ public sealed class PostgresRagStore
             CREATE INDEX IF NOT EXISTS ix_memories_type ON memories (type);
             CREATE INDEX IF NOT EXISTS ix_memories_project_id ON memories (project_id);
             CREATE INDEX IF NOT EXISTS ix_memories_tags_gin ON memories USING GIN (tags);
+            CREATE INDEX IF NOT EXISTS ix_memories_text_search
+                ON memories
+                USING gin ((
+                    setweight(to_tsvector('english', COALESCE(array_to_string(tags, ' '), '')), 'A') ||
+                    setweight(to_tsvector('english', content), 'B')
+                ));
             CREATE INDEX IF NOT EXISTS ix_memories_embedding_ivfflat
                 ON memories
                 USING ivfflat (embedding vector_cosine_ops)
@@ -358,6 +364,97 @@ public sealed class PostgresRagStore
         }
 
         return results;
+    }
+
+    /// <summary>
+    /// Executes lexical fallback search over memories using PostgreSQL full-text search.
+    /// </summary>
+    /// <param name="queryText">The raw query text.</param>
+    /// <param name="limit">Maximum number of results to return.</param>
+    /// <param name="type">Optional memory type filter.</param>
+    /// <param name="tag">Optional tag filter.</param>
+    /// <param name="sessionId">Optional session-id filter.</param>
+    /// <param name="projectId">Optional project-id filter.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Lexically ranked memory rows.</returns>
+    public async Task<IReadOnlyList<MemorySearchResult>> SearchMemoriesLexicalAsync(
+        string queryText,
+        int limit,
+        string? type = null,
+        string? tag = null,
+        string? sessionId = null,
+        string? projectId = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(queryText))
+        {
+            throw new ArgumentException("Query text cannot be null or empty.", nameof(queryText));
+        }
+
+        if (limit <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(limit), "Limit must be greater than 0.");
+        }
+
+        var normalizedProjectId = NormalizeProjectId(projectId);
+
+        const string sql = """
+            WITH query AS (
+                SELECT websearch_to_tsquery('english', @queryText) AS tsquery
+            )
+            SELECT id,
+                   session_id,
+                   project_id,
+                   type,
+                   content,
+                   tags,
+                   created_at,
+                   ts_rank_cd(
+                       setweight(to_tsvector('english', COALESCE(array_to_string(tags, ' '), '')), 'A') ||
+                       setweight(to_tsvector('english', content), 'B'),
+                       query.tsquery) AS score
+            FROM memories
+            CROSS JOIN query
+            WHERE numnode(query.tsquery) > 0
+                AND (@type::text IS NULL OR type = @type::text)
+                AND (@tag::text IS NULL OR @tag::text = ANY(tags))
+                AND (@sessionId::text IS NULL OR session_id = @sessionId::text)
+                AND (@projectId::text IS NULL OR project_id = @projectId::text)
+                AND (
+                    setweight(to_tsvector('english', COALESCE(array_to_string(tags, ' '), '')), 'A') ||
+                    setweight(to_tsvector('english', content), 'B')
+                ) @@ query.tsquery
+            ORDER BY score DESC, created_at DESC, id DESC
+            LIMIT @limit
+            """;
+
+        var rows = new List<MemorySearchResult>();
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("queryText", queryText);
+        command.Parameters.Add(CreateNullableTextParameter("type", type));
+        command.Parameters.Add(CreateNullableTextParameter("tag", tag));
+        command.Parameters.Add(CreateNullableTextParameter("sessionId", sessionId));
+        command.Parameters.Add(CreateNullableTextParameter("projectId", normalizedProjectId));
+        command.Parameters.AddWithValue("limit", limit);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var scoreOrdinal = ResolveScoreOrdinal(reader);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            rows.Add(new MemorySearchResult(
+                Id: reader.GetInt64(0),
+                SessionId: reader.GetString(1),
+                ProjectId: reader.IsDBNull(2) ? null : reader.GetString(2),
+                Type: reader.GetString(3),
+                Content: reader.GetString(4),
+                Tags: reader.GetFieldValue<string[]>(5),
+                CreatedAtUtc: reader.GetFieldValue<DateTimeOffset>(6),
+                Score: TryReadScore(reader, scoreOrdinal, fallbackOrdinal: 7)));
+        }
+
+        return rows;
     }
 
     /// <summary>

@@ -378,7 +378,7 @@ public sealed class RagManagementService
     }
 
     /// <summary>
-    /// Performs semantic search over memories with optional type/tag/session/project filters.
+    /// Performs hybrid memory recall with semantic search, lexical fallback, and diagnostic reporting.
     /// </summary>
     /// <param name="text">Natural language search text.</param>
     /// <param name="limit">Maximum number of memories to return.</param>
@@ -387,12 +387,17 @@ public sealed class RagManagementService
     /// <param name="sessionId">Optional session-id filter.</param>
     /// <param name="projectId">Optional project-id filter.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>Semantically ranked memory results.</returns>
-    public async Task<IReadOnlyList<MemorySearchResult>> SearchMemoriesAsync(string text, int limit, string? type = null, string? tag = null, string? sessionId = null, string? projectId = null, CancellationToken cancellationToken = default)
+    /// <returns>Ranked memory results plus fallback diagnostics.</returns>
+    public async Task<MemorySearchOutcome> SearchMemoriesWithDiagnosticsAsync(string text, int limit, string? type = null, string? tag = null, string? sessionId = null, string? projectId = null, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(text))
         {
             throw new ArgumentException("Search text cannot be null or empty.", nameof(text));
+        }
+
+        if (limit <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(limit), "Limit must be greater than 0.");
         }
 
         _logger.LogDebug(
@@ -403,15 +408,78 @@ public sealed class RagManagementService
             sessionId,
             projectId);
 
+        Exception? semanticException = null;
+        IReadOnlyList<MemorySearchResult> semanticResults = [];
+
         try
         {
             var queryEmbedding = _embeddingGenerator.GenerateEmbedding(text, _settings.Ingestion.VectorDimensions);
-            return await _store.SearchMemoriesAsync(queryEmbedding, limit, type, tag, sessionId, projectId, cancellationToken);
+            semanticResults = await _store.SearchMemoriesAsync(queryEmbedding, limit, type, tag, sessionId, projectId, cancellationToken);
         }
         catch (Exception ex) when (!(ex is RagException))
         {
-            _logger.LogError(ex, "Failed to search memories");
-            throw new RagDatabaseException("Failed to search memories", ex);
+            semanticException = ex;
+            _logger.LogWarning(ex, "Semantic memory search failed; attempting lexical fallback");
         }
+
+        var shouldUseLexicalFallback =
+            semanticException is not null ||
+            MemorySearchResultRanker.ShouldUseLexicalFallback(semanticResults, limit);
+
+        IReadOnlyList<MemorySearchResult> lexicalResults = [];
+        string? warning = null;
+
+        if (shouldUseLexicalFallback)
+        {
+            try
+            {
+                lexicalResults = await _store.SearchMemoriesLexicalAsync(text, limit, type, tag, sessionId, projectId, cancellationToken);
+            }
+            catch (Exception ex) when (!(ex is RagException))
+            {
+                if (semanticException is not null || semanticResults.Count == 0)
+                {
+                    _logger.LogError(ex, "Hybrid memory recall failed after semantic search degradation");
+                    throw new RagDatabaseException("Failed to search memories with hybrid ranking", semanticException is null ? ex : new AggregateException(semanticException, ex));
+                }
+
+                warning = "Lexical fallback failed; returning semantic results only.";
+                _logger.LogWarning(ex, warning);
+                return new MemorySearchOutcome(semanticResults, LexicalFallbackUsed: false, SemanticSearchFailed: false, Warning: warning);
+            }
+        }
+
+        if (semanticException is not null)
+        {
+            if (lexicalResults.Count == 0)
+            {
+                _logger.LogError(semanticException, "Hybrid memory recall failed because semantic search failed and lexical fallback returned no matches");
+                throw new RagDatabaseException("Failed to search memories with hybrid ranking", semanticException);
+            }
+
+            warning = "Semantic memory search failed; returning lexical fallback results.";
+        }
+
+        var results = shouldUseLexicalFallback
+            ? MemorySearchResultRanker.MergePrimaryWithFallback(text, semanticResults, lexicalResults, limit)
+            : semanticResults.Take(limit).ToList();
+
+        return new MemorySearchOutcome(results, shouldUseLexicalFallback, semanticException is not null, warning);
+    }
+
+    /// <summary>
+    /// Performs hybrid memory recall and returns only the ranked results.
+    /// </summary>
+    /// <param name="text">Natural language search text.</param>
+    /// <param name="limit">Maximum number of memories to return.</param>
+    /// <param name="type">Optional memory type filter.</param>
+    /// <param name="tag">Optional tag filter.</param>
+    /// <param name="sessionId">Optional session-id filter.</param>
+    /// <param name="projectId">Optional project-id filter.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Ranked memory results.</returns>
+    public async Task<IReadOnlyList<MemorySearchResult>> SearchMemoriesAsync(string text, int limit, string? type = null, string? tag = null, string? sessionId = null, string? projectId = null, CancellationToken cancellationToken = default)
+    {
+        return (await SearchMemoriesWithDiagnosticsAsync(text, limit, type, tag, sessionId, projectId, cancellationToken)).Results;
     }
 }
