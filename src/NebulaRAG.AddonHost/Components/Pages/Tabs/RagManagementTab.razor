@@ -8,72 +8,45 @@
                 <h2 class="panel-title">@GetScopeHeading()</h2>
                 <p class="panel-copy">@GetScopeDescription()</p>
             </div>
-            <span class="badge">@_sources.Count visible</span>
+            <span class="badge">@_documents.Count visible docs</span>
         </div>
     </section>
 
     <section class="metric-grid">
         <article class="metric-card accent">
-            <span class="metric-label">@(HasSelectedProject() ? "Project documents" : "Indexed documents")</span>
-            <span class="metric-value">@_sources.Count</span>
-            <p class="metric-footnote">@(HasSelectedProject() ? "The source ledger is filtered to the active project." : "Total sources currently surfaced by the dashboard snapshot.")</p>
+            <span class="metric-label">Visible documents</span>
+            <span class="metric-value">@_documents.Count</span>
+            <p class="metric-footnote">Project-owned indexed documents currently surfaced by the dashboard.</p>
         </article>
         <article class="metric-card secondary">
-            <span class="metric-label">Chunks indexed</span>
-            <span class="metric-value">@_sources.Sum(source => source.ChunkCount)</span>
-            <p class="metric-footnote">Source volume currently visible from the operator surface.</p>
+            <span class="metric-label">Stored chunks</span>
+            <span class="metric-value">@_documents.Sum(document => document.ChunkCount)</span>
+            <p class="metric-footnote">Chunk volume in the active document ledger.</p>
         </article>
         <article class="metric-card tertiary">
-            <span class="metric-label">Query matches</span>
-            <span class="metric-value">@_queryResults.Count</span>
-            <p class="metric-footnote">Last semantic query result count.</p>
+            <span class="metric-label">Search filter</span>
+            <span class="metric-value">@(_documentSearchText.Length == 0 ? "all" : "filtered")</span>
+            <p class="metric-footnote">Document search matches source paths and indexed content previews.</p>
         </article>
         <article class="metric-card warning">
             <span class="metric-label">Latest index</span>
             <span class="metric-value">@GetLatestIndexTime()</span>
-            <p class="metric-footnote">Most recent indexed timestamp across visible sources.</p>
+            <p class="metric-footnote">Most recent indexed timestamp across visible documents.</p>
         </article>
     </section>
 
     @if (!string.IsNullOrWhiteSpace(_statusMessage))
     {
-        <section class="status-banner @(_statusIsError ? "error" : "ok")">
-            @_statusMessage
-        </section>
+        <section class="status-banner @(_statusIsError ? "error" : "ok")">@_statusMessage</section>
     }
 
-    <section class="triple-grid">
-        <article class="panel section-panel compact">
-            <div class="panel-header">
-                <div>
-                    <p class="eyebrow">Retrieval</p>
-                    <h2 class="panel-title">Query index</h2>
-                    <p class="panel-copy">Probe the index quickly from the dashboard before reaching for MCP clients.</p>
-                </div>
-            </div>
-
-            <div class="form-grid">
-                <label class="field span-2">
-                    <span class="field-label">Query text</span>
-                    <input class="text-input" @bind="_queryText" placeholder="Ask Nebula what you need to find" />
-                </label>
-                <label class="field">
-                    <span class="field-label">Result limit</span>
-                    <input class="text-input" type="number" min="1" max="20" @bind="_queryLimit" />
-                </label>
-                <div class="field">
-                    <span class="field-label">Action</span>
-                    <button class="button button-primary" @onclick="RunQueryAsync">Run query</button>
-                </div>
-            </div>
-        </article>
-
+    <section class="split-grid">
         <article class="panel section-panel compact">
             <div class="panel-header">
                 <div>
                     <p class="eyebrow">Ingestion</p>
                     <h2 class="panel-title">Index source path</h2>
-                    <p class="panel-copy">Run a filesystem indexing pass directly from the add-on host.</p>
+                    <p class="panel-copy">Start a filesystem indexing pass directly from the add-on host to add or refresh document inventory.</p>
                 </div>
             </div>
 
@@ -91,81 +64,73 @@
         <article class="panel section-panel compact">
             <div class="panel-header">
                 <div>
-                    <p class="eyebrow">Maintenance</p>
-                    <h2 class="panel-title">Index maintenance</h2>
-                    <p class="panel-copy">Use guarded deletion and purge actions when the index needs correction.</p>
+                    <p class="eyebrow">Browse</p>
+                    <h2 class="panel-title">Project document ledger</h2>
+                    <p class="panel-copy">Search by source path or content preview, then purge a project slice when the index needs correction.</p>
                 </div>
             </div>
 
             <div class="form-grid">
-                <label class="field span-2">
-                    <span class="field-label">Delete source path</span>
-                    <input class="text-input mono" @bind="_deleteSourcePath" placeholder="Exact indexed source path" />
+                <label class="field">
+                    <span class="field-label">Project id</span>
+                    <input class="text-input mono" @bind="_projectFilter" placeholder="Project filter" />
+                </label>
+                <label class="field">
+                    <span class="field-label">Search text</span>
+                    <input class="text-input" @bind="_documentSearchText" placeholder="Search source path or content" />
                 </label>
                 <div class="field">
-                    <button class="button button-warning" @onclick="OpenDeleteSourceConfirm">Delete source</button>
+                    <button class="button button-primary" @onclick="RefreshDocumentsAsync">Refresh documents</button>
                 </div>
                 <div class="field">
-                    <button class="button button-danger" @onclick="OpenPurgeConfirm">Purge all</button>
+                    <button class="button button-danger" @onclick="OpenPurgeProjectConfirm">Purge project docs</button>
                 </div>
             </div>
         </article>
     </section>
 
-    <section class="panel table-panel">
+    <section class="panel section-panel">
         <div class="panel-header">
             <div>
-                <p class="eyebrow">Matches</p>
-                <h2 class="panel-title">Result ledger</h2>
-                <p class="panel-copy">Semantic matches ordered by score.</p>
+                <p class="eyebrow">Editor</p>
+                <h2 class="panel-title">View and edit indexed document</h2>
+                <p class="panel-copy">Open one indexed document, inspect its reconstructed content, edit it in place, or remove it.</p>
             </div>
-            <span class="badge">@_queryResults.Count results</span>
         </div>
 
-        <div class="table-shell">
-            @if (_queryResults.Count == 0)
-            {
-                <div class="empty-state">Run a semantic query to inspect the highest-signal chunks currently in the index.</div>
-            }
-            else
-            {
-                <table class="data-table">
-                    <thead>
-                        <tr>
-                            <th>Source</th>
-                            <th>Score</th>
-                            <th>Snippet</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @foreach (var match in _queryResults)
-                        {
-                            <tr>
-                                <td>
-                                    <div class="cell-title mono">@match.SourcePath</div>
-                                </td>
-                                <td>
-                                    <div class="cell-title">@match.Score.ToString("F3", CultureInfo.InvariantCulture)</div>
-                                </td>
-                                <td class="truncate-cell">
-                                    <div class="cell-title">@TrimText(match.ChunkText, 220)</div>
-                                </td>
-                            </tr>
-                        }
-                    </tbody>
-                </table>
-            }
+        <div class="form-grid">
+            <label class="field span-2">
+                <span class="field-label">Source path</span>
+                <input class="text-input mono" @bind="_editSourcePath" placeholder="Stored source path" />
+            </label>
+            <label class="field span-2">
+                <span class="field-label">Project id</span>
+                <input class="text-input mono" @bind="_editProjectId" placeholder="Derived project id" />
+            </label>
+            <label class="field span-2">
+                <span class="field-label">Content</span>
+                <textarea class="textarea-input" @bind="_editContent" placeholder="Indexed document content"></textarea>
+            </label>
+            <div class="field">
+                <button class="button button-muted" @onclick="LoadSelectedDocumentAsync">Load document</button>
+            </div>
+            <div class="field">
+                <button class="button button-secondary" @onclick="SaveDocumentAsync">Save document</button>
+            </div>
+            <div class="field">
+                <button class="button button-danger" @onclick="OpenDeleteDocumentConfirm">Delete document</button>
+            </div>
         </div>
     </section>
 
     <section class="panel table-panel">
         <div class="panel-header">
             <div>
-                <p class="eyebrow">Sources</p>
-                <h2 class="panel-title">Document ledger</h2>
-                <p class="panel-copy">Review source ownership, chunk volume, and hashes before reindexing or deletion.</p>
+                <p class="eyebrow">Ledger</p>
+                <h2 class="panel-title">Indexed documents</h2>
+                <p class="panel-copy">Project-scoped document list with view, edit, delete, and purge flows.</p>
             </div>
-            <span class="badge">@_sources.Count tracked</span>
+            <span class="badge">@_documents.Count tracked</span>
         </div>
 
         <div class="table-shell">
@@ -174,35 +139,28 @@
                     <tr>
                         <th>Source</th>
                         <th>Project</th>
-                        <th>Chunks</th>
+                        <th>Chunks / Tokens</th>
                         <th>Indexed</th>
-                        <th>Content hash</th>
+                        <th>Preview</th>
                         <th>Actions</th>
                     </tr>
                 </thead>
                 <tbody>
-                    @foreach (var source in _sources.OrderByDescending(source => source.IndexedAt))
+                    @foreach (var document in _documents.OrderByDescending(document => document.IndexedAt))
                     {
                         <tr>
+                            <td><div class="cell-title mono">@document.SourcePath</div></td>
+                            <td><div class="cell-title mono">@(document.ProjectId ?? "unscoped")</div></td>
                             <td>
-                                <div class="cell-title mono">@source.SourcePath</div>
+                                <div class="cell-title">@document.ChunkCount chunks</div>
+                                <div class="cell-subtitle">@document.TokenCount tokens</div>
                             </td>
-                            <td>
-                                <div class="cell-title">@(source.ProjectId ?? "unscoped")</div>
-                            </td>
-                            <td>
-                                <div class="cell-title">@source.ChunkCount</div>
-                            </td>
-                            <td>
-                                <div class="cell-title">@source.IndexedAt.ToLocalTime().ToString("MMM dd HH:mm", CultureInfo.InvariantCulture)</div>
-                            </td>
-                            <td>
-                                <div class="cell-title mono">@TrimText(source.ContentHash, 18)</div>
-                            </td>
+                            <td><div class="cell-title">@document.IndexedAt.ToLocalTime().ToString("MMM dd HH:mm", CultureInfo.InvariantCulture)</div></td>
+                            <td class="truncate-cell"><div class="cell-title">@TrimText(document.PreviewText, 180)</div></td>
                             <td>
                                 <div class="table-actions">
-                                    <button class="button button-muted" @onclick="() => UseSourceForQuery(source.SourcePath)">Query path</button>
-                                    <button class="button button-warning" @onclick="() => ConfirmDeleteFromRow(source.SourcePath)">Delete</button>
+                                    <button class="button button-muted" @onclick="() => LoadDocumentIntoEditorAsync(document.SourcePath)">View</button>
+                                    <button class="button button-danger" @onclick="() => OpenDeleteDocumentConfirm(document.SourcePath)">Delete</button>
                                 </div>
                             </td>
                         </tr>
@@ -213,5 +171,5 @@
     </section>
 </div>
 
-<ConfirmationModal IsOpen="@_showPurgeConfirm" Title="Purge Entire Index" Message="This will delete all indexed RAG documents and chunks. This action cannot be undone." OnConfirm="ConfirmPurgeAsync" OnCancel="CloseAllConfirm" />
-<ConfirmationModal IsOpen="@_showDeleteSourceConfirm" Title="Delete Indexed Source" Message="Delete this source and all its chunks from the index?" OnConfirm="ConfirmDeleteSourceAsync" OnCancel="CloseAllConfirm" />
+<ConfirmationModal IsOpen="@_showDeleteDocumentConfirm" Title="Delete Indexed Document" Message="Delete this indexed document and all its chunks?" OnConfirm="ConfirmDeleteDocumentAsync" OnCancel="CloseAllConfirm" />
+<ConfirmationModal IsOpen="@_showPurgeProjectConfirm" Title="Purge Project Documents" Message="Delete every indexed document and chunk for the active project?" OnConfirm="ConfirmPurgeProjectAsync" OnCancel="CloseAllConfirm" />

@@ -1,6 +1,7 @@
 using NebulaRAG.Core.Exceptions;
 using NebulaRAG.Core.Models;
 using NebulaRAG.Core.Storage;
+using TaskLifecycleStatus = NebulaRAG.Core.Models.TaskStatus;
 
 namespace NebulaRAG.Core.Services;
 
@@ -79,7 +80,43 @@ public sealed class PlanService
                 context: new { PlanId = planId, CurrentStatus = plan.Status, NewStatus = newStatus });
         }
 
+        await EnsurePlanCanBeCompletedAsync(planId, newStatus, cancellationToken);
+
         await _planStore.UpdatePlanStatusAsync(planId, newStatus, changedBy, reason, cancellationToken);
+    }
+
+    /// <summary>
+    /// Ensures plan completion only happens when all tasks are already terminal.
+    /// </summary>
+    /// <param name="planId">The plan identifier being updated.</param>
+    /// <param name="newStatus">The requested target status.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A completion task.</returns>
+    /// <exception cref="PlanException">Thrown when a plan is completed while tasks remain open.</exception>
+    private async Task EnsurePlanCanBeCompletedAsync(long planId, PlanStatus newStatus, CancellationToken cancellationToken)
+    {
+        if (newStatus != PlanStatus.Completed)
+        {
+            return;
+        }
+
+        var (_, tasks) = await _planStore.GetPlanWithTasksByIdAsync(planId, cancellationToken);
+        if (PlanValidator.CanCompletePlan(tasks))
+        {
+            return;
+        }
+
+        throw new PlanException(
+            violationType: "PlanHasOpenTasks",
+            message: $"Plan {planId} cannot be completed while tasks are still pending or in progress.",
+            context: new
+            {
+                PlanId = planId,
+                OpenTaskIds = tasks
+                    .Where(task => task.Status == TaskLifecycleStatus.Pending || task.Status == TaskLifecycleStatus.InProgress)
+                    .Select(task => task.Id)
+                    .ToArray()
+            });
     }
 
     /// <summary>

@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "hooks": {
+    "sessionStart": [
+      {
+        "type": "command",
+        "bash": "bash .github/nebula/hooks/Invoke-NebulaAgentHook.sh --agent Copilot --event SessionStart",
+        "powershell": "pwsh -NoLogo -NoProfile -File .github/nebula/hooks/Invoke-NebulaAgentHook.ps1 -Agent Copilot -Event SessionStart",
+        "cwd": ".",
+        "timeoutSec": 10
+      }
+    ],
+    "preToolUse": [
+      {
+        "type": "command",
+        "bash": "bash .github/nebula/hooks/Invoke-NebulaAgentHook.sh --agent Copilot --event PreToolUse",
+        "powershell": "pwsh -NoLogo -NoProfile -File .github/nebula/hooks/Invoke-NebulaAgentHook.ps1 -Agent Copilot -Event PreToolUse",
+        "cwd": ".",
+        "timeoutSec": 10
+      }
+    ],
+    "postToolUse": [
+      {
+        "type": "command",
+        "bash": "bash .github/nebula/hooks/Invoke-NebulaAgentHook.sh --agent Copilot --event PostToolUse",
+        "powershell": "pwsh -NoLogo -NoProfile -File .github/nebula/hooks/Invoke-NebulaAgentHook.ps1 -Agent Copilot -Event PostToolUse",
+        "cwd": ".",
+        "timeoutSec": 10
+      }
+    ],
+    "errorOccurred": [
+      {
+        "type": "command",
+        "bash": "bash .github/nebula/hooks/Invoke-NebulaAgentHook.sh --agent Copilot --event ErrorOccurred",
+        "powershell": "pwsh -NoLogo -NoProfile -File .github/nebula/hooks/Invoke-NebulaAgentHook.ps1 -Agent Copilot -Event ErrorOccurred",
+        "cwd": ".",
+        "timeoutSec": 10
+      }
+    ]
+  }
+}

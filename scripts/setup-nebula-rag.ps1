@@ -7,14 +7,20 @@ param(
 
     [string]$TargetPath,
 
+    [ValidateSet("Both", "Copilot", "ClaudeCode", "VSCode")]
+    [string]$ClientTargets = "Both",
+
+    [Alias("UserConfigPath")]
+    [string]$CopilotConfigPath,
+
+    [Alias("ClaudeUserConfig")]
+    [string]$ClaudeUserConfigPath,
+
+    [string]$ClaudeProjectConfigPath,
+    [string]$ClaudeSettingsPath,
+
     [ValidateSet("Auto", "Code", "Insiders", "Both")]
     [string]$Channel = "Auto",
-    [string]$UserConfigPath,
-
-    [ValidateSet("Both", "VSCode", "ClaudeCode")]
-    [string]$ClientTargets = "Both",
-    [string]$ClaudeUserConfigPath,
-    [string]$ClaudeProjectConfigPath,
 
     [string]$ServerName = "nebula-rag",
     [string]$ImageName = "localhost/nebula-rag-mcp:latest",
@@ -22,22 +28,43 @@ param(
     [string]$HomeAssistantMcpUrl = "http://homeassistant.local:8099/nebula/mcp",
     [string]$ExternalHomeAssistantMcpUrl,
     [switch]$UseExternalHomeAssistantUrl,
-
-    [string]$EnvFileName = ".env",
-    [string]$EnvFilePath,
+    [switch]$ForceExternal,
 
     [ValidateSet("Ask", "LocalContainer", "HomeAssistantAddon")]
     [string]$InstallTarget = "Ask",
 
+    [string]$EnvFilePath,
     [switch]$CreateEnvTemplate,
     [switch]$SkipSkill,
-    [switch]$SkipGlobalAgents,
     [switch]$NoBackup,
-    [switch]$ForceExternal,
     [switch]$Force
 )
 
 $ErrorActionPreference = "Stop"
+
+function Ensure-Directory {
+    param([string]$Path)
+
+    if (-not (Test-Path -LiteralPath $Path)) {
+        New-Item -ItemType Directory -Path $Path -Force | Out-Null
+    }
+}
+
+function Backup-File {
+    param(
+        [string]$Path,
+        [switch]$SkipBackup
+    )
+
+    if ($SkipBackup -or -not (Test-Path -LiteralPath $Path)) {
+        return
+    }
+
+    $timestamp = Get-Date -Format "yyyyMMddHHmmss"
+    $backupPath = "$Path.$timestamp.bak"
+    Copy-Item -LiteralPath $Path -Destination $backupPath -Force
+    Write-Host "Backed up existing file to: $backupPath"
+}
 
 function Resolve-HomeAssistantMcpUrl {
     param(
@@ -62,10 +89,34 @@ function Resolve-HomeAssistantMcpUrl {
     return $LocalUrl
 }
 
-function Ensure-Directory {
-    param([string]$Path)
-    if (-not (Test-Path -LiteralPath $Path)) {
-        New-Item -ItemType Directory -Path $Path | Out-Null
+function Resolve-InstallTarget {
+    param([string]$SelectedInstallTarget)
+
+    if ($SelectedInstallTarget -ne "Ask") {
+        return $SelectedInstallTarget
+    }
+
+    if ($null -eq $Host -or $null -eq $Host.UI) {
+        Write-Host "No interactive host available; defaulting to HomeAssistantAddon."
+        return "HomeAssistantAddon"
+    }
+
+    Write-Host ""
+    Write-Host "Select NebulaRAG install target:"
+    Write-Host "  1) Home Assistant add-on (recommended)"
+    Write-Host "  2) Local container MCP (Podman env-file workflow)"
+
+    while ($true) {
+        $selection = Read-Host "Enter 1 or 2 (default 1)"
+        if ([string]::IsNullOrWhiteSpace($selection) -or $selection -eq "1") {
+            return "HomeAssistantAddon"
+        }
+
+        if ($selection -eq "2") {
+            return "LocalContainer"
+        }
+
+        Write-Host "Invalid selection. Enter 1 or 2."
     }
 }
 
@@ -96,7 +147,7 @@ function Resolve-TemplateFile {
 
     if (-not (Test-Path -LiteralPath $downloadPath)) {
         Ensure-Directory -Path (Split-Path -Parent $downloadPath)
-        $downloadUrl = "$(($RawBaseUrl.TrimEnd('/')))/$normalizedRelativePath"
+        $downloadUrl = "$($RawBaseUrl.TrimEnd('/'))/$normalizedRelativePath"
 
         try {
             Invoke-WebRequest -Uri $downloadUrl -OutFile $downloadPath -ErrorAction Stop
@@ -115,21 +166,60 @@ function Resolve-TemplateFile {
     return [System.IO.Path]::GetFullPath($downloadPath)
 }
 
-function Write-TextFile {
+function Read-JsonObject {
     param(
         [string]$Path,
-        [string]$Content,
-        [switch]$ForceWrite
+        [hashtable]$DefaultRoot,
+        [switch]$SkipBackup
     )
 
-    if ((Test-Path -LiteralPath $Path) -and -not $ForceWrite) {
-        Write-Host "Skip existing file: $Path"
-        return
+    if (-not (Test-Path -LiteralPath $Path)) {
+        return $DefaultRoot
     }
 
+    $raw = Get-Content -LiteralPath $Path -Raw
+    if ([string]::IsNullOrWhiteSpace($raw)) {
+        return $DefaultRoot
+    }
+
+    try {
+        $parsed = $raw | ConvertFrom-Json -AsHashtable -Depth 64
+    }
+    catch {
+        $sanitized = $raw -replace '(?s)/\*.*?\*/', ''
+        $sanitized = $sanitized -replace '(?m)^\s*//.*$', ''
+        $sanitized = $sanitized -replace ',(\s*[}\]])', '$1'
+
+        try {
+            $parsed = $sanitized | ConvertFrom-Json -AsHashtable -Depth 64
+        }
+        catch {
+            Backup-File -Path $Path -SkipBackup:$SkipBackup
+            Write-Warning "Invalid JSON in config: $Path"
+            Write-Warning "Continuing with a fresh root for this path."
+            return $DefaultRoot
+        }
+    }
+
+    if (-not ($parsed -is [System.Collections.IDictionary])) {
+        return $DefaultRoot
+    }
+
+    return $parsed
+}
+
+function Write-JsonObject {
+    param(
+        [string]$Path,
+        [hashtable]$Root,
+        [switch]$SkipBackup
+    )
+
     Ensure-Directory -Path (Split-Path -Parent $Path)
-    Set-Content -LiteralPath $Path -Value $Content -Encoding utf8
-    Write-Host "Wrote file: $Path"
+    Backup-File -Path $Path -SkipBackup:$SkipBackup
+    $json = $Root | ConvertTo-Json -Depth 64
+    Set-Content -LiteralPath $Path -Value $json -Encoding utf8
+    Write-Host "Wrote config: $Path"
 }
 
 function Copy-FileSafe {
@@ -169,14 +259,104 @@ function Copy-FileSafe {
     Write-Host "Copied file: $Destination"
 }
 
+function Ensure-GitignoreEntry {
+    param(
+        [string]$GitignorePath,
+        [string]$Entry
+    )
+
+    if (-not (Test-Path -LiteralPath $GitignorePath)) {
+        Set-Content -LiteralPath $GitignorePath -Value $Entry -Encoding utf8
+        Write-Host "Wrote file: $GitignorePath"
+        return
+    }
+
+    $entries = Get-Content -LiteralPath $GitignorePath
+    if ($entries -contains $Entry) {
+        Write-Host "Skip $Entry update: already present in $GitignorePath"
+        return
+    }
+
+    Add-Content -LiteralPath $GitignorePath -Value $Entry
+    Write-Host "Updated .gitignore with $Entry"
+}
+
+function Resolve-ClientTargetList {
+    param([string]$SelectedTargets)
+
+    $targets = if ($SelectedTargets -eq "Both") {
+        @("Copilot", "ClaudeCode")
+    }
+    elseif ($SelectedTargets -eq "VSCode") {
+        Write-Warning "VSCode is now treated as a compatibility alias for Copilot CLI. The installer writes Copilot CLI MCP config plus project-local hooks."
+        @("Copilot")
+    }
+    else {
+        @($SelectedTargets)
+    }
+
+    if ($Channel -ne "Auto") {
+        Write-Warning "-Channel is retained for compatibility but no longer changes setup behavior. Copilot CLI hooks are project-local and user-level MCP config lives in ~/.copilot/mcp-config.json."
+    }
+
+    return $targets
+}
+
+function Get-DefaultCopilotConfigPath {
+    $copilotHome = if (-not [string]::IsNullOrWhiteSpace($env:COPILOT_HOME)) {
+        $env:COPILOT_HOME
+    }
+    else {
+        Join-Path $HOME ".copilot"
+    }
+
+    Ensure-Directory -Path $copilotHome
+    return [System.IO.Path]::GetFullPath((Join-Path $copilotHome "mcp-config.json"))
+}
+
+function Get-DefaultClaudeUserConfigPath {
+    if ([string]::IsNullOrWhiteSpace($HOME)) {
+        throw "HOME is not set. Provide -ClaudeUserConfigPath explicitly."
+    }
+
+    return [System.IO.Path]::GetFullPath((Join-Path $HOME ".claude.json"))
+}
+
+function Get-McpRoot {
+    param([string]$Path)
+
+    $root = Read-JsonObject -Path $Path -DefaultRoot ([ordered]@{ mcpServers = [ordered]@{} }) -SkipBackup:$NoBackup
+    if (-not $root.Contains("mcpServers") -or -not ($root["mcpServers"] -is [System.Collections.IDictionary])) {
+        $root["mcpServers"] = [ordered]@{}
+    }
+
+    return $root
+}
+
+function Upsert-McpServer {
+    param(
+        [hashtable]$Root,
+        [string]$ConfiguredServerName,
+        [hashtable]$ServerDefinition,
+        [switch]$ForceWrite
+    )
+
+    if ($Root["mcpServers"].Contains($ConfiguredServerName) -and -not $ForceWrite) {
+        Write-Host "Skip existing '$ConfiguredServerName' in mcpServers (use -Force to overwrite)."
+        return
+    }
+
+    $Root["mcpServers"][$ConfiguredServerName] = $ServerDefinition
+    Write-Host "Configured '$ConfiguredServerName' in mcpServers."
+}
+
 function New-ServerDefinition {
     param(
+        [string]$SelectedInstallTarget,
+        [string]$ConfiguredHomeAssistantMcpUrl,
         [string]$ConfiguredImage,
         [string]$ConfiguredEnvFile,
-        [string]$WorkspaceFolderScope,
-        [string]$HostSourcePath,
-        [string]$SelectedInstallTarget,
-        [string]$ConfiguredHomeAssistantMcpUrl
+        [string]$HostSourcePath
     )
 
     if ($SelectedInstallTarget -eq "HomeAssistantAddon") {
@@ -195,19 +375,9 @@ function New-ServerDefinition {
         "--cpus=1.0"
     )
 
-    $envMap = [ordered]@{}
-
-    if (-not [string]::IsNullOrWhiteSpace($WorkspaceFolderScope)) {
-        $envMap["NEBULARAG_PathMappings"] = "${workspaceFolder:$WorkspaceFolderScope}=/workspace"
-        $containerArgs += @(
-            "--mount",
-            "type=bind,source=${workspaceFolder:$WorkspaceFolderScope},target=/workspace",
-            "--workdir",
-            "/workspace"
-        )
-    }
-    elseif (-not [string]::IsNullOrWhiteSpace($HostSourcePath)) {
-        $envMap["NEBULARAG_PathMappings"] = "$HostSourcePath=/workspace"
+    $environment = [ordered]@{}
+    if (-not [string]::IsNullOrWhiteSpace($HostSourcePath)) {
+        $environment["NEBULARAG_PathMappings"] = "$HostSourcePath=/workspace"
         $containerArgs += @(
             "--mount",
             "type=bind,source=$HostSourcePath,target=/workspace",
@@ -229,251 +399,11 @@ function New-ServerDefinition {
         args = $containerArgs
     }
 
-    if ($envMap.Count -gt 0) {
-        $server["env"] = $envMap
+    if ($environment.Count -gt 0) {
+        $server["env"] = $environment
     }
 
     return $server
-}
-
-function Ensure-GitignoreEnv {
-    param([string]$GitignorePath)
-
-    $envFileName = ".env"
-
-    if (-not (Test-Path -LiteralPath $GitignorePath)) {
-        Set-Content -LiteralPath $GitignorePath -Value $envFileName -Encoding utf8
-        Write-Host "Wrote file: $GitignorePath"
-        return
-    }
-
-    $entries = Get-Content -LiteralPath $GitignorePath
-    if ($entries -contains $envFileName) {
-        Write-Host "Skip $envFileName update: already present in $GitignorePath"
-        return
-    }
-
-    Add-Content -LiteralPath $GitignorePath -Value $envFileName
-    Write-Host "Updated .gitignore with $envFileName"
-}
-
-function Get-DefaultUserConfigPath {
-    param([string]$SelectedChannel)
-
-    $appData = $env:APPDATA
-    if ([string]::IsNullOrWhiteSpace($appData)) {
-        throw "APPDATA is not set. Provide -UserConfigPath explicitly."
-    }
-
-    $codePath = Join-Path $appData "Code/User/mcp.json"
-    $insidersPath = Join-Path $appData "Code - Insiders/User/mcp.json"
-
-    if ($SelectedChannel -eq "Code") { return @($codePath) }
-    if ($SelectedChannel -eq "Insiders") { return @($insidersPath) }
-    if ($SelectedChannel -eq "Both") { return @($codePath, $insidersPath) }
-
-    if (Test-Path -LiteralPath $insidersPath) {
-        return @($insidersPath)
-    }
-
-    return @($codePath)
-}
-
-function Get-OrCreateRootObject {
-    param([string]$Path)
-
-    if (-not (Test-Path -LiteralPath $Path)) {
-        return [ordered]@{
-            mcpServers = [ordered]@{}
-            servers = [ordered]@{}
-        }
-    }
-
-    $raw = Get-Content -LiteralPath $Path -Raw
-    if ([string]::IsNullOrWhiteSpace($raw)) {
-        return [ordered]@{
-            mcpServers = [ordered]@{}
-            servers = [ordered]@{}
-        }
-    }
-
-    function New-EmptyRoot {
-        return [ordered]@{
-            mcpServers = [ordered]@{}
-            servers = [ordered]@{}
-        }
-    }
-
-    function Try-ParseJsonLike {
-        param([string]$JsonText)
-
-        try {
-            return $JsonText | ConvertFrom-Json -AsHashtable
-        }
-        catch {
-            # Best-effort JSONC cleanup: strip block/line comments and trailing commas.
-            $sanitized = $JsonText -replace '(?s)/\*.*?\*/', ''
-            $sanitized = $sanitized -replace '(?m)^\s*//.*$', ''
-            $sanitized = $sanitized -replace '(?m)([^:])//.*$', '$1'
-            $sanitized = $sanitized -replace ',(\s*[}\]])', '$1'
-
-            try {
-                return $sanitized | ConvertFrom-Json -AsHashtable
-            }
-            catch {
-                return $null
-            }
-        }
-    }
-
-    $parsed = Try-ParseJsonLike -JsonText $raw
-    if ($null -eq $parsed) {
-        $timestamp = Get-Date -Format "yyyyMMddHHmmss"
-        $backupPath = "$Path.invalid.$timestamp.bak"
-        Copy-Item -LiteralPath $Path -Destination $backupPath -Force
-        Write-Warning "Invalid JSON in user MCP config: $Path"
-        Write-Warning "Backed up invalid file to: $backupPath"
-        Write-Warning "Continuing with a fresh MCP config root for this path."
-        return New-EmptyRoot
-    }
-
-    if (-not ($parsed -is [System.Collections.IDictionary])) {
-        $parsed = [ordered]@{}
-    }
-
-    if (-not $parsed.Contains("mcpServers") -or $null -eq $parsed["mcpServers"]) {
-        $parsed["mcpServers"] = [ordered]@{}
-    }
-
-    if (-not $parsed.Contains("servers") -or $null -eq $parsed["servers"]) {
-        $parsed["servers"] = [ordered]@{}
-    }
-
-    return $parsed
-}
-
-function Get-DefaultClaudeUserConfigPath {
-    $homeDirectory = $HOME
-    if ([string]::IsNullOrWhiteSpace($homeDirectory)) {
-        throw "HOME is not set. Provide -ClaudeUserConfigPath explicitly."
-    }
-
-    return [System.IO.Path]::GetFullPath((Join-Path $homeDirectory ".claude.json"))
-}
-
-function Get-OrCreateClaudeRootObject {
-    param([string]$Path)
-
-    if (-not (Test-Path -LiteralPath $Path)) {
-        return [ordered]@{
-            mcpServers = [ordered]@{}
-        }
-    }
-
-    $raw = Get-Content -LiteralPath $Path -Raw
-    if ([string]::IsNullOrWhiteSpace($raw)) {
-        return [ordered]@{
-            mcpServers = [ordered]@{}
-        }
-    }
-
-    try {
-        $parsed = $raw | ConvertFrom-Json -AsHashtable
-    }
-    catch {
-        $sanitized = $raw -replace '(?s)/\*.*?\*/', ''
-        $sanitized = $sanitized -replace '(?m)^\s*//.*$', ''
-        $sanitized = $sanitized -replace '(?m)([^:])//.*$', '$1'
-        $sanitized = $sanitized -replace ',(\s*[}\]])', '$1'
-
-        try {
-            $parsed = $sanitized | ConvertFrom-Json -AsHashtable
-        }
-        catch {
-            $timestamp = Get-Date -Format "yyyyMMddHHmmss"
-            $backupPath = "$Path.invalid.$timestamp.bak"
-            Copy-Item -LiteralPath $Path -Destination $backupPath -Force
-            Write-Warning "Invalid JSON in Claude config: $Path"
-            Write-Warning "Backed up invalid file to: $backupPath"
-            Write-Warning "Continuing with a fresh Claude config root for this path."
-            $parsed = [ordered]@{}
-        }
-    }
-
-    if (-not ($parsed -is [System.Collections.IDictionary])) {
-        $parsed = [ordered]@{}
-    }
-
-    if (-not $parsed.Contains("mcpServers") -or $null -eq $parsed["mcpServers"]) {
-        $parsed["mcpServers"] = [ordered]@{}
-    }
-
-    if (-not ($parsed["mcpServers"] -is [System.Collections.IDictionary])) {
-        $parsed["mcpServers"] = [ordered]@{}
-    }
-
-    return $parsed
-}
-
-function Upsert-ServerConfig {
-    param(
-        [hashtable]$Root,
-        [string]$ConfiguredServerName,
-        [hashtable]$ServerDefinition,
-        [switch]$ForceWrite
-    )
-
-    foreach ($key in @("mcpServers", "servers")) {
-        if (-not ($Root[$key] -is [System.Collections.IDictionary])) {
-            $Root[$key] = [ordered]@{}
-        }
-
-        if ($Root[$key].Contains($ConfiguredServerName) -and -not $ForceWrite) {
-            Write-Host "Skip existing '$ConfiguredServerName' in $key (use -Force to overwrite)."
-            continue
-        }
-
-        $Root[$key][$ConfiguredServerName] = $ServerDefinition
-        Write-Host "Configured '$ConfiguredServerName' in $key."
-    }
-}
-
-function Write-RootObject {
-    param(
-        [string]$Path,
-        [hashtable]$Root,
-        [switch]$SkipBackup
-    )
-
-    Ensure-Directory -Path (Split-Path -Parent $Path)
-
-    if ((Test-Path -LiteralPath $Path) -and -not $SkipBackup) {
-        Copy-Item -LiteralPath $Path -Destination "$Path.bak" -Force
-        Write-Host "Backed up existing config to: $Path.bak"
-    }
-
-    $json = $Root | ConvertTo-Json -Depth 20
-    Set-Content -LiteralPath $Path -Value $json -Encoding utf8
-    Write-Host "Wrote user MCP config: $Path"
-}
-
-function Write-JsonObject {
-    param(
-        [string]$Path,
-        [hashtable]$Root,
-        [switch]$SkipBackup
-    )
-
-    Ensure-Directory -Path (Split-Path -Parent $Path)
-
-    if ((Test-Path -LiteralPath $Path) -and -not $SkipBackup) {
-        Copy-Item -LiteralPath $Path -Destination "$Path.bak" -Force
-        Write-Host "Backed up existing config to: $Path.bak"
-    }
-
-    $json = $Root | ConvertTo-Json -Depth 20
-    Set-Content -LiteralPath $Path -Value $json -Encoding utf8
-    Write-Host "Wrote config: $Path"
 }
 
 function Ensure-EnvTemplate {
@@ -484,16 +414,9 @@ function Ensure-EnvTemplate {
         [switch]$ForceWrite
     )
 
-    $rootEnvPath = Resolve-TemplateFile -TemplateRoot $TemplateRoot -RelativePath ".env" -RawBaseUrl $RawBaseUrl
-    $exampleEnvPath = Resolve-TemplateFile -TemplateRoot $TemplateRoot -RelativePath ".env.example" -RawBaseUrl $RawBaseUrl
-
-    $sourceEnvPath = $null
-    if (Test-Path -LiteralPath $rootEnvPath) {
-        # Prefer exact local runtime values when available.
-        $sourceEnvPath = $rootEnvPath
-    }
-    elseif (Test-Path -LiteralPath $exampleEnvPath) {
-        $sourceEnvPath = $exampleEnvPath
+    $sourceEnvPath = Resolve-TemplateFile -TemplateRoot $TemplateRoot -RelativePath ".env" -RawBaseUrl $RawBaseUrl
+    if ([string]::IsNullOrWhiteSpace($sourceEnvPath)) {
+        $sourceEnvPath = Resolve-TemplateFile -TemplateRoot $TemplateRoot -RelativePath ".env.example" -RawBaseUrl $RawBaseUrl
     }
 
     if ([string]::IsNullOrWhiteSpace($sourceEnvPath)) {
@@ -511,62 +434,137 @@ function Ensure-EnvTemplate {
     Write-Host "Wrote env file from $sourceEnvPath to: $ConfiguredEnvPath"
 }
 
-function Ensure-GlobalAgentsGuide {
+function Merge-ClaudeSettings {
     param(
-        [string]$TemplateRoot,
-        [string]$RawBaseUrl,
-        [switch]$ForceWrite
+        [string]$TargetSettingsPath,
+        [string]$SourceSettingsPath,
+        [switch]$ForceWrite,
+        [switch]$SkipBackup
     )
 
-    $sourceAgentsPath = Resolve-TemplateFile -TemplateRoot $TemplateRoot -RelativePath "AGENTS.md" -RawBaseUrl $RawBaseUrl -Required
+    $sourceRoot = Read-JsonObject -Path $SourceSettingsPath -DefaultRoot ([ordered]@{}) -SkipBackup:$SkipBackup
+    $targetRoot = Read-JsonObject -Path $TargetSettingsPath -DefaultRoot ([ordered]@{}) -SkipBackup:$SkipBackup
 
-    $homeDirectory = $HOME
-    if ([string]::IsNullOrWhiteSpace($homeDirectory)) {
-        Write-Host "Skip global AGENTS setup: HOME is not set."
-        return
+    if (-not $targetRoot.Contains('$schema') -and $sourceRoot.Contains('$schema')) {
+        $targetRoot['$schema'] = $sourceRoot['$schema']
     }
 
-    $globalAgentsPath = Join-Path $homeDirectory "AGENTS.md"
-    Copy-FileSafe -Source $sourceAgentsPath -Destination $globalAgentsPath -ForceWrite:$ForceWrite
-    Write-Host "Global AGENTS includes memory routing policy (Nebula project memory + VS Code user memory)."
+    if (-not $sourceRoot.Contains('hooks') -or -not ($sourceRoot['hooks'] -is [System.Collections.IDictionary])) {
+        throw "Source Claude settings do not contain a hooks object: $SourceSettingsPath"
+    }
+
+    if ($ForceWrite -or -not $targetRoot.Contains('hooks') -or -not ($targetRoot['hooks'] -is [System.Collections.IDictionary])) {
+        $targetRoot['hooks'] = [ordered]@{}
+    }
+
+    foreach ($eventName in $sourceRoot['hooks'].Keys) {
+        $existingGroups = @()
+        if ($targetRoot['hooks'].Contains($eventName) -and $null -ne $targetRoot['hooks'][$eventName]) {
+            $existingGroups = @($targetRoot['hooks'][$eventName])
+        }
+
+        $preservedGroups = @()
+        foreach ($group in $existingGroups) {
+            $isNebulaGroup = $false
+            if ($group -is [System.Collections.IDictionary] -and $group.Contains('hooks')) {
+                foreach ($hook in @($group['hooks'])) {
+                    if ($hook -is [System.Collections.IDictionary] -and ($hook.Contains('command')) -and ([string]$hook['command'] -like '*Invoke-NebulaAgentHook*')) {
+                        $isNebulaGroup = $true
+                        break
+                    }
+                }
+            }
+
+            if (-not $isNebulaGroup) {
+                $preservedGroups += $group
+            }
+        }
+
+        $sourceGroups = @($sourceRoot['hooks'][$eventName])
+        $targetRoot['hooks'][$eventName] = @($preservedGroups + $sourceGroups)
+    }
+
+    Write-JsonObject -Path $TargetSettingsPath -Root $targetRoot -SkipBackup:$SkipBackup
 }
 
-function Resolve-InstallTarget {
-    param([string]$SelectedInstallTarget)
+function Setup-CopilotUser {
+    param(
+        [string]$ConfiguredServerName,
+        [hashtable]$ServerDefinition,
+        [switch]$ForceWrite,
+        [switch]$SkipBackup
+    )
 
-    if ($SelectedInstallTarget -ne "Ask") {
-        return $SelectedInstallTarget
+    $configPath = if ([string]::IsNullOrWhiteSpace($CopilotConfigPath)) {
+        Get-DefaultCopilotConfigPath
+    }
+    else {
+        [System.IO.Path]::GetFullPath($CopilotConfigPath)
     }
 
-    if ($null -eq $Host -or $null -eq $Host.UI) {
-        Write-Host "No interactive host available; defaulting to HomeAssistantAddon."
-        return "HomeAssistantAddon"
-    }
+    $root = Get-McpRoot -Path $configPath
+    Upsert-McpServer -Root $root -ConfiguredServerName $ConfiguredServerName -ServerDefinition $ServerDefinition -ForceWrite:$ForceWrite
+    Write-JsonObject -Path $configPath -Root $root -SkipBackup:$SkipBackup
 
     Write-Host ""
-    Write-Host "Select NebulaRAG install target:"
-    Write-Host "  1) Home Assistant add-on (recommended)"
-    Write-Host "  2) Local container MCP (Podman env-file workflow)"
+    Write-Host "Copilot user-level MCP setup complete."
+}
 
-    while ($true) {
-        $selection = Read-Host "Enter 1 or 2 (default 1)"
-        if ([string]::IsNullOrWhiteSpace($selection) -or $selection -eq "1") {
-            return "HomeAssistantAddon"
-        }
+function Setup-ClaudeUser {
+    param(
+        [string]$ConfiguredServerName,
+        [hashtable]$ServerDefinition,
+        [switch]$ForceWrite,
+        [switch]$SkipBackup
+    )
 
-        if ($selection -eq "2") {
-            return "LocalContainer"
-        }
-
-        Write-Host "Invalid selection. Enter 1 or 2."
+    $configPath = if ([string]::IsNullOrWhiteSpace($ClaudeUserConfigPath)) {
+        Get-DefaultClaudeUserConfigPath
     }
+    else {
+        [System.IO.Path]::GetFullPath($ClaudeUserConfigPath)
+    }
+
+    $root = Get-McpRoot -Path $configPath
+    Upsert-McpServer -Root $root -ConfiguredServerName $ConfiguredServerName -ServerDefinition $ServerDefinition -ForceWrite:$ForceWrite
+    Write-JsonObject -Path $configPath -Root $root -SkipBackup:$SkipBackup
+
+    Write-Host ""
+    Write-Host "Claude user-level MCP setup complete."
+}
+
+function Setup-ClaudeProjectMcp {
+    param(
+        [string]$ProjectPath,
+        [string]$ConfiguredServerName,
+        [hashtable]$ServerDefinition,
+        [switch]$ForceWrite,
+        [switch]$SkipBackup
+    )
+
+    $projectRoot = [System.IO.Path]::GetFullPath((Resolve-Path -LiteralPath $ProjectPath -ErrorAction Stop).Path)
+    $configPath = if ([string]::IsNullOrWhiteSpace($ClaudeProjectConfigPath)) {
+        [System.IO.Path]::GetFullPath((Join-Path $projectRoot ".mcp.json"))
+    }
+    else {
+        [System.IO.Path]::GetFullPath($ClaudeProjectConfigPath)
+    }
+
+    $root = Get-McpRoot -Path $configPath
+    Upsert-McpServer -Root $root -ConfiguredServerName $ConfiguredServerName -ServerDefinition $ServerDefinition -ForceWrite:$ForceWrite
+    Write-JsonObject -Path $configPath -Root $root -SkipBackup:$SkipBackup
+
+    Write-Host ""
+    Write-Host "Claude project-level MCP setup complete: $configPath"
 }
 
 function Setup-Project {
     param(
         [string]$ProjectPath,
+        [string[]]$ResolvedClientTargets,
         [switch]$ForceWrite,
         [switch]$SkipSkillFile,
+        [switch]$SkipBackup,
         [string]$TemplateRoot,
         [string]$RawBaseUrl
     )
@@ -577,207 +575,124 @@ function Setup-Project {
     }
 
     $targetRoot = $resolvedTargetPath.Path
-    $scriptDirectory = [System.IO.Path]::GetFullPath($PSScriptRoot)
     $targetFullPath = [System.IO.Path]::GetFullPath($targetRoot)
-
+    $scriptDirectory = [System.IO.Path]::GetFullPath($PSScriptRoot)
     if ([System.StringComparer]::OrdinalIgnoreCase.Equals($targetFullPath, $scriptDirectory)) {
         throw "Refusing to scaffold into the scripts directory. Use -TargetPath to point at your project root."
     }
 
-    $copilotInstructionsSource = Resolve-TemplateFile -TemplateRoot $TemplateRoot -RelativePath ".github/copilot-instructions.md" -RawBaseUrl $RawBaseUrl -Required
-    $nebulaInstructionsSource = Resolve-TemplateFile -TemplateRoot $TemplateRoot -RelativePath ".github/nebula.instructions.md" -RawBaseUrl $RawBaseUrl -Required
-    $ragInstructionsSource = Resolve-TemplateFile -TemplateRoot $TemplateRoot -RelativePath ".github/instructions/rag.instructions.md" -RawBaseUrl $RawBaseUrl -Required
-    $agentsSource = Resolve-TemplateFile -TemplateRoot $TemplateRoot -RelativePath "AGENTS.md" -RawBaseUrl $RawBaseUrl -Required
+    $sharedTemplates = @(
+        'AGENTS.md',
+        '.github/nebula.instructions.md',
+        '.github/instructions/rag.instructions.md',
+        '.github/instructions/coding.instructions.md',
+        '.github/instructions/documentation.instructions.md',
+        '.github/nebula/hooks/Invoke-NebulaAgentHook.ps1',
+        '.github/nebula/hooks/Invoke-NebulaAgentHook.sh'
+    )
 
-    Copy-FileSafe -Source $nebulaInstructionsSource -Destination (Join-Path $targetRoot ".github/nebula.instructions.md") -ForceWrite:$ForceWrite
-    Copy-FileSafe -Source $copilotInstructionsSource -Destination (Join-Path $targetRoot ".github/copilot-instructions.md") -ForceWrite:$ForceWrite
-    Copy-FileSafe -Source $ragInstructionsSource -Destination (Join-Path $targetRoot ".github/instructions/rag.instructions.md") -ForceWrite:$ForceWrite
-    Copy-FileSafe -Source $agentsSource -Destination (Join-Path $targetRoot "AGENTS.md") -ForceWrite:$ForceWrite
-    Write-Host "Applied canonical Nebula instructions and memory-routing templates for project setup."
+    foreach ($relativePath in $sharedTemplates) {
+        $sourcePath = Resolve-TemplateFile -TemplateRoot $TemplateRoot -RelativePath $relativePath -RawBaseUrl $RawBaseUrl -Required
+        $destinationPath = Join-Path $targetRoot $relativePath
+        Copy-FileSafe -Source $sourcePath -Destination $destinationPath -ForceWrite:$ForceWrite
+    }
+
+    if ($ResolvedClientTargets -contains 'Copilot') {
+        $copilotInstructionSource = Resolve-TemplateFile -TemplateRoot $TemplateRoot -RelativePath '.github/copilot-instructions.md' -RawBaseUrl $RawBaseUrl -Required
+        Copy-FileSafe -Source $copilotInstructionSource -Destination (Join-Path $targetRoot '.github/copilot-instructions.md') -ForceWrite:$ForceWrite
+
+        $copilotHooksSource = Resolve-TemplateFile -TemplateRoot $TemplateRoot -RelativePath '.github/hooks/nebula-balanced.json' -RawBaseUrl $RawBaseUrl -Required
+        Copy-FileSafe -Source $copilotHooksSource -Destination (Join-Path $targetRoot '.github/hooks/nebula-balanced.json') -ForceWrite:$ForceWrite
+    }
+
+    if ($ResolvedClientTargets -contains 'ClaudeCode') {
+        $claudeSettingsSource = Resolve-TemplateFile -TemplateRoot $TemplateRoot -RelativePath '.claude/settings.json' -RawBaseUrl $RawBaseUrl -Required
+        $projectClaudeSettingsPath = if ([string]::IsNullOrWhiteSpace($ClaudeSettingsPath)) {
+            Join-Path $targetRoot '.claude/settings.json'
+        }
+        else {
+            [System.IO.Path]::GetFullPath($ClaudeSettingsPath)
+        }
+
+        Merge-ClaudeSettings -TargetSettingsPath $projectClaudeSettingsPath -SourceSettingsPath $claudeSettingsSource -ForceWrite:$ForceWrite -SkipBackup:$SkipBackup
+    }
 
     if (-not $SkipSkillFile) {
-        $skillSource = Resolve-TemplateFile -TemplateRoot $TemplateRoot -RelativePath ".github/skills/nebularag/SKILL.md" -RawBaseUrl $RawBaseUrl -Required
-        Copy-FileSafe -Source $skillSource -Destination (Join-Path $targetRoot ".github/skills/nebularag/SKILL.md") -ForceWrite:$ForceWrite
-        Write-Host "Applied Nebula skill template with memory recall/list and persistence workflow."
+        $skillSource = Resolve-TemplateFile -TemplateRoot $TemplateRoot -RelativePath '.github/skills/nebularag/SKILL.md' -RawBaseUrl $RawBaseUrl -Required
+        Copy-FileSafe -Source $skillSource -Destination (Join-Path $targetRoot '.github/skills/nebularag/SKILL.md') -ForceWrite:$ForceWrite
     }
 
-    $sourceEnvExample = Resolve-TemplateFile -TemplateRoot $TemplateRoot -RelativePath ".env.example" -RawBaseUrl $RawBaseUrl
-    if (-not [string]::IsNullOrWhiteSpace($sourceEnvExample)) {
-        Copy-FileSafe -Source $sourceEnvExample -Destination (Join-Path $targetRoot ".env.example") -ForceWrite:$ForceWrite
+    $envExampleSource = Resolve-TemplateFile -TemplateRoot $TemplateRoot -RelativePath '.env.example' -RawBaseUrl $RawBaseUrl
+    if (-not [string]::IsNullOrWhiteSpace($envExampleSource)) {
+        Copy-FileSafe -Source $envExampleSource -Destination (Join-Path $targetRoot '.env.example') -ForceWrite:$ForceWrite
     }
 
-    Ensure-GitignoreEnv -GitignorePath (Join-Path $targetRoot ".gitignore")
+    Ensure-GitignoreEntry -GitignorePath (Join-Path $targetRoot '.gitignore') -Entry '.env'
+    Ensure-GitignoreEntry -GitignorePath (Join-Path $targetRoot '.gitignore') -Entry '.claude/settings.local.json'
 
     Write-Host ""
     Write-Host "Project setup complete: $targetRoot"
 }
 
-function Setup-User {
-    param(
-        [string]$SelectedChannel,
-        [string]$ExplicitUserConfigPath,
-        [string]$ConfiguredServerName,
-        [string]$ConfiguredImageName,
-        [string]$ConfiguredEnvFilePath,
-        [string]$SelectedInstallTarget,
-        [string]$ConfiguredHomeAssistantMcpUrl,
-        [switch]$WriteEnvTemplate,
-        [switch]$ForceWrite,
-        [switch]$SkipBackup,
-        [string]$TemplateRoot,
-        [string]$RawBaseUrl
-    )
-
-    $configPaths = @()
-    if (-not [string]::IsNullOrWhiteSpace($ExplicitUserConfigPath)) {
-        $configPaths = @($ExplicitUserConfigPath)
-    }
-    else {
-        $configPaths = Get-DefaultUserConfigPath -SelectedChannel $SelectedChannel
-    }
-
-    # User-level config is workspace-agnostic; omit workspace mount to avoid multi-root variable resolution failures.
-    $serverDefinition = New-ServerDefinition -ConfiguredImage $ConfiguredImageName -ConfiguredEnvFile $ConfiguredEnvFilePath -WorkspaceFolderScope "" -HostSourcePath "" -SelectedInstallTarget $SelectedInstallTarget -ConfiguredHomeAssistantMcpUrl $ConfiguredHomeAssistantMcpUrl
-
-    foreach ($configPath in $configPaths) {
-        $resolvedConfigPath = [System.IO.Path]::GetFullPath($configPath)
-        $root = Get-OrCreateRootObject -Path $resolvedConfigPath
-        Upsert-ServerConfig -Root $root -ConfiguredServerName $ConfiguredServerName -ServerDefinition $serverDefinition -ForceWrite:$ForceWrite
-        Write-RootObject -Path $resolvedConfigPath -Root $root -SkipBackup:$SkipBackup
-    }
-
-    if ($WriteEnvTemplate) {
-        Ensure-EnvTemplate -ConfiguredEnvPath $ConfiguredEnvFilePath -TemplateRoot $TemplateRoot -RawBaseUrl $RawBaseUrl -ForceWrite:$ForceWrite
-    }
-
-    Write-Host ""
-    Write-Host "User-level setup complete."
-}
-
-function Setup-ClaudeUser {
-    param(
-        [string]$ExplicitClaudeUserConfigPath,
-        [string]$ConfiguredServerName,
-        [hashtable]$ServerDefinition,
-        [switch]$ForceWrite,
-        [switch]$SkipBackup
-    )
-
-    $configPath = if ([string]::IsNullOrWhiteSpace($ExplicitClaudeUserConfigPath)) {
-        Get-DefaultClaudeUserConfigPath
-    }
-    else {
-        [System.IO.Path]::GetFullPath($ExplicitClaudeUserConfigPath)
-    }
-
-    $root = Get-OrCreateClaudeRootObject -Path $configPath
-
-    if ($root["mcpServers"].Contains($ConfiguredServerName) -and -not $ForceWrite) {
-        Write-Host "Skip existing '$ConfiguredServerName' in Claude user mcpServers (use -Force to overwrite)."
-    }
-    else {
-        $root["mcpServers"][$ConfiguredServerName] = $ServerDefinition
-        Write-Host "Configured '$ConfiguredServerName' in Claude user mcpServers."
-    }
-
-    Write-JsonObject -Path $configPath -Root $root -SkipBackup:$SkipBackup
-    Write-Host ""
-    Write-Host "Claude user-level setup complete."
-}
-
-function Setup-ClaudeProject {
-    param(
-        [string]$ProjectPath,
-        [string]$ExplicitClaudeProjectConfigPath,
-        [string]$ConfiguredServerName,
-        [hashtable]$ServerDefinition,
-        [switch]$ForceWrite,
-        [switch]$SkipBackup
-    )
-
-    $projectRoot = [System.IO.Path]::GetFullPath((Resolve-Path -LiteralPath $ProjectPath -ErrorAction Stop).Path)
-    $configPath = if ([string]::IsNullOrWhiteSpace($ExplicitClaudeProjectConfigPath)) {
-        [System.IO.Path]::GetFullPath((Join-Path $projectRoot ".mcp.json"))
-    }
-    else {
-        [System.IO.Path]::GetFullPath($ExplicitClaudeProjectConfigPath)
-    }
-
-    $root = Get-OrCreateClaudeRootObject -Path $configPath
-
-    if ($root["mcpServers"].Contains($ConfiguredServerName) -and -not $ForceWrite) {
-        Write-Host "Skip existing '$ConfiguredServerName' in Claude project mcpServers (use -Force to overwrite)."
-    }
-    else {
-        $root["mcpServers"][$ConfiguredServerName] = $ServerDefinition
-        Write-Host "Configured '$ConfiguredServerName' in Claude project mcpServers."
-    }
-
-    Write-JsonObject -Path $configPath -Root $root -SkipBackup:$SkipBackup
-    Write-Host ""
-    Write-Host "Claude project-level setup complete: $configPath"
-}
-
 $templateRoot = Split-Path -Parent $PSScriptRoot
 $resolvedInstallTarget = Resolve-InstallTarget -SelectedInstallTarget $InstallTarget
 $resolvedHomeAssistantMcpUrl = Resolve-HomeAssistantMcpUrl -LocalUrl $HomeAssistantMcpUrl -ExternalUrl $ExternalHomeAssistantMcpUrl -PreferExternalUrl:$UseExternalHomeAssistantUrl -ExternalConsent:$ForceExternal
-$resolvedClientTargets = if ($ClientTargets -eq "Both") { @("VSCode", "ClaudeCode") } else { @($ClientTargets) }
+$resolvedClientTargets = Resolve-ClientTargetList -SelectedTargets $ClientTargets
 
 if ([string]::IsNullOrWhiteSpace($EnvFilePath)) {
-    $EnvFilePath = Join-Path $HOME ".nebula-rag/.env"
+    $EnvFilePath = Join-Path $HOME '.nebula-rag/.env'
 }
 
-if ($Mode -in @("Both", "User")) {
-    if ($resolvedClientTargets -contains "VSCode") {
-        Setup-User -SelectedChannel $Channel -ExplicitUserConfigPath $UserConfigPath -ConfiguredServerName $ServerName -ConfiguredImageName $ImageName -ConfiguredEnvFilePath $EnvFilePath -SelectedInstallTarget $resolvedInstallTarget -ConfiguredHomeAssistantMcpUrl $resolvedHomeAssistantMcpUrl -WriteEnvTemplate:($CreateEnvTemplate -and $resolvedInstallTarget -eq "LocalContainer") -ForceWrite:$Force -SkipBackup:$NoBackup -TemplateRoot $templateRoot -RawBaseUrl $TemplateRawBaseUrl
-    }
-
-    if ($resolvedClientTargets -contains "ClaudeCode") {
-        $userServerDefinition = New-ServerDefinition -ConfiguredImage $ImageName -ConfiguredEnvFile $EnvFilePath -WorkspaceFolderScope "" -HostSourcePath "" -SelectedInstallTarget $resolvedInstallTarget -ConfiguredHomeAssistantMcpUrl $resolvedHomeAssistantMcpUrl
-        Setup-ClaudeUser -ExplicitClaudeUserConfigPath $ClaudeUserConfigPath -ConfiguredServerName $ServerName -ServerDefinition $userServerDefinition -ForceWrite:$Force -SkipBackup:$NoBackup
-        if ($CreateEnvTemplate -and $resolvedInstallTarget -eq "LocalContainer") {
-            Ensure-EnvTemplate -ConfiguredEnvPath $EnvFilePath -TemplateRoot $templateRoot -RawBaseUrl $TemplateRawBaseUrl -ForceWrite:$Force
-        }
-    }
-
-    if (-not $SkipGlobalAgents) {
-        Ensure-GlobalAgentsGuide -TemplateRoot $templateRoot -RawBaseUrl $TemplateRawBaseUrl -ForceWrite:$Force
-    }
-    else {
-        Write-Host "Skip global AGENTS setup by request (-SkipGlobalAgents)."
+if ($resolvedInstallTarget -eq 'LocalContainer') {
+    if (-not (Get-Command podman -ErrorAction SilentlyContinue)) {
+        Write-Warning "podman was not found in PATH. LocalContainer registrations will still be written, but they will not run until podman is installed."
     }
 }
 
-if ($Mode -in @("Both", "Project")) {
+if ($Mode -in @('Both', 'User')) {
+    if ($resolvedClientTargets -contains 'Copilot') {
+        $copilotServerDefinition = New-ServerDefinition -SelectedInstallTarget $resolvedInstallTarget -ConfiguredHomeAssistantMcpUrl $resolvedHomeAssistantMcpUrl -ConfiguredImage $ImageName -ConfiguredEnvFile $EnvFilePath -HostSourcePath ''
+        Setup-CopilotUser -ConfiguredServerName $ServerName -ServerDefinition $copilotServerDefinition -ForceWrite:$Force -SkipBackup:$NoBackup
+    }
+
+    if ($resolvedClientTargets -contains 'ClaudeCode') {
+        $claudeUserServerDefinition = New-ServerDefinition -SelectedInstallTarget $resolvedInstallTarget -ConfiguredHomeAssistantMcpUrl $resolvedHomeAssistantMcpUrl -ConfiguredImage $ImageName -ConfiguredEnvFile $EnvFilePath -HostSourcePath ''
+        Setup-ClaudeUser -ConfiguredServerName $ServerName -ServerDefinition $claudeUserServerDefinition -ForceWrite:$Force -SkipBackup:$NoBackup
+    }
+
+    if ($CreateEnvTemplate -and $resolvedInstallTarget -eq 'LocalContainer') {
+        Ensure-EnvTemplate -ConfiguredEnvPath $EnvFilePath -TemplateRoot $templateRoot -RawBaseUrl $TemplateRawBaseUrl -ForceWrite:$Force
+    }
+}
+
+if ($Mode -in @('Both', 'Project')) {
     if ([string]::IsNullOrWhiteSpace($TargetPath)) {
-        if ($Mode -eq "Both") {
+        if ($Mode -eq 'Both') {
             $TargetPath = $templateRoot
         }
         else {
-            throw "-TargetPath is required when -Mode Project."
+            throw '-TargetPath is required when -Mode Project.'
         }
     }
 
-    Setup-Project -ProjectPath $TargetPath -ForceWrite:$Force -SkipSkillFile:$SkipSkill -TemplateRoot $templateRoot -RawBaseUrl $TemplateRawBaseUrl
+    Setup-Project -ProjectPath $TargetPath -ResolvedClientTargets $resolvedClientTargets -ForceWrite:$Force -SkipSkillFile:$SkipSkill -SkipBackup:$NoBackup -TemplateRoot $templateRoot -RawBaseUrl $TemplateRawBaseUrl
 
-    if ($resolvedClientTargets -contains "ClaudeCode") {
-        $projectServerDefinition = New-ServerDefinition -ConfiguredImage $ImageName -ConfiguredEnvFile $EnvFilePath -WorkspaceFolderScope "" -HostSourcePath '${PWD}' -SelectedInstallTarget $resolvedInstallTarget -ConfiguredHomeAssistantMcpUrl $resolvedHomeAssistantMcpUrl
-        Setup-ClaudeProject -ProjectPath $TargetPath -ExplicitClaudeProjectConfigPath $ClaudeProjectConfigPath -ConfiguredServerName $ServerName -ServerDefinition $projectServerDefinition -ForceWrite:$Force -SkipBackup:$NoBackup
+    if ($resolvedClientTargets -contains 'ClaudeCode') {
+        $claudeProjectServerDefinition = New-ServerDefinition -SelectedInstallTarget $resolvedInstallTarget -ConfiguredHomeAssistantMcpUrl $resolvedHomeAssistantMcpUrl -ConfiguredImage $ImageName -ConfiguredEnvFile $EnvFilePath -HostSourcePath '${PWD}'
+        Setup-ClaudeProjectMcp -ProjectPath $TargetPath -ConfiguredServerName $ServerName -ServerDefinition $claudeProjectServerDefinition -ForceWrite:$Force -SkipBackup:$NoBackup
     }
 }
 
-Write-Host ""
-Write-Host "NebulaRAG setup finished."
+Write-Host ''
+Write-Host 'NebulaRAG setup finished.'
 Write-Host "Clients: $($resolvedClientTargets -join ', ')"
 Write-Host "Install target: $resolvedInstallTarget"
 Write-Host "Server: $ServerName"
-Write-Host "Image:  $ImageName"
-if ($resolvedInstallTarget -eq "HomeAssistantAddon") {
+if ($resolvedInstallTarget -eq 'HomeAssistantAddon') {
     Write-Host "MCP URL: $resolvedHomeAssistantMcpUrl"
-    if ($UseExternalHomeAssistantUrl) {
-        Write-Host "URL mode: External"
-    }
-    else {
-        Write-Host "URL mode: Local network"
-    }
+}
+else {
+    Write-Host "Image: $ImageName"
+    Write-Host "Env file: $EnvFilePath"
+    Write-Host 'Note: Copilot CLI MCP registration is user-level. Project-local hooks are scaffolded into .github/hooks and Claude project MCP config is written to .mcp.json.'
 }

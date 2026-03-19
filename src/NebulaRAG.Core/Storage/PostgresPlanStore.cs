@@ -105,9 +105,25 @@ public sealed class PostgresPlanStore
     /// <exception cref="PlanNotFoundException">Thrown when the plan is not found.</exception>
     public async Task<PlanRecord> GetPlanByIdAsync(long planId, CancellationToken cancellationToken = default)
     {
+        const string sql = @"
+            SELECT id, project_id, session_id, name, description, status, created_at, updated_at, metadata
+            FROM plans
+            WHERE id = @planId";
+
         await using var connection = new NpgsqlConnection(_connectionString);
+        await using var command = new NpgsqlCommand(sql, connection);
+
+        command.Parameters.AddWithValue("planId", planId);
+
         await connection.OpenAsync(cancellationToken);
-        return await GetPlanByIdAsync(connection, transaction: null, planId, cancellationToken);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+
+        if (await reader.ReadAsync(cancellationToken))
+        {
+            return ReadPlanFromReader(reader);
+        }
+
+        throw new PlanNotFoundException(planId);
     }
 
     /// <summary>
@@ -164,7 +180,7 @@ public sealed class PostgresPlanStore
                 RETURNING id";
 
             var planId = await ExecuteScalarAsync<long>(
-                connection, transaction, insertPlanSql,
+                connection, insertPlanSql,
                 new Dictionary<string, object?>
                 {
                     { "projectId", request.ProjectId },
@@ -184,7 +200,7 @@ public sealed class PostgresPlanStore
                     RETURNING id";
 
                 var taskId = await ExecuteScalarAsync<long>(
-                    connection, transaction, insertTaskSql,
+                    connection, insertTaskSql,
                     new Dictionary<string, object?>
                     {
                         { "planId", planId },
@@ -202,7 +218,7 @@ public sealed class PostgresPlanStore
                 VALUES (@planId, NULL, @newStatus, @changedBy, NOW(), @reason)";
 
             await ExecuteNonQueryAsync(
-                connection, transaction, insertHistorySql,
+                connection, insertHistorySql,
                 new Dictionary<string, object?>
                 {
                     { "planId", planId },
@@ -284,28 +300,17 @@ public sealed class PostgresPlanStore
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         try
         {
-            var currentPlan = await GetPlanByIdAsync(connection, transaction, planId, cancellationToken);
+            var currentPlan = await GetPlanByIdAsync(planId, cancellationToken);
             var oldStatus = PlanStatusMapper.ToDatabaseValue(currentPlan.Status);
             var newStatusText = PlanStatusMapper.ToDatabaseValue(newStatus);
 
-            var updateSql = newStatus == PlanStatus.Completed
-                ? @"
-                UPDATE plans
-                SET status = @newStatus, updated_at = NOW()
-                WHERE id = @planId
-                  AND NOT EXISTS (
-                      SELECT 1
-                      FROM tasks
-                      WHERE plan_id = @planId
-                        AND status IN ('pending', 'in_progress'))"
-                : @"
+            const string updateSql = @"
                 UPDATE plans
                 SET status = @newStatus, updated_at = NOW()
                 WHERE id = @planId";
 
-            var rowsAffected = await ExecuteNonQueryAsync(
+            await ExecuteNonQueryAsync(
                 connection,
-                transaction,
                 updateSql,
                 new Dictionary<string, object?>
                 {
@@ -314,22 +319,12 @@ public sealed class PostgresPlanStore
                 },
                 cancellationToken);
 
-            if (newStatus == PlanStatus.Completed && rowsAffected == 0)
-            {
-                var openTaskIds = await GetOpenTaskIdsAsync(connection, transaction, planId, cancellationToken);
-                throw new PlanException(
-                    violationType: "PlanHasOpenTasks",
-                    message: $"Plan {planId} cannot be completed while tasks are still pending or in progress.",
-                    context: new { PlanId = planId, OpenTaskIds = openTaskIds });
-            }
-
             const string historySql = @"
                 INSERT INTO plan_history (plan_id, old_status, new_status, changed_by, changed_at, reason)
                 VALUES (@planId, @oldStatus, @newStatus, @changedBy, NOW(), @reason)";
 
             await ExecuteNonQueryAsync(
                 connection,
-                transaction,
                 historySql,
                 new Dictionary<string, object?>
                 {
@@ -387,6 +382,136 @@ public sealed class PostgresPlanStore
     }
 
     /// <summary>
+    /// Lists plans across the workspace or for one project when a project id is provided.
+    /// </summary>
+    /// <param name="projectId">Optional project identifier used to scope the result set.</param>
+    /// <param name="limit">Maximum number of plans to return.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Plan records ordered by latest update.</returns>
+    public async Task<IReadOnlyList<PlanRecord>> ListPlansAsync(string? projectId = null, int limit = 300, CancellationToken cancellationToken = default)
+    {
+        if (limit <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(limit), "Limit must be greater than 0.");
+        }
+
+        const string sql = @"
+            SELECT id, project_id, session_id, name, description, status, created_at, updated_at, metadata
+            FROM plans
+            WHERE (@projectId::text IS NULL OR project_id = @projectId::text)
+            ORDER BY updated_at DESC, created_at DESC
+            LIMIT @limit";
+
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await using var command = new NpgsqlCommand(sql, connection);
+
+        command.Parameters.AddWithValue("limit", limit);
+        command.Parameters.AddWithValue("projectId", string.IsNullOrWhiteSpace(projectId) ? DBNull.Value : projectId.Trim());
+
+        await connection.OpenAsync(cancellationToken);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+
+        var plans = new List<PlanRecord>();
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            plans.Add(ReadPlanFromReader(reader));
+        }
+
+        return plans;
+    }
+
+    /// <summary>
+    /// Lists all plans for a given project identifier.
+    /// </summary>
+    /// <param name="projectId">The project identifier.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A read-only list of plan records ordered by latest update.</returns>
+    public Task<IReadOnlyList<PlanRecord>> ListPlansByProjectAsync(string projectId, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(projectId))
+        {
+            throw new ArgumentException("Project id cannot be null or empty.", nameof(projectId));
+        }
+
+        return ListPlansAsync(projectId.Trim(), 300, cancellationToken);
+    }
+
+    /// <summary>
+    /// Deletes a plan and cascades tasks and history rows.
+    /// </summary>
+    /// <param name="planId">The plan identifier.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>True when the plan existed and was deleted.</returns>
+    public async Task<bool> DeletePlanAsync(long planId, CancellationToken cancellationToken = default)
+    {
+        const string sql = "DELETE FROM plans WHERE id = @planId";
+
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await using var command = new NpgsqlCommand(sql, connection);
+
+        command.Parameters.AddWithValue("planId", planId);
+
+        await connection.OpenAsync(cancellationToken);
+        var rowsAffected = await command.ExecuteNonQueryAsync(cancellationToken);
+        return rowsAffected > 0;
+    }
+
+    /// <summary>
+    /// Deletes all plans for a project and cascades their tasks and history rows.
+    /// </summary>
+    /// <param name="projectId">Project identifier.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Number of deleted plans.</returns>
+    public async Task<int> DeletePlansByProjectAsync(string projectId, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(projectId))
+        {
+            throw new ArgumentException("Project id cannot be null or empty.", nameof(projectId));
+        }
+
+        const string sql = "DELETE FROM plans WHERE project_id = @projectId";
+
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await using var command = new NpgsqlCommand(sql, connection);
+
+        command.Parameters.AddWithValue("projectId", projectId.Trim());
+
+        await connection.OpenAsync(cancellationToken);
+        return await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Renames the project identifier on all plans belonging to a project.
+    /// </summary>
+    /// <param name="projectId">Existing project identifier.</param>
+    /// <param name="targetProjectId">Replacement project identifier.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Number of updated plans.</returns>
+    public async Task<int> RenameProjectAsync(string projectId, string targetProjectId, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(projectId))
+        {
+            throw new ArgumentException("Project id cannot be null or empty.", nameof(projectId));
+        }
+
+        if (string.IsNullOrWhiteSpace(targetProjectId))
+        {
+            throw new ArgumentException("Target project id cannot be null or empty.", nameof(targetProjectId));
+        }
+
+        const string sql = "UPDATE plans SET project_id = @targetProjectId WHERE project_id = @projectId";
+
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await using var command = new NpgsqlCommand(sql, connection);
+
+        command.Parameters.AddWithValue("projectId", projectId.Trim());
+        command.Parameters.AddWithValue("targetProjectId", targetProjectId.Trim());
+
+        await connection.OpenAsync(cancellationToken);
+        return await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    /// <summary>
     /// Retrieves all tasks for a given plan identifier.
     /// </summary>
     /// <param name="planId">The plan identifier.</param>
@@ -426,9 +551,25 @@ public sealed class PostgresPlanStore
     /// <exception cref="PlanNotFoundException">Thrown when the task is not found.</exception>
     public async Task<PlanTaskRecord> GetTaskByIdAsync(long taskId, CancellationToken cancellationToken = default)
     {
+        const string sql = @"
+            SELECT id, plan_id, title, description, priority, status, created_at, updated_at, metadata
+            FROM tasks
+            WHERE id = @taskId";
+
         await using var connection = new NpgsqlConnection(_connectionString);
+        await using var command = new NpgsqlCommand(sql, connection);
+
+        command.Parameters.AddWithValue("taskId", taskId);
+
         await connection.OpenAsync(cancellationToken);
-        return await GetTaskByIdAsync(connection, transaction: null, taskId, cancellationToken);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+
+        if (await reader.ReadAsync(cancellationToken))
+        {
+            return ReadTaskFromReader(reader);
+        }
+
+        throw new PlanNotFoundException(0, taskId);
     }
 
     /// <summary>
@@ -448,7 +589,7 @@ public sealed class PostgresPlanStore
 
         try
         {
-            await GetPlanByIdAsync(connection, transaction, planId, cancellationToken);
+            await GetPlanByIdAsync(planId, cancellationToken);
 
             const string insertTaskSql = @"
                 INSERT INTO tasks (plan_id, title, description, priority, status, created_at, updated_at, metadata)
@@ -456,7 +597,7 @@ public sealed class PostgresPlanStore
                 RETURNING id";
 
             var taskId = await ExecuteScalarAsync<long>(
-                connection, transaction, insertTaskSql,
+                connection, insertTaskSql,
                 new Dictionary<string, object?>
                 {
                     { "planId", planId },
@@ -472,7 +613,7 @@ public sealed class PostgresPlanStore
                 VALUES (@taskId, NULL, @newStatus, @changedBy, NOW(), @reason)";
 
             await ExecuteNonQueryAsync(
-                connection, transaction, insertHistorySql,
+                connection, insertHistorySql,
                 new Dictionary<string, object?>
                 {
                     { "taskId", taskId },
@@ -548,7 +689,7 @@ public sealed class PostgresPlanStore
 
         try
         {
-            var currentTask = await GetTaskByIdAsync(connection, transaction, taskId, cancellationToken);
+            var currentTask = await GetTaskByIdAsync(taskId, cancellationToken);
             var oldStatus = PlanStatusMapper.ToDatabaseValue(currentTask.Status);
 
             const string updateSql = @"
@@ -557,7 +698,7 @@ public sealed class PostgresPlanStore
                 WHERE id = @taskId";
 
             await ExecuteNonQueryAsync(
-                connection, transaction, updateSql,
+                connection, updateSql,
                 new Dictionary<string, object?> { { "taskId", taskId } },
                 cancellationToken);
 
@@ -566,7 +707,7 @@ public sealed class PostgresPlanStore
                 VALUES (@taskId, @oldStatus, @newStatus, @changedBy, NOW(), @reason)";
 
             await ExecuteNonQueryAsync(
-                connection, transaction, historySql,
+                connection, historySql,
                 new Dictionary<string, object?>
                 {
                     { "taskId", taskId },
@@ -609,7 +750,7 @@ public sealed class PostgresPlanStore
 
         try
         {
-            var currentTask = await GetTaskByIdAsync(connection, transaction, taskId, cancellationToken);
+            var currentTask = await GetTaskByIdAsync(taskId, cancellationToken);
             var oldStatus = PlanStatusMapper.ToDatabaseValue(currentTask.Status);
             var newStatusText = PlanStatusMapper.ToDatabaseValue(newStatus);
 
@@ -619,7 +760,7 @@ public sealed class PostgresPlanStore
                 WHERE id = @taskId";
 
             await ExecuteNonQueryAsync(
-                connection, transaction, updateSql,
+                connection, updateSql,
                 new Dictionary<string, object?>
                 {
                     { "taskId", taskId },
@@ -632,7 +773,7 @@ public sealed class PostgresPlanStore
                 VALUES (@taskId, @oldStatus, @newStatus, @changedBy, NOW(), @reason)";
 
             await ExecuteNonQueryAsync(
-                connection, transaction, historySql,
+                connection, historySql,
                 new Dictionary<string, object?>
                 {
                     { "taskId", taskId },
@@ -811,12 +952,11 @@ public sealed class PostgresPlanStore
 
     private static async Task<T> ExecuteScalarAsync<T>(
         NpgsqlConnection connection,
-        NpgsqlTransaction? transaction,
         string sql,
         Dictionary<string, object?> parameters,
         CancellationToken cancellationToken)
     {
-        await using var command = new NpgsqlCommand(sql, connection, transaction);
+        await using var command = new NpgsqlCommand(sql, connection);
         foreach (var (key, value) in parameters)
         {
             command.Parameters.AddWithValue(key, value ?? DBNull.Value);
@@ -833,104 +973,17 @@ public sealed class PostgresPlanStore
 
     private static async Task<int> ExecuteNonQueryAsync(
         NpgsqlConnection connection,
-        NpgsqlTransaction? transaction,
         string sql,
         Dictionary<string, object?> parameters,
         CancellationToken cancellationToken)
     {
-        await using var command = new NpgsqlCommand(sql, connection, transaction);
+        await using var command = new NpgsqlCommand(sql, connection);
         foreach (var (key, value) in parameters)
         {
             command.Parameters.AddWithValue(key, value ?? DBNull.Value);
         }
 
         return await command.ExecuteNonQueryAsync(cancellationToken);
-    }
-
-    /// <summary>
-    /// Retrieves a plan by identifier using the caller's open connection and optional transaction.
-    /// </summary>
-    /// <param name="connection">Open PostgreSQL connection.</param>
-    /// <param name="transaction">Optional transaction scope.</param>
-    /// <param name="planId">The plan identifier.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The matching plan record.</returns>
-    /// <exception cref="PlanNotFoundException">Thrown when the plan is not found.</exception>
-    private static async Task<PlanRecord> GetPlanByIdAsync(NpgsqlConnection connection, NpgsqlTransaction? transaction, long planId, CancellationToken cancellationToken)
-    {
-        const string sql = @"
-            SELECT id, project_id, session_id, name, description, status, created_at, updated_at, metadata
-            FROM plans
-            WHERE id = @planId";
-
-        await using var command = new NpgsqlCommand(sql, connection, transaction);
-        command.Parameters.AddWithValue("planId", planId);
-
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        if (await reader.ReadAsync(cancellationToken))
-        {
-            return ReadPlanFromReader(reader);
-        }
-
-        throw new PlanNotFoundException(planId);
-    }
-
-    /// <summary>
-    /// Retrieves a task by identifier using the caller's open connection and optional transaction.
-    /// </summary>
-    /// <param name="connection">Open PostgreSQL connection.</param>
-    /// <param name="transaction">Optional transaction scope.</param>
-    /// <param name="taskId">The task identifier.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The matching task record.</returns>
-    /// <exception cref="PlanNotFoundException">Thrown when the task is not found.</exception>
-    private static async Task<PlanTaskRecord> GetTaskByIdAsync(NpgsqlConnection connection, NpgsqlTransaction? transaction, long taskId, CancellationToken cancellationToken)
-    {
-        const string sql = @"
-            SELECT id, plan_id, title, description, priority, status, created_at, updated_at, metadata
-            FROM tasks
-            WHERE id = @taskId";
-
-        await using var command = new NpgsqlCommand(sql, connection, transaction);
-        command.Parameters.AddWithValue("taskId", taskId);
-
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        if (await reader.ReadAsync(cancellationToken))
-        {
-            return ReadTaskFromReader(reader);
-        }
-
-        throw new PlanNotFoundException(0, taskId);
-    }
-
-    /// <summary>
-    /// Returns task identifiers that still block plan completion.
-    /// </summary>
-    /// <param name="connection">Open PostgreSQL connection.</param>
-    /// <param name="transaction">Optional transaction scope.</param>
-    /// <param name="planId">The plan identifier.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>Identifiers of tasks still pending or in progress.</returns>
-    private static async Task<IReadOnlyList<long>> GetOpenTaskIdsAsync(NpgsqlConnection connection, NpgsqlTransaction? transaction, long planId, CancellationToken cancellationToken)
-    {
-        const string sql = @"
-            SELECT id
-            FROM tasks
-            WHERE plan_id = @planId
-              AND status IN ('pending', 'in_progress')
-            ORDER BY id";
-
-        await using var command = new NpgsqlCommand(sql, connection, transaction);
-        command.Parameters.AddWithValue("planId", planId);
-
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        var openTaskIds = new List<long>();
-        while (await reader.ReadAsync(cancellationToken))
-        {
-            openTaskIds.Add(reader.GetInt64(0));
-        }
-
-        return openTaskIds;
     }
 
     private static PlanTaskRecord ReadTaskFromReader(NpgsqlDataReader reader)

@@ -70,7 +70,6 @@ public sealed class PostgresRagStore
                 project_id TEXT,
                 type TEXT NOT NULL CHECK (type IN ('episodic', 'semantic', 'procedural')),
                 content TEXT NOT NULL,
-                content_tsv TSVECTOR GENERATED ALWAYS AS (to_tsvector('english', content)) STORED,
                 embedding VECTOR({vectorDimensions}) NOT NULL,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 tags TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[]
@@ -78,9 +77,6 @@ public sealed class PostgresRagStore
 
             ALTER TABLE memories
                 ADD COLUMN IF NOT EXISTS project_id TEXT;
-
-            ALTER TABLE memories
-                ADD COLUMN IF NOT EXISTS content_tsv TSVECTOR GENERATED ALWAYS AS (to_tsvector('english', content)) STORED;
 
             CREATE INDEX IF NOT EXISTS ix_rag_chunks_document_id ON rag_chunks(document_id);
             CREATE INDEX IF NOT EXISTS ix_rag_chunks_embedding_ivfflat
@@ -95,13 +91,16 @@ public sealed class PostgresRagStore
             CREATE INDEX IF NOT EXISTS ix_memories_type ON memories (type);
             CREATE INDEX IF NOT EXISTS ix_memories_project_id ON memories (project_id);
             CREATE INDEX IF NOT EXISTS ix_memories_tags_gin ON memories USING GIN (tags);
+            CREATE INDEX IF NOT EXISTS ix_memories_text_search
+                ON memories
+                USING gin ((
+                    setweight(to_tsvector('english', COALESCE(array_to_string(tags, ' '), '')), 'A') ||
+                    setweight(to_tsvector('english', content), 'B')
+                ));
             CREATE INDEX IF NOT EXISTS ix_memories_embedding_ivfflat
                 ON memories
                 USING ivfflat (embedding vector_cosine_ops)
                 WITH (lists = 100);
-            CREATE INDEX IF NOT EXISTS ix_memories_content_tsv_gin
-                ON memories
-                USING gin (content_tsv);
             """;
 
         // Open connection and execute schema creation, including pgvector extension
@@ -299,165 +298,6 @@ public sealed class PostgresRagStore
     }
 
     /// <summary>
-    /// Performs hybrid ranking search with BM25 + semantic similarity for RAG chunks.
-    /// </summary>
-    /// <param name="queryEmbedding">Query embedding vector.</param>
-    /// <param name="queryText">Original query text for FTS.</param>
-    /// <param name="topK">Maximum number of results to return.</param>
-    /// <param name="preset">Ranking preset configuration.</param>
-    /// <param name="preferredTags">Optional tags to prefer in ranking.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>Hybrid-ranked RAG results with diagnostic scores.</returns>
-    public async Task<IReadOnlyList<RagSearchResult>> SearchHybridAsync(
-        float[] queryEmbedding,
-        string queryText,
-        int topK,
-        RecallPreset preset,
-        IReadOnlyList<string>? preferredTags = null,
-        CancellationToken cancellationToken = default)
-    {
-        if (queryEmbedding.Length == 0)
-        {
-            throw new ArgumentException("Query embedding cannot be empty.", nameof(queryEmbedding));
-        }
-
-        if (topK <= 0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(topK), "topK must be greater than 0.");
-        }
-
-        var preferTagsArray = preferredTags?.Count > 0 ? preferredTags.ToArray() : null;
-
-        // Hybrid ranking SQL with BM25 + semantic
-        const string hybridSql = """
-            WITH fts_results AS (
-                SELECT
-                    d.source_path,
-                    c.chunk_index,
-                    c.chunk_text,
-                    ts_rank(c.chunk_tsv, to_tsquery('english', @queryText)) AS bm25_score,
-                    CASE
-                        WHEN @preferTags IS NULL THEN 0
-                        ELSE COUNT(*) FILTER (WHERE source_tags && @preferTags)
-                    END AS tag_match_count
-                FROM rag_chunks c
-                INNER JOIN rag_documents d ON c.document_id = d.id
-                WHERE c.chunk_tsv @@ to_tsquery('english', @queryText)
-                ORDER BY bm25_score DESC
-                LIMIT @candidateLimit
-            ),
-            ranked AS (
-                SELECT
-                    f.*,
-                    1 - (c.embedding <=> CAST(@embedding AS vector)) AS semantic_score,
-                    @semanticWeight * (1 - (c.embedding <=> CAST(@embedding AS vector))) +
-                        @lexicalWeight * bm25_score +
-                        @recencyWeight * 0.1 +
-                        @tagWeight * CASE
-                            WHEN tag_match_count > 0 THEN 1.0
-                            ELSE 0.0
-                        END AS final_score
-                FROM fts_results f
-                WHERE 1 - (c.embedding <=> CAST(@embedding AS vector)) >= @minSemanticScore
-            )
-            SELECT
-                source_path,
-                chunk_index,
-                chunk_text,
-                final_score AS score,
-                semantic_score,
-                bm25_score AS lexical_score,
-                0.1 AS recency_boost,
-                CASE
-                    WHEN tag_match_count > 0 THEN 1.0
-                    ELSE 0.0
-                END AS tag_boost,
-                false AS used_fallback
-            FROM ranked
-            ORDER BY final_score DESC
-            LIMIT @topK
-            """;
-
-        // Fallback to pure semantic if hybrid fails
-        const string fallbackSql = """
-            SELECT
-                d.source_path,
-                c.chunk_index,
-                c.chunk_text,
-                1 - (c.embedding <=> CAST(@embedding AS vector)) AS score,
-                1 - (c.embedding <=> CAST(@embedding AS vector)) AS semantic_score,
-                0.0 AS lexical_score,
-                0.0 AS recency_boost,
-                0.0 AS tag_boost,
-                true AS used_fallback
-            FROM rag_chunks c
-            INNER JOIN rag_documents d ON c.document_id = d.id
-            ORDER BY c.embedding <=> CAST(@embedding AS vector)
-            LIMIT @topK
-            """;
-
-        await using var connection = new NpgsqlConnection(_connectionString);
-        await connection.OpenAsync(cancellationToken);
-
-        var candidateLimit = topK * 3;
-        var results = new List<RagSearchResult>();
-
-        try
-        {
-            await using var hybridCommand = new NpgsqlCommand(hybridSql, connection);
-            hybridCommand.Parameters.AddWithValue("embedding", ToVectorLiteral(queryEmbedding));
-            hybridCommand.Parameters.AddWithValue("queryText", queryText);
-            hybridCommand.Parameters.AddWithValue("topK", topK);
-            hybridCommand.Parameters.AddWithValue("candidateLimit", candidateLimit);
-            hybridCommand.Parameters.AddWithValue("semanticWeight", preset.SemanticWeight);
-            hybridCommand.Parameters.AddWithValue("lexicalWeight", preset.LexicalWeight);
-            hybridCommand.Parameters.AddWithValue("recencyWeight", preset.RecencyWeight);
-            hybridCommand.Parameters.AddWithValue("tagWeight", preset.TagWeight);
-            hybridCommand.Parameters.AddWithValue("minSemanticScore", preset.MinSemanticScore);
-            hybridCommand.Parameters.AddWithValue("preferTags", preferTagsArray);
-
-            await using var hybridReader = await hybridCommand.ExecuteReaderAsync(cancellationToken);
-            while (await hybridReader.ReadAsync(cancellationToken))
-            {
-                results.Add(new RagSearchResult(
-                    hybridReader.GetString(0),
-                    hybridReader.GetInt32(1),
-                    hybridReader.GetString(2),
-                    hybridReader.GetDouble(3),
-                    hybridReader.GetDouble(4),
-                    hybridReader.GetDouble(5),
-                    hybridReader.GetDouble(6),
-                    hybridReader.GetDouble(7),
-                    hybridReader.GetBoolean(8)));
-            }
-        }
-        catch (PostgresException)
-        {
-            // FTS query failed, fall back to semantic
-            await using var fallbackCommand = new NpgsqlCommand(fallbackSql, connection);
-            fallbackCommand.Parameters.AddWithValue("embedding", ToVectorLiteral(queryEmbedding));
-            fallbackCommand.Parameters.AddWithValue("topK", topK);
-
-            await using var fallbackReader = await fallbackCommand.ExecuteReaderAsync(cancellationToken);
-            while (await fallbackReader.ReadAsync(cancellationToken))
-            {
-                results.Add(new RagSearchResult(
-                    fallbackReader.GetString(0),
-                    fallbackReader.GetInt32(1),
-                    fallbackReader.GetString(2),
-                    fallbackReader.GetDouble(3),
-                    fallbackReader.GetDouble(4),
-                    fallbackReader.GetDouble(5),
-                    fallbackReader.GetDouble(6),
-                    fallbackReader.GetDouble(7),
-                    fallbackReader.GetBoolean(8)));
-            }
-        }
-
-        return results.AsReadOnly();
-    }
-
-    /// <summary>
     /// Executes a lexical fallback search using PostgreSQL full-text search.
     /// </summary>
     /// <param name="queryText">The raw query text.</param>
@@ -524,6 +364,97 @@ public sealed class PostgresRagStore
         }
 
         return results;
+    }
+
+    /// <summary>
+    /// Executes lexical fallback search over memories using PostgreSQL full-text search.
+    /// </summary>
+    /// <param name="queryText">The raw query text.</param>
+    /// <param name="limit">Maximum number of results to return.</param>
+    /// <param name="type">Optional memory type filter.</param>
+    /// <param name="tag">Optional tag filter.</param>
+    /// <param name="sessionId">Optional session-id filter.</param>
+    /// <param name="projectId">Optional project-id filter.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Lexically ranked memory rows.</returns>
+    public async Task<IReadOnlyList<MemorySearchResult>> SearchMemoriesLexicalAsync(
+        string queryText,
+        int limit,
+        string? type = null,
+        string? tag = null,
+        string? sessionId = null,
+        string? projectId = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(queryText))
+        {
+            throw new ArgumentException("Query text cannot be null or empty.", nameof(queryText));
+        }
+
+        if (limit <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(limit), "Limit must be greater than 0.");
+        }
+
+        var normalizedProjectId = NormalizeProjectId(projectId);
+
+        const string sql = """
+            WITH query AS (
+                SELECT websearch_to_tsquery('english', @queryText) AS tsquery
+            )
+            SELECT id,
+                   session_id,
+                   project_id,
+                   type,
+                   content,
+                   tags,
+                   created_at,
+                   ts_rank_cd(
+                       setweight(to_tsvector('english', COALESCE(array_to_string(tags, ' '), '')), 'A') ||
+                       setweight(to_tsvector('english', content), 'B'),
+                       query.tsquery) AS score
+            FROM memories
+            CROSS JOIN query
+            WHERE numnode(query.tsquery) > 0
+                AND (@type::text IS NULL OR type = @type::text)
+                AND (@tag::text IS NULL OR @tag::text = ANY(tags))
+                AND (@sessionId::text IS NULL OR session_id = @sessionId::text)
+                AND (@projectId::text IS NULL OR project_id = @projectId::text)
+                AND (
+                    setweight(to_tsvector('english', COALESCE(array_to_string(tags, ' '), '')), 'A') ||
+                    setweight(to_tsvector('english', content), 'B')
+                ) @@ query.tsquery
+            ORDER BY score DESC, created_at DESC, id DESC
+            LIMIT @limit
+            """;
+
+        var rows = new List<MemorySearchResult>();
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("queryText", queryText);
+        command.Parameters.Add(CreateNullableTextParameter("type", type));
+        command.Parameters.Add(CreateNullableTextParameter("tag", tag));
+        command.Parameters.Add(CreateNullableTextParameter("sessionId", sessionId));
+        command.Parameters.Add(CreateNullableTextParameter("projectId", normalizedProjectId));
+        command.Parameters.AddWithValue("limit", limit);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var scoreOrdinal = ResolveScoreOrdinal(reader);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            rows.Add(new MemorySearchResult(
+                Id: reader.GetInt64(0),
+                SessionId: reader.GetString(1),
+                ProjectId: reader.IsDBNull(2) ? null : reader.GetString(2),
+                Type: reader.GetString(3),
+                Content: reader.GetString(4),
+                Tags: reader.GetFieldValue<string[]>(5),
+                CreatedAtUtc: reader.GetFieldValue<DateTimeOffset>(6),
+                Score: TryReadScore(reader, scoreOrdinal, fallbackOrdinal: 7)));
+        }
+
+        return rows;
     }
 
     /// <summary>
@@ -672,6 +603,129 @@ public sealed class PostgresRagStore
         }
 
         return sources.AsReadOnly();
+    }
+
+    /// <summary>
+    /// Lists indexed documents with optional project and text filters for dashboard document management.
+    /// </summary>
+    /// <param name="projectId">Optional project identifier used to scope document rows.</param>
+    /// <param name="searchText">Optional text filter matched against source paths and chunk text.</param>
+    /// <param name="limit">Maximum number of documents to return.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Indexed document summary rows ordered by latest index time.</returns>
+    public async Task<IReadOnlyList<IndexedDocumentRecord>> ListIndexedDocumentsAsync(string? projectId, string? searchText, int limit = 300, CancellationToken cancellationToken = default)
+    {
+        if (limit <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(limit), "Limit must be greater than 0.");
+        }
+
+        const string sql = """
+            SELECT
+                d.source_path,
+                COUNT(c.id)::int AS chunk_count,
+                COALESCE(SUM(c.token_count), 0)::int AS token_count,
+                d.indexed_at,
+                d.content_hash,
+                LEFT(COALESCE(string_agg(c.chunk_text, E'\n' ORDER BY c.chunk_index), ''), 320) AS preview_text
+            FROM rag_documents d
+            LEFT JOIN rag_chunks c ON d.id = c.document_id
+            WHERE (@projectId::text IS NULL OR COALESCE(NULLIF(
+                    CASE
+                        WHEN d.source_path ~* '^https?://' THEN split_part(split_part(d.source_path, '://', 2), '/', 1)
+                        ELSE split_part(replace(d.source_path, '\\', '/'), '/', 1)
+                    END,
+                    ''
+                ), 'unscoped') = @projectId::text)
+              AND (
+                    @searchText::text IS NULL
+                    OR d.source_path ILIKE ('%' || @searchText::text || '%')
+                    OR EXISTS (
+                        SELECT 1
+                        FROM rag_chunks c2
+                        WHERE c2.document_id = d.id
+                          AND c2.chunk_text ILIKE ('%' || @searchText::text || '%')
+                    )
+                )
+            GROUP BY d.id, d.source_path, d.indexed_at, d.content_hash
+            ORDER BY d.indexed_at DESC, d.source_path ASC
+            LIMIT @limit
+            """;
+
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+
+        var rows = new List<IndexedDocumentRecord>();
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("limit", limit);
+        command.Parameters.Add(CreateNullableTextParameter("projectId", NormalizeProjectId(projectId)));
+        command.Parameters.Add(CreateNullableTextParameter("searchText", NormalizeOptionalText(searchText)));
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var sourcePath = reader.GetString(0);
+            rows.Add(new IndexedDocumentRecord(
+                SourcePath: sourcePath,
+                ProjectId: ExtractProjectId(sourcePath),
+                ChunkCount: reader.GetInt32(1),
+                TokenCount: reader.GetInt32(2),
+                IndexedAt: reader.GetDateTime(3),
+                ContentHash: reader.GetString(4),
+                PreviewText: reader.IsDBNull(5) ? string.Empty : reader.GetString(5)));
+        }
+
+        return rows.AsReadOnly();
+    }
+
+    /// <summary>
+    /// Retrieves one indexed document with reconstructed content for dashboard viewing or editing.
+    /// </summary>
+    /// <param name="sourcePath">Stored indexed source path.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Document detail when found; otherwise <c>null</c>.</returns>
+    public async Task<IndexedDocumentDetail?> GetIndexedDocumentAsync(string sourcePath, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(sourcePath))
+        {
+            throw new ArgumentException("Source path cannot be null or empty.", nameof(sourcePath));
+        }
+
+        const string sql = """
+            SELECT
+                d.source_path,
+                COUNT(c.id)::int AS chunk_count,
+                COALESCE(SUM(c.token_count), 0)::int AS token_count,
+                d.indexed_at,
+                d.content_hash,
+                COALESCE(string_agg(c.chunk_text, E'\n' ORDER BY c.chunk_index), '') AS content
+            FROM rag_documents d
+            LEFT JOIN rag_chunks c ON d.id = c.document_id
+            WHERE d.source_path = @sourcePath
+            GROUP BY d.id, d.source_path, d.indexed_at, d.content_hash
+            LIMIT 1
+            """;
+
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("sourcePath", sourcePath.Trim());
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        var resolvedSourcePath = reader.GetString(0);
+        return new IndexedDocumentDetail(
+            SourcePath: resolvedSourcePath,
+            ProjectId: ExtractProjectId(resolvedSourcePath),
+            ChunkCount: reader.GetInt32(1),
+            TokenCount: reader.GetInt32(2),
+            IndexedAt: reader.GetDateTime(3),
+            ContentHash: reader.GetString(4),
+            Content: reader.IsDBNull(5) ? string.Empty : reader.GetString(5));
     }
 
     /// <summary>
@@ -944,6 +998,38 @@ public sealed class PostgresRagStore
 
         await transaction.CommitAsync(cancellationToken);
         return (updatedCount, duplicatesRemoved);
+    }
+
+    /// <summary>
+    /// Deletes all indexed documents assigned to a project bucket.
+    /// </summary>
+    /// <param name="projectId">Project identifier.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Number of deleted documents.</returns>
+    public async Task<int> DeleteDocumentsByProjectAsync(string projectId, CancellationToken cancellationToken = default)
+    {
+        var normalizedProjectId = NormalizeProjectId(projectId);
+        if (string.IsNullOrWhiteSpace(normalizedProjectId))
+        {
+            throw new ArgumentException("Project id cannot be null or empty.", nameof(projectId));
+        }
+
+        const string sql = """
+            DELETE FROM rag_documents
+            WHERE COALESCE(NULLIF(
+                    CASE
+                        WHEN source_path ~* '^https?://' THEN split_part(split_part(source_path, '://', 2), '/', 1)
+                        ELSE split_part(replace(source_path, '\\', '/'), '/', 1)
+                    END,
+                    ''
+                ), 'unscoped') = @projectId
+            """;
+
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("projectId", normalizedProjectId);
+        return await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     /// <summary>
@@ -1361,233 +1447,6 @@ public sealed class PostgresRagStore
     }
 
     /// <summary>
-    /// Performs hybrid ranking recall over memories using BM25 + semantic similarity.
-    /// </summary>
-    /// <param name="queryEmbedding">Query embedding vector.</param>
-    /// <param name="queryText">Original query text for FTS.</param>
-    /// <param name="limit">Maximum number of rows to return.</param>
-    /// <param name="type">Optional memory type filter.</param>
-    /// <param name="tag">Optional tag filter.</param>
-    /// <param name="sessionId">Optional session-id filter.</param>
-    /// <param name="projectId">Optional project-id filter.</param>
-    /// <param name="preset">Ranking preset configuration.</param>
-    /// <param name="preferredTags">Optional tags to prefer in ranking.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>Hybrid-ranked memory rows with diagnostic scores.</returns>
-    public async Task<IReadOnlyList<MemorySearchResult>> SearchMemoriesHybridAsync(
-        float[] queryEmbedding,
-        string queryText,
-        int limit,
-        string? type = null,
-        string? tag = null,
-        string? sessionId = null,
-        string? projectId = null,
-        RecallPreset? preset = null,
-        IReadOnlyList<string>? preferredTags = null,
-        CancellationToken cancellationToken = default)
-    {
-        if (queryEmbedding.Length == 0)
-        {
-            throw new ArgumentException("Query embedding cannot be empty.", nameof(queryEmbedding));
-        }
-
-        if (limit <= 0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(limit), "Limit must be greater than 0.");
-        }
-
-        if (string.IsNullOrWhiteSpace(queryText))
-        {
-            throw new ArgumentException("Query text cannot be empty.", nameof(queryText));
-        }
-
-        preset ??= RecallPresets.Balanced;
-        var normalizedProjectId = NormalizeProjectId(projectId);
-
-        // Try hybrid ranking first
-        const string hybridSql = """
-            WITH fts_results AS (
-                SELECT
-                    id,
-                    session_id,
-                    project_id,
-                    type,
-                    content,
-                    tags,
-                    created_at,
-                    ts_rank(content_tsv, to_tsquery('english', @queryText)) AS bm25_score,
-                    CASE
-                        WHEN @preferTags IS NULL THEN 0
-                        ELSE COUNT(*) FILTER (WHERE tags && @preferTags)
-                    END AS tag_match_count,
-                    CASE
-                        WHEN created_at > NOW() - INTERVAL '7 days' THEN 1.0
-                        WHEN created_at > NOW() - INTERVAL '30 days' THEN 0.7
-                        WHEN created_at > NOW() - INTERVAL '90 days' THEN 0.4
-                        ELSE 0.1
-                    END AS recency_boost
-                FROM memories
-                WHERE content_tsv @@ to_tsquery('english', @queryText)
-                    AND (@type::text IS NULL OR type = @type::text)
-                    AND (@tag::text IS NULL OR @tag::text = ANY(tags))
-                    AND (@sessionId::text IS NULL OR session_id = @sessionId::text)
-                    AND (@projectId::text IS NULL OR project_id = @projectId::text)
-                GROUP BY id, session_id, project_id, type, content, tags, created_at
-                ORDER BY bm25_score DESC
-                LIMIT @candidateLimit
-            ),
-            ranked AS (
-                SELECT
-                    f.*,
-                    1 - (embedding <=> CAST(@embedding AS vector)) AS semantic_score,
-                    @semanticWeight * (1 - (embedding <=> CAST(@embedding AS vector))) +
-                        @lexicalWeight * bm25_score +
-                        @recencyWeight * recency_boost +
-                        @tagWeight * CASE
-                            WHEN tag_match_count > 0 THEN 1.0
-                            ELSE 0.0
-                        END AS final_score
-                FROM fts_results f
-                WHERE 1 - (embedding <=> CAST(@embedding AS vector)) >= @minSemanticScore
-            )
-            SELECT
-                id,
-                session_id,
-                project_id,
-                type,
-                content,
-                tags,
-                created_at,
-                final_score AS score,
-                semantic_score AS semantic_score,
-                bm25_score AS lexical_score,
-                recency_boost AS recency_boost,
-                CASE
-                    WHEN tag_match_count > 0 THEN 1.0
-                    ELSE 0.0
-                END AS tag_boost,
-                false AS used_fallback
-            FROM ranked
-            ORDER BY final_score DESC
-            LIMIT @limit
-            """;
-
-        // Fallback to pure semantic if hybrid returns no results and fallback is enabled
-        const string fallbackSql = """
-            SELECT
-                id,
-                session_id,
-                project_id,
-                type,
-                content,
-                tags,
-                created_at,
-                1 - (embedding <=> CAST(@embedding AS vector)) AS score,
-                1 - (embedding <=> CAST(@embedding AS vector)) AS semantic_score,
-                0.0 AS lexical_score,
-                0.0 AS recency_boost,
-                0.0 AS tag_boost,
-                true AS used_fallback
-            FROM memories
-            WHERE (@type::text IS NULL OR type = @type::text)
-                AND (@tag::text IS NULL OR @tag::text = ANY(tags))
-                AND (@sessionId::text IS NULL OR session_id = @sessionId::text)
-                AND (@projectId::text IS NULL OR project_id = @projectId::text)
-                AND (1 - (embedding <=> CAST(@embedding AS vector))) >= @minSemanticScore
-            ORDER BY embedding <=> CAST(@embedding AS vector)
-            LIMIT @limit
-            """;
-
-        await using var connection = new NpgsqlConnection(_connectionString);
-        await connection.OpenAsync(cancellationToken);
-
-        var candidateLimit = limit * 3; // Get 3x candidates for hybrid ranking
-        var preferTagsArray = preferredTags?.Count > 0 ? preferredTags.ToArray() : null;
-
-        // Try hybrid ranking first
-        await using var hybridCommand = new NpgsqlCommand(hybridSql, connection);
-        hybridCommand.Parameters.AddWithValue("embedding", ToVectorLiteral(queryEmbedding));
-        hybridCommand.Parameters.AddWithValue("queryText", queryText);
-        hybridCommand.Parameters.AddWithValue("limit", limit);
-        hybridCommand.Parameters.AddWithValue("candidateLimit", candidateLimit);
-        hybridCommand.Parameters.Add(CreateNullableTextParameter("type", type));
-        hybridCommand.Parameters.Add(CreateNullableTextParameter("tag", tag));
-        hybridCommand.Parameters.Add(CreateNullableTextParameter("sessionId", sessionId));
-        hybridCommand.Parameters.Add(CreateNullableTextParameter("projectId", normalizedProjectId));
-        hybridCommand.Parameters.AddWithValue("semanticWeight", preset.SemanticWeight);
-        hybridCommand.Parameters.AddWithValue("lexicalWeight", preset.LexicalWeight);
-        hybridCommand.Parameters.AddWithValue("recencyWeight", preset.RecencyWeight);
-        hybridCommand.Parameters.AddWithValue("tagWeight", preset.TagWeight);
-        hybridCommand.Parameters.AddWithValue("minSemanticScore", preset.MinSemanticScore);
-        hybridCommand.Parameters.AddWithValue("preferTags", preferTagsArray);
-
-        var hybridResults = new List<MemorySearchResult>();
-        try
-        {
-            await using var hybridReader = await hybridCommand.ExecuteReaderAsync(cancellationToken);
-            while (await hybridReader.ReadAsync(cancellationToken))
-            {
-                hybridResults.Add(new MemorySearchResult(
-                    Id: hybridReader.GetInt64(0),
-                    SessionId: hybridReader.GetString(1),
-                    ProjectId: hybridReader.IsDBNull(2) ? null : hybridReader.GetString(2),
-                    Type: hybridReader.GetString(3),
-                    Content: hybridReader.GetString(4),
-                    Tags: hybridReader.GetFieldValue<string[]>(5),
-                    CreatedAtUtc: hybridReader.GetFieldValue<DateTimeOffset>(6),
-                    Score: hybridReader.GetDouble(7),
-                    SemanticScore: hybridReader.GetDouble(8),
-                    LexicalScore: hybridReader.GetDouble(9),
-                    RecencyBoost: hybridReader.GetDouble(10),
-                    TagBoost: hybridReader.GetDouble(11),
-                    UsedFallback: hybridReader.GetBoolean(12)));
-            }
-        }
-        catch (PostgresException) when (preset.EnableFallback)
-        {
-            // FTS query failed, will fall back to semantic
-        }
-
-        // If hybrid returned results or fallback disabled, return them
-        if (hybridResults.Count > 0 || !preset.EnableFallback)
-        {
-            return hybridResults.AsReadOnly();
-        }
-
-        // Fall back to pure semantic search
-        await using var fallbackCommand = new NpgsqlCommand(fallbackSql, connection);
-        fallbackCommand.Parameters.AddWithValue("embedding", ToVectorLiteral(queryEmbedding));
-        fallbackCommand.Parameters.AddWithValue("limit", limit);
-        fallbackCommand.Parameters.Add(CreateNullableTextParameter("type", type));
-        fallbackCommand.Parameters.Add(CreateNullableTextParameter("tag", tag));
-        fallbackCommand.Parameters.Add(CreateNullableTextParameter("sessionId", sessionId));
-        fallbackCommand.Parameters.Add(CreateNullableTextParameter("projectId", normalizedProjectId));
-        fallbackCommand.Parameters.AddWithValue("minSemanticScore", preset.MinSemanticScore);
-
-        var fallbackResults = new List<MemorySearchResult>();
-        await using var fallbackReader = await fallbackCommand.ExecuteReaderAsync(cancellationToken);
-        while (await fallbackReader.ReadAsync(cancellationToken))
-        {
-            fallbackResults.Add(new MemorySearchResult(
-                Id: fallbackReader.GetInt64(0),
-                SessionId: fallbackReader.GetString(1),
-                ProjectId: fallbackReader.IsDBNull(2) ? null : fallbackReader.GetString(2),
-                Type: fallbackReader.GetString(3),
-                Content: fallbackReader.GetString(4),
-                Tags: fallbackReader.GetFieldValue<string[]>(5),
-                CreatedAtUtc: fallbackReader.GetFieldValue<DateTimeOffset>(6),
-                Score: fallbackReader.GetDouble(7),
-                SemanticScore: fallbackReader.GetDouble(8),
-                LexicalScore: fallbackReader.IsDBNull(9) ? (double?)null : fallbackReader.GetDouble(9),
-                RecencyBoost: fallbackReader.IsDBNull(10) ? (double?)null : fallbackReader.GetDouble(10),
-                TagBoost: fallbackReader.IsDBNull(11) ? (double?)null : fallbackReader.GetDouble(11),
-                UsedFallback: fallbackReader.GetBoolean(12)));
-        }
-
-        return fallbackResults.AsReadOnly();
-    }
-
-    /// <summary>
     /// Computes memory analytics suitable for dashboard visualization.
     /// </summary>
     /// <param name="dayWindow">Number of trailing days to include in daily counts.</param>
@@ -1936,6 +1795,60 @@ public sealed class PostgresRagStore
     }
 
     /// <summary>
+    /// Deletes all memory entries for a project.
+    /// </summary>
+    /// <param name="projectId">Project identifier.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Number of deleted memory rows.</returns>
+    public async Task<int> DeleteMemoriesByProjectAsync(string projectId, CancellationToken cancellationToken = default)
+    {
+        var normalizedProjectId = NormalizeProjectId(projectId);
+        if (string.IsNullOrWhiteSpace(normalizedProjectId))
+        {
+            throw new ArgumentException("Project id cannot be null or empty.", nameof(projectId));
+        }
+
+        const string sql = "DELETE FROM memories WHERE project_id = @projectId";
+
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("projectId", normalizedProjectId);
+        return await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Renames the project identifier on all matching memory rows.
+    /// </summary>
+    /// <param name="projectId">Existing project identifier.</param>
+    /// <param name="targetProjectId">Replacement project identifier.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Number of updated memory rows.</returns>
+    public async Task<int> RenameProjectMemoriesAsync(string projectId, string targetProjectId, CancellationToken cancellationToken = default)
+    {
+        var normalizedProjectId = NormalizeProjectId(projectId);
+        var normalizedTargetProjectId = NormalizeProjectId(targetProjectId);
+        if (string.IsNullOrWhiteSpace(normalizedProjectId))
+        {
+            throw new ArgumentException("Project id cannot be null or empty.", nameof(projectId));
+        }
+
+        if (string.IsNullOrWhiteSpace(normalizedTargetProjectId))
+        {
+            throw new ArgumentException("Target project id cannot be null or empty.", nameof(targetProjectId));
+        }
+
+        const string sql = "UPDATE memories SET project_id = @targetProjectId WHERE project_id = @projectId";
+
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("projectId", normalizedProjectId);
+        command.Parameters.AddWithValue("targetProjectId", normalizedTargetProjectId);
+        return await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    /// <summary>
     /// Validates common memory insertion arguments.
     /// </summary>
     /// <param name="type">Memory type value.</param>
@@ -2000,6 +1913,18 @@ public sealed class PostgresRagStore
         return string.IsNullOrWhiteSpace(projectId)
             ? null
             : projectId.Trim();
+    }
+
+    /// <summary>
+    /// Resolves an optional free-text filter value for dashboard list queries.
+    /// </summary>
+    /// <param name="value">Optional caller-provided text filter.</param>
+    /// <returns>Trimmed value or <c>null</c> when empty.</returns>
+    private static string? NormalizeOptionalText(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value)
+            ? null
+            : value.Trim();
     }
 
     /// <summary>

@@ -4,27 +4,25 @@ All notable changes to the Nebula RAG Home Assistant add-on are documented in th
 
 The format is inspired by Keep a Changelog and follows semantic versioning.
 
-## [0.3.84] - 2026-03-17
+## [0.3.71] - 2026-03-17
 
-- Fixed PostgreSQL schema initialization for existing `memories` tables by adding the missing generated `content_tsv` column before creating its GIN index, preventing add-on startup failures on upgraded databases.
+- Refocused the dashboard around project-owned operations by adding project rename/delete flows with plan, memory, and indexed-document cascades.
+- Rebuilt the plans tab around project-scoped list, view, edit, delete, task inspection, and purge flows instead of session-first browsing.
+- Rebuilt the memory tab around project-scoped ledger, search, edit, delete, and purge flows while keeping session ids as optional lineage only.
+- Rebuilt the RAG tab around indexed-document list, search, view, edit, delete, and project purge flows, rather than only source-level maintenance.
 
-## [0.3.83] - 2026-03-17
+## [0.3.73] - 2026-03-19
 
-- Reworked the Home Assistant dashboard into a denser industrial admin surface with a project-ledger sidebar, operator status rail, and table-first visual system.
-- Updated the add-on shell copy and titles to present the browser UI as an admin dashboard instead of a flight deck.
+- Added `scripts/setup-nebula-rag.sh` so Linux and macOS users can install the same Nebula MCP plus hook workflow without requiring `pwsh`.
+- Added a Bash-capable shared hook runner and updated the balanced Copilot/Claude hook templates so project scaffolds work on Unix while keeping the existing PowerShell path for Windows.
+- Updated the PowerShell installer to scaffold the Unix hook asset too, so mixed-platform repositories keep one complete hook bundle.
+- Refreshed the direct test dependency gate by updating `coverlet.collector` to the latest stable patch release available during pre-merge validation.
 
-## [0.3.82] - 2026-03-17
+## [0.3.72] - 2026-03-19
 
-- Fixed plan completion race handling by validating open tasks inside the same database transaction that updates plan status, avoiding false `tasks are still pending or in progress` failures after task updates.
-- Refreshed the solution restore graph so test-time `Npgsql` resolution stays aligned on `10.0.2`.
-
-## [0.3.81] - 2026-03-17
-
-- Fixed the add-on build by removing an invalid `sealed` modifier from `MemoryRecallMode`, allowing `NebulaRAG.AddonHost` publish to compile successfully again.
-
-## [0.3.80] - 2026-03-17
-
-- Added hybrid scoring to the query flow by combining semantic relevance with lexical source-path and filename matches, improving recall for queries that reference specific files or paths.
+- Replaced the Nebula setup installer with a hook-aware Claude Code and Copilot CLI workflow that writes user-level MCP registration, project-local hook scaffolding, and canonical Nebula instruction files in one pass.
+- Added balanced shared hook assets for Claude Code and Copilot CLI, including session-start context injection, dangerous shell command guardrails, and Nebula failure capture logging.
+- Fixed memory recall resilience by adding lexical fallback and hybrid ranking to Nebula memory search so MCP recall can recover when semantic search is weak or degraded.
 
 ## [0.3.70] - 2026-03-17
 

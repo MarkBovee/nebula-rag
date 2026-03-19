@@ -35,6 +35,63 @@ public sealed record SourceInfo(
     string ContentHash);
 
 /// <summary>
+/// Summary row for an indexed document, including a short preview for dashboard browsing.
+/// </summary>
+public sealed record IndexedDocumentRecord(
+    /// <summary>The path or identifier for the indexed source document.</summary>
+    string SourcePath,
+    /// <summary>Derived project identifier for project-scoped management.</summary>
+    string? ProjectId,
+    /// <summary>Number of stored chunks for the source.</summary>
+    int ChunkCount,
+    /// <summary>Estimated token count across all stored chunks.</summary>
+    int TokenCount,
+    /// <summary>UTC timestamp when the source was last indexed.</summary>
+    DateTime IndexedAt,
+    /// <summary>SHA256 hash of the indexed content.</summary>
+    string ContentHash,
+    /// <summary>Short preview of the indexed content for table display.</summary>
+    string PreviewText);
+
+/// <summary>
+/// Full indexed document payload used for view and edit operations.
+/// </summary>
+public sealed record IndexedDocumentDetail(
+    /// <summary>The path or identifier for the indexed source document.</summary>
+    string SourcePath,
+    /// <summary>Derived project identifier for project-scoped management.</summary>
+    string? ProjectId,
+    /// <summary>Number of stored chunks for the source.</summary>
+    int ChunkCount,
+    /// <summary>Estimated token count across all stored chunks.</summary>
+    int TokenCount,
+    /// <summary>UTC timestamp when the source was last indexed.</summary>
+    DateTime IndexedAt,
+    /// <summary>SHA256 hash of the indexed content.</summary>
+    string ContentHash,
+    /// <summary>Reconstructed indexed content.</summary>
+    string Content);
+
+/// <summary>
+/// Aggregate result for a project-wide rename or delete operation.
+/// </summary>
+public sealed record ProjectMutationResult(
+    /// <summary>Original project identifier targeted by the operation.</summary>
+    string ProjectId,
+    /// <summary>Destination project identifier for rename operations, or <c>null</c> for deletes.</summary>
+    string? TargetProjectId,
+    /// <summary>Number of plans affected.</summary>
+    int PlansAffected,
+    /// <summary>Number of tasks affected through plan cascades.</summary>
+    int TasksAffected,
+    /// <summary>Number of memories affected.</summary>
+    long MemoriesAffected,
+    /// <summary>Number of indexed documents affected.</summary>
+    int DocumentsAffected,
+    /// <summary>Number of chunks affected through indexed-document cascades.</summary>
+    int ChunksAffected);
+
+/// <summary>
 /// Result of a database health check operation.
 /// </summary>
 public sealed record HealthCheckResult(

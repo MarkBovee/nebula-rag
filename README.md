@@ -93,8 +93,8 @@ curl -X POST http://localhost:8099/mcp -d '{
 It combines:
 - A **.NET core retrieval engine** — chunking, embeddings, pgvector storage
 - A **local CLI** for indexing and querying
-- **MCP endpoints** for agents and editor tooling (VS Code, Claude Code, Cursor)
-- A **Home Assistant add-on** with a built-in Blazor admin dashboard for overview, RAG, memory, and plan operations
+- **MCP endpoints** for agents and editor tooling (Copilot CLI, Claude Code, Cursor)
+- A **Home Assistant add-on** with a built-in Blazor flight deck for overview, RAG, memory, and plan operations
 
 ---
 
@@ -105,7 +105,7 @@ It combines:
 - **Lean retrieval defaults** — semantic queries default to a smaller result fan-out, boost exact path hits, and fall back to PostgreSQL full-text search when semantic recall is weak
 - **Clean architecture** — core engine, transport adapters, and host runtime are fully separated
 - **Operational from day one** — indexing, source management, health checks, and stats all included
-- **One-line install** — PowerShell setup script handles MCP registration for VS Code and Claude Code
+- **One-line install** — PowerShell or Bash setup scripts handle Copilot CLI + Claude Code MCP registration and project-local hook scaffolding
 
 ---
 
@@ -130,7 +130,9 @@ Retrieval-Augmented Generation augments AI models with retrieved context from an
 
 ---
 
-## Quick Install (Windows + PowerShell)
+## Quick Install
+
+### Windows + PowerShell
 
 ```powershell
 $scriptUrl='https://raw.githubusercontent.com/MarkBovee/NebulaRAG/main/scripts/setup-nebula-rag.ps1'
@@ -140,9 +142,21 @@ Invoke-WebRequest -Uri $scriptUrl -OutFile $scriptPath -ErrorAction Stop
 & $scriptPath
 ```
 
-Downloads the setup script and configures user-level MCP registration for VS Code and Claude Code.
+Downloads the setup script and configures user-level MCP registration for Copilot CLI and Claude Code.
 
-The same script is also the canonical way to scaffold Nebula instruction files into a project.
+The same script is also the canonical way to scaffold Nebula instruction files, Claude hook settings, and Copilot hook files into a project.
+
+### Linux/macOS + Bash
+
+```bash
+script_url='https://raw.githubusercontent.com/MarkBovee/NebulaRAG/main/scripts/setup-nebula-rag.sh'
+script_path="${TMPDIR:-/tmp}/setup-nebula-rag.sh"
+rm -f "$script_path"
+curl -fsSL "$script_url" -o "$script_path"
+bash "$script_path"
+```
+
+The Bash installer writes the same user-level MCP registrations, merges Bash-based Claude hook settings, and scaffolds both `.ps1` and `.sh` shared hook runners so the project bundle works across Windows and Unix environments.
 
 ---
 
@@ -179,7 +193,7 @@ docker compose up -d
 
 The ingress dashboard exposes a project switcher and four operator tabs:
 
-- `Project switcher` to keep the admin surface centered on one project when doing CRUD or investigation work.
+- `Project switcher` to keep the dashboard centered on one project when doing CRUD or investigation work.
 - `Overview` for health, telemetry, activity, and project breakdown.
 - `Rag` for semantic query, indexing, and source maintenance.
 - `Memory` for scoped analytics, recall, and memory editing.
@@ -195,23 +209,67 @@ The ingress dashboard exposes a project switcher and four operator tabs:
 
 ## Setup Script Examples
 
-**User-level setup — Home Assistant add-on:**
+**Full setup — user config plus project scaffolding:**
 ```powershell
 pwsh -File .\scripts\setup-nebula-rag.ps1 `
-  -Mode User `
+  -Mode Both `
+  -TargetPath C:\src\my-project `
   -ClientTargets Both `
   -InstallTarget HomeAssistantAddon `
   -HomeAssistantMcpUrl http://homeassistant.local:8099/nebula/mcp `
   -Force
 ```
 
-**Local container mode:**
+**User-level config only:**
 ```powershell
 pwsh -File .\scripts\setup-nebula-rag.ps1 `
   -Mode User `
+  -ClientTargets Both `
+  -InstallTarget HomeAssistantAddon `
+  -Force
+```
+
+**Project scaffolding only:**
+```powershell
+pwsh -File .\scripts\setup-nebula-rag.ps1 `
+  -Mode Project `
+  -TargetPath C:\src\my-project `
+  -ClientTargets Both `
+  -InstallTarget HomeAssistantAddon `
+  -Force
+```
+
+**Local container mode:**
+```powershell
+pwsh -File .\scripts\setup-nebula-rag.ps1 `
+  -Mode Both `
+  -TargetPath C:\src\my-project `
+  -ClientTargets Both `
   -InstallTarget LocalContainer `
   -CreateEnvTemplate `
   -Force
+```
+
+**Full setup on Linux/macOS:**
+```bash
+bash ./scripts/setup-nebula-rag.sh \
+  --mode Both \
+  --target-path ~/src/my-project \
+  --client-targets Both \
+  --install-target HomeAssistantAddon \
+  --home-assistant-mcp-url http://homeassistant.local:8099/nebula/mcp \
+  --force
+```
+
+**Local container mode on Linux/macOS:**
+```bash
+bash ./scripts/setup-nebula-rag.sh \
+  --mode Both \
+  --target-path ~/src/my-project \
+  --client-targets Both \
+  --install-target LocalContainer \
+  --create-env-template \
+  --force
 ```
 
 ---
@@ -221,7 +279,7 @@ pwsh -File .\scripts\setup-nebula-rag.ps1 `
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │           AI Agent / Editor                                  │
-│   Claude Code · VS Code Copilot · Cursor · CLI              │
+│   Claude Code · Copilot CLI · Cursor · CLI                  │
 └────────────────────────┬────────────────────────────────────┘
                          │  MCP (stdio or HTTP JSON-RPC)
          ┌───────────────┴──────────────────┐
@@ -257,12 +315,14 @@ NebulaRAG/
 │   └── NebulaRAG.AddonHost/   # HTTP host: Home Assistant ingress + MCP endpoint + Blazor dashboard
 ├── container/                 # Container configuration
 ├── nebula-rag/                # Home Assistant add-on package + release metadata
-├── scripts/                   # PowerShell setup scripts
+├── scripts/                   # PowerShell and Bash setup scripts
 ├── designs/                   # Design artifacts and working assets
 ├── tests/
 │   └── NebulaRAG.Tests/
-├── .mcp.json                  # MCP config (Claude Code)
-├── copilot.mcp.json           # MCP config (VS Code Copilot)
+├── .claude/settings.json      # Claude Code project hooks
+├── .mcp.json                  # Claude Code project MCP config
+├── .github/hooks/             # Copilot CLI hook config files
+├── .github/nebula/hooks/      # Shared Nebula hook scripts for PowerShell and Bash
 ├── ROADMAP.md                 # Product roadmap and adoption phases
 ├── AGENTS.md                  # Agent instruction file
 ├── compose.yaml               # Docker Compose stack
@@ -314,10 +374,16 @@ The current scaffolded instruction bundle is:
 - `.github/nebula.instructions.md`
 - `AGENTS.md`
 - `.github/copilot-instructions.md`
+- `.github/instructions/coding.instructions.md`
+- `.github/instructions/documentation.instructions.md`
 - `.github/instructions/rag.instructions.md`
 - `.github/skills/nebularag/SKILL.md`
+- `.claude/settings.json`
+- `.github/hooks/nebula-balanced.json`
+- `.github/nebula/hooks/Invoke-NebulaAgentHook.ps1`
+- `.github/nebula/hooks/Invoke-NebulaAgentHook.sh`
 
-MCP configs for Claude Code (`.mcp.json`) and VS Code Copilot (`copilot.mcp.json`) are included in the repository root and registered automatically by the setup script.
+The installers write user-level MCP config to `~/.claude.json` and `~/.copilot/mcp-config.json`, write project-scoped Claude MCP config to `.mcp.json`, and scaffold balanced hook profiles for Claude Code and Copilot CLI into the project. Use `scripts/setup-nebula-rag.ps1` on Windows and `scripts/setup-nebula-rag.sh` on Linux/macOS.
 
 ### Intake Prompt Commands
 

@@ -65,10 +65,11 @@ var loggerFactory = LoggerFactory.Create(loggingBuilder =>
 
 var store = new PostgresRagStore(settings.Database.BuildConnectionString());
 var planStore = new PostgresPlanStore(settings.Database.BuildConnectionString());
+var projectStore = new PostgresProjectStore(settings.Database.BuildConnectionString());
 var chunker = new TextChunker();
 var embeddingGenerator = new HashEmbeddingGenerator();
 var queryService = new RagQueryService(store, embeddingGenerator, settings, loggerFactory.CreateLogger<RagQueryService>());
-var managementService = new RagManagementService(store, embeddingGenerator, settings, loggerFactory.CreateLogger<RagManagementService>());
+var managementService = new RagManagementService(store, chunker, embeddingGenerator, settings, loggerFactory.CreateLogger<RagManagementService>());
 var sourcesManifestService = new RagSourcesManifestService(store, settings, loggerFactory.CreateLogger<RagSourcesManifestService>());
 var indexer = new RagIndexer(store, chunker, embeddingGenerator, settings, loggerFactory.CreateLogger<RagIndexer>());
 
@@ -78,6 +79,7 @@ builder.Services.AddSingleton(managementService);
 builder.Services.AddSingleton(sourcesManifestService);
 builder.Services.AddSingleton(store);
 builder.Services.AddSingleton(planStore);
+builder.Services.AddSingleton(projectStore);
 builder.Services.AddSingleton(chunker);
 builder.Services.AddSingleton<IEmbeddingGenerator>(embeddingGenerator);
 builder.Services.AddSingleton(indexer);
@@ -151,7 +153,7 @@ app.MapControllers();
 app.MapRazorComponents<NebulaRAG.AddonHost.Components.App>().AddInteractiveServerRenderMode();
 
 Log.Information(
-    "NebulaRAG admin dashboard online. Dashboard: {DashboardPath} | MCP: {McpPath}",
+    "NebulaRAG flight deck online. Dashboard: {DashboardPath} | MCP: {McpPath}",
     PrefixPath(pathBase, "/dashboard/"),
     PrefixPath(pathBase, "/mcp"));
 

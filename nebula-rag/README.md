@@ -2,14 +2,14 @@
 
 Nebula RAG is a Home Assistant add-on that runs a long-lived NebulaRAG host inside a container. The add-on provides:
 
-- A browser-first admin dashboard for operating NebulaRAG across overview, retrieval, memory, and plan management surfaces.
+- A browser-first dashboard for operating NebulaRAG across overview, retrieval, memory, and plan management surfaces.
 - An MCP-over-HTTP endpoint for agent integrations and editor tooling.
 
 **Key features**
 
 - Persistent RAG service backed by PostgreSQL + `pgvector` for vector similarity queries.
 - One-click Home Assistant installation via this repository package.
-- Built-in admin dashboard to review health, run queries, manage indexed sources, inspect memory analytics, and update plan state.
+- Built-in dashboard flight deck to review health, run queries, manage indexed sources, inspect memory analytics, and update plan state.
 - MCP JSON-RPC endpoint for integrating external agents and IDE extensions.
 
 **Who should use this add-on?**

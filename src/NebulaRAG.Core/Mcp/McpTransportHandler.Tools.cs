@@ -784,7 +784,7 @@ public sealed partial class McpTransportHandler
     }
 
     /// <summary>
-    /// Executes memory semantic recall with hybrid ranking.
+    /// Executes memory semantic recall.
     /// </summary>
     /// <param name="arguments">Tool arguments.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
@@ -802,32 +802,31 @@ public sealed partial class McpTransportHandler
         var tag = arguments?["tag"]?.GetValue<string>();
         var sessionId = arguments?["sessionId"]?.GetValue<string>();
         var projectId = ResolveProjectId(arguments?["projectId"]?.GetValue<string>(), tags: null);
-
-        // Parse new hybrid ranking parameters
-        var modeStr = arguments?["mode"]?.GetValue<string>() ?? "balanced";
-        if (!Enum.TryParse<MemoryRecallMode>(modeStr, true, out var mode))
+        var searchOutcome = await _managementService.SearchMemoriesWithDiagnosticsAsync(text, limit, type, tag, sessionId, projectId, cancellationToken);
+        var memories = searchOutcome.Results;
+        var fallbackKinds = new JsonArray();
+        if (searchOutcome.LexicalFallbackUsed)
         {
-            return BuildToolResult($"Invalid mode: {modeStr}. Use: precise, balanced, or broad.", isError: true);
+            fallbackKinds.Add("lexical");
         }
 
-        var preferredTagsNode = arguments?["preferredTags"]?.AsArray();
-        IReadOnlyList<string>? preferredTags = null;
-        if (preferredTagsNode != null && preferredTagsNode.Count > 0)
+        if (memories.Count == 0)
         {
-            preferredTags = preferredTagsNode
-                .Select(node => node?.GetValue<string>())
-                .Where(tag => tag != null)
+            // Fallback to recent-memory listing so recall remains useful when semantic ranking returns no hits.
+            var listedMemories = await _store.ListMemoriesAsync(limit, type, tag, sessionId, projectId, cancellationToken);
+            memories = listedMemories
+                .Select(memory => new MemorySearchResult(memory.Id, memory.SessionId, memory.ProjectId, memory.Type, memory.Content, memory.Tags, memory.CreatedAtUtc, 0d))
                 .ToList();
+            if (memories.Count > 0)
+            {
+                fallbackKinds.Add("recent_list");
+            }
         }
-
-        // Use hybrid ranking service
-        var memories = await _managementService.SearchMemoriesHybridAsync(
-            text, limit, type, tag, sessionId, projectId, mode, preferredTags, cancellationToken);
 
         var items = new JsonArray();
         foreach (var memory in memories)
         {
-            var memoryObj = new JsonObject
+            items.Add(new JsonObject
             {
                 ["id"] = memory.Id,
                 ["sessionId"] = memory.SessionId,
@@ -837,29 +836,33 @@ public sealed partial class McpTransportHandler
                 ["tags"] = JsonSerializer.SerializeToNode(memory.Tags),
                 ["createdAtUtc"] = memory.CreatedAtUtc.ToUniversalTime().ToString("O"),
                 ["score"] = memory.Score
-            };
-
-            // Add diagnostic scores if available
-            if (memory.SemanticScore.HasValue)
-                memoryObj["semanticScore"] = memory.SemanticScore.Value;
-            if (memory.LexicalScore.HasValue)
-                memoryObj["lexicalScore"] = memory.LexicalScore.Value;
-            if (memory.RecencyBoost.HasValue)
-                memoryObj["recencyBoost"] = memory.RecencyBoost.Value;
-            if (memory.TagBoost.HasValue)
-                memoryObj["tagBoost"] = memory.TagBoost.Value;
-
-            memoryObj["usedFallback"] = memory.UsedFallback;
-            items.Add(memoryObj);
+            });
         }
 
-        return BuildToolResult($"Recalled {memories.Count} memories with hybrid ranking.", new JsonObject
+        var result = new JsonObject
         {
             ["items"] = items,
             ["sessionId"] = sessionId,
             ["projectId"] = projectId,
-            ["mode"] = modeStr
-        });
+            ["fallbackUsed"] = fallbackKinds.Count > 0,
+            ["fallbackKinds"] = fallbackKinds,
+            ["semanticSearchFailed"] = searchOutcome.SemanticSearchFailed
+        };
+
+        if (!string.IsNullOrWhiteSpace(searchOutcome.Warning))
+        {
+            result["warning"] = searchOutcome.Warning;
+        }
+
+        var message = searchOutcome.SemanticSearchFailed && searchOutcome.LexicalFallbackUsed
+            ? $"Recalled {memories.Count} memories using lexical fallback after semantic search failed."
+            : searchOutcome.LexicalFallbackUsed
+                ? $"Recalled {memories.Count} memories using lexical fallback."
+                : fallbackKinds.OfType<JsonValue>().Any(value => string.Equals(value.GetValue<string>(), "recent_list", StringComparison.Ordinal))
+                    ? $"Recalled {memories.Count} recent memories after search returned no ranked matches."
+                    : $"Recalled {memories.Count} memories.";
+
+        return BuildToolResult(message, result);
     }
 
     /// <summary>

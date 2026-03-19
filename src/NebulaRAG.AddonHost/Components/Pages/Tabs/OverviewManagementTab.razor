@@ -1,9 +1,16 @@
 @using System.Globalization
 @using NebulaRAG.AddonHost.Services
 @using NebulaRAG.Core.Models
+@using NebulaRAG.Core.Storage
 @inject DashboardSnapshotService SnapshotService
+@inject PostgresProjectStore ProjectStore
 
 <div class="section-stack">
+    @if (!string.IsNullOrWhiteSpace(_statusMessage))
+    {
+        <section class="status-banner @(_statusIsError ? "error" : "ok")">@_statusMessage</section>
+    }
+
     @if (!string.IsNullOrWhiteSpace(_errorMessage))
     {
         <section class="status-banner error">@_errorMessage</section>
@@ -11,22 +18,22 @@
 
     <section class="metric-grid">
         <article class="metric-card accent">
-            <span class="metric-label">@(HasSelectedProject() ? "Project focus" : "Project scope")</span>
+            <span class="metric-label">@(HasSelectedProject() ? "Project focus" : "Projects in play")</span>
             <span class="metric-value @(HasSelectedProject() ? "mono" : string.Empty)">@GetProjectFocusValue()</span>
             <p class="metric-footnote">@(HasSelectedProject() ? "The dashboard is pinned to one project context." : "Project slices with plans, indexed sources, or memory activity.")</p>
         </article>
         <article class="metric-card secondary">
-            <span class="metric-label">@(HasSelectedProject() ? "Project documents" : "Indexed documents")</span>
+            <span class="metric-label">@(HasSelectedProject() ? "Project sources" : "Index sources")</span>
             <span class="metric-value">@(HasSelectedProject() ? GetSelectedProject()?.Rag.DocumentCount ?? 0 : _dashboardSnapshot?.Stats.DocumentCount ?? 0)</span>
             <p class="metric-footnote">@(HasSelectedProject() ? $"{GetSelectedProject()?.Rag.ChunkCount ?? 0} chunks inside the selected project ledger." : $"{_dashboardSnapshot?.Sources.Count ?? 0} sources with {_dashboardSnapshot?.Stats.ChunkCount ?? 0} chunks.")</p>
         </article>
         <article class="metric-card tertiary">
-            <span class="metric-label">@(HasSelectedProject() ? "Project memory" : "Memory ledger")</span>
+            <span class="metric-label">@(HasSelectedProject() ? "Project memory" : "Memory footprint")</span>
             <span class="metric-value">@(HasSelectedProject() ? GetSelectedProject()?.Memory.MemoryCount ?? 0 : _dashboardSnapshot?.MemoryStats.TotalMemories ?? 0)</span>
             <p class="metric-footnote">@(HasSelectedProject() ? $"Last memory {FormatOffset(GetSelectedProject()?.Memory.LastMemoryAtUtc)}." : $"{_dashboardSnapshot?.MemoryStats.Recent24HoursCount ?? 0} new memories in the last 24 hours.")</p>
         </article>
         <article class="metric-card warning">
-            <span class="metric-label">@(HasSelectedProject() ? "Project plans" : "Plan ledger")</span>
+            <span class="metric-label">@(HasSelectedProject() ? "Project plans" : "Plan volume")</span>
             <span class="metric-value">@(HasSelectedProject() ? GetSelectedProject()?.Plans.PlanCount ?? 0 : _projects.Sum(project => project.Plans.PlanCount))</span>
             <p class="metric-footnote">@(HasSelectedProject() ? $"{GetSelectedProject()?.Plans.TaskCount ?? 0} tasks and {GetSelectedProject()?.Plans.ActivePlanCount ?? 0} active plans." : $"{_projects.Sum(project => project.Plans.ActivePlanCount)} active plans across {FormatProjectActivity()} projects.")</p>
         </article>
@@ -35,9 +42,9 @@
     <section class="section-panel panel">
         <div class="panel-header">
             <div>
-                <p class="eyebrow">Telemetry</p>
-                <h2 class="panel-title">Runtime status</h2>
-                <p class="panel-copy">Health, retention, and storage indicators for the current NebulaRAG runtime.</p>
+                <p class="eyebrow">System pulse</p>
+                <h2 class="panel-title">Core signals</h2>
+                <p class="panel-copy">Health, retention, and footprint indicators for the current NebulaRAG runtime.</p>
             </div>
             @if (_loading)
             {
@@ -68,8 +75,35 @@
         <article class="panel section-panel">
             <div class="panel-header">
                 <div>
-                    <p class="eyebrow">Metrics</p>
-                    <h2 class="panel-title">Performance samples</h2>
+                    <p class="eyebrow">Projects</p>
+                    <h2 class="panel-title">Project lifecycle</h2>
+                    <p class="panel-copy">Rename or remove one project and let the change cascade through plans, memories, and indexed documents.</p>
+                </div>
+            </div>
+
+            <div class="form-grid">
+                <label class="field">
+                    <span class="field-label">Project id</span>
+                    <input class="text-input mono" @bind="_projectEditorProjectId" placeholder="Project id" />
+                </label>
+                <label class="field">
+                    <span class="field-label">Rename to</span>
+                    <input class="text-input mono" @bind="_projectEditorTargetId" placeholder="New project id" />
+                </label>
+                <div class="field">
+                    <button class="button button-secondary" @onclick="RenameProjectAsync">Rename project</button>
+                </div>
+                <div class="field">
+                    <button class="button button-danger" @onclick="OpenDeleteProjectConfirm">Delete project</button>
+                </div>
+            </div>
+        </article>
+
+        <article class="panel section-panel">
+            <div class="panel-header">
+                <div>
+                    <p class="eyebrow">Telemetry</p>
+                    <h2 class="panel-title">Performance history</h2>
                     <p class="panel-copy">Rolling latency, indexing throughput, and CPU samples from the add-on host.</p>
                 </div>
                 <span class="badge">@GetPerformancePoints().Count samples</span>
@@ -81,7 +115,7 @@
             <div class="panel-header">
                 <div>
                     <p class="eyebrow">Activity</p>
-                    <h2 class="panel-title">Recent events</h2>
+                    <h2 class="panel-title">Recent operator events</h2>
                     <p class="panel-copy">@(HasSelectedProject() ? $"Global activity feed while focused on {SelectedProjectId}." : "Latest queries, indexing runs, and maintenance actions captured by the dashboard telemetry sink.")</p>
                 </div>
                 <span class="badge">@(_dashboardSnapshot?.Activity.Count ?? 0) tracked</span>
@@ -110,7 +144,7 @@
             <div class="panel-header">
                 <div>
                     <p class="eyebrow">Memory</p>
-                    <h2 class="panel-title">Memory distribution</h2>
+                    <h2 class="panel-title">Memory composition</h2>
                     <p class="panel-copy">Type distribution and tag pressure across stored episodic, semantic, and procedural memory.</p>
                 </div>
             </div>
@@ -183,8 +217,8 @@
         <div class="panel-header">
             <div>
                 <p class="eyebrow">Projects</p>
-                <h2 class="panel-title">Project ledger</h2>
-                <p class="panel-copy">@(HasSelectedProject() ? "Selected project summary with the surrounding ledger hidden." : "Documents, memory, and plan counts aligned per project identifier.")</p>
+                <h2 class="panel-title">Project breakdown</h2>
+                <p class="panel-copy">@(HasSelectedProject() ? "Selected project summary with the surrounding ledger hidden." : "Plans, RAG volume, and memory counts aligned per project identifier.")</p>
             </div>
             <span class="badge">@GetVisibleProjects().Count rows</span>
         </div>
@@ -197,6 +231,7 @@
                         <th>Plan posture</th>
                         <th>RAG footprint</th>
                         <th>Memory posture</th>
+                        <th>Actions</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -219,6 +254,12 @@
                                 <div class="cell-title">@project.Memory.MemoryCount memories</div>
                                 <div class="cell-subtitle">Last memory @FormatOffset(project.Memory.LastMemoryAtUtc)</div>
                             </td>
+                            <td>
+                                <div class="table-actions">
+                                    <button class="button button-muted" @onclick="() => LoadProjectIntoEditor(project.ProjectId)">Manage</button>
+                                    <button class="button button-danger" @onclick="() => OpenDeleteProjectConfirm(project.ProjectId)">Delete</button>
+                                </div>
+                            </td>
                         </tr>
                     }
                 </tbody>
@@ -227,6 +268,8 @@
     </section>
 </div>
 
+<ConfirmationModal IsOpen="@_showDeleteProjectConfirm" Title="Delete Project" Message="Delete this project and all underlying plans, memories, and indexed documents?" OnConfirm="ConfirmDeleteProjectAsync" OnCancel="CloseDeleteProjectConfirm" />
+
 @code {
     [Parameter]
     public long RefreshNonce { get; set; }
@@ -234,12 +277,20 @@
     [Parameter]
     public string? SelectedProjectId { get; set; }
 
+    [Parameter]
+    public EventCallback OnDataChanged { get; set; }
+
     private readonly List<ProjectDashboardNode> _projects = new();
     private DashboardSnapshotResponse? _dashboardSnapshot;
     private bool _loading;
     private long _lastRefreshNonce = -1;
     private string? _lastSelectedProjectId;
     private string? _errorMessage;
+    private string? _statusMessage;
+    private bool _statusIsError;
+    private bool _showDeleteProjectConfirm;
+    private string _projectEditorProjectId = string.Empty;
+    private string _projectEditorTargetId = string.Empty;
 
     protected override async Task OnParametersSetAsync()
     {
@@ -263,6 +314,7 @@
             _projects.AddRange(projects);
             _dashboardSnapshot = await SnapshotService.GetDashboardAsync();
             _errorMessage = null;
+            ApplyProjectSelectionDefaults();
             SortProjects();
         }
         catch (Exception exception)
@@ -457,5 +509,106 @@
                 ? scoreComparison
                 : string.Compare(left.ProjectId, right.ProjectId, StringComparison.OrdinalIgnoreCase);
         });
+    }
+
+    private async Task RenameProjectAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_projectEditorProjectId) || string.IsNullOrWhiteSpace(_projectEditorTargetId))
+        {
+            SetStatus("Project id and target project id are required.", isError: true);
+            return;
+        }
+
+        try
+        {
+            var result = await ProjectStore.RenameProjectAsync(_projectEditorProjectId.Trim(), _projectEditorTargetId.Trim());
+            SetStatus($"Renamed {result.ProjectId} to {result.TargetProjectId}. Plans: {result.PlansAffected}, memories: {result.MemoriesAffected}, documents: {result.DocumentsAffected}.");
+            _projectEditorProjectId = result.TargetProjectId ?? _projectEditorProjectId;
+            _projectEditorTargetId = string.Empty;
+            await NotifyDataChangedAsync();
+        }
+        catch (Exception exception)
+        {
+            SetStatus($"Project rename failed: {exception.Message}", isError: true);
+        }
+    }
+
+    private void LoadProjectIntoEditor(string projectId)
+    {
+        _projectEditorProjectId = projectId;
+        _projectEditorTargetId = string.Empty;
+        SetStatus($"Loaded {projectId} into the project lifecycle editor.");
+    }
+
+    private void OpenDeleteProjectConfirm()
+    {
+        if (string.IsNullOrWhiteSpace(_projectEditorProjectId))
+        {
+            SetStatus("Project id is required before delete.", isError: true);
+            return;
+        }
+
+        _showDeleteProjectConfirm = true;
+    }
+
+    private void OpenDeleteProjectConfirm(string projectId)
+    {
+        _projectEditorProjectId = projectId;
+        _showDeleteProjectConfirm = true;
+    }
+
+    private async Task ConfirmDeleteProjectAsync()
+    {
+        try
+        {
+            var deletedProjectId = _projectEditorProjectId.Trim();
+            var result = await ProjectStore.DeleteProjectAsync(deletedProjectId);
+            SetStatus($"Deleted {result.ProjectId}. Plans: {result.PlansAffected}, memories: {result.MemoriesAffected}, documents: {result.DocumentsAffected}.");
+            _projectEditorProjectId = string.Empty;
+            _projectEditorTargetId = string.Empty;
+            await NotifyDataChangedAsync();
+        }
+        catch (Exception exception)
+        {
+            SetStatus($"Project delete failed: {exception.Message}", isError: true);
+        }
+        finally
+        {
+            CloseDeleteProjectConfirm();
+        }
+    }
+
+    private void CloseDeleteProjectConfirm()
+    {
+        _showDeleteProjectConfirm = false;
+    }
+
+    private async Task NotifyDataChangedAsync()
+    {
+        await RefreshAsync();
+        if (OnDataChanged.HasDelegate)
+        {
+            await OnDataChanged.InvokeAsync();
+        }
+    }
+
+    private void ApplyProjectSelectionDefaults()
+    {
+        if (string.IsNullOrWhiteSpace(SelectedProjectId))
+        {
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(_projectEditorProjectId)
+            || !string.Equals(_projectEditorProjectId, SelectedProjectId, StringComparison.OrdinalIgnoreCase))
+        {
+            _projectEditorProjectId = SelectedProjectId;
+        }
+    }
+
+    private void SetStatus(string message, bool isError = false)
+    {
+        _statusMessage = message;
+        _statusIsError = isError;
     }
 }
