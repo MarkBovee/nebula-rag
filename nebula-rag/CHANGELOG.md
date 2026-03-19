@@ -18,9 +18,9 @@ The format is inspired by Keep a Changelog and follows semantic versioning.
 - Updated the PowerShell installer to scaffold the Unix hook asset too, so mixed-platform repositories keep one complete hook bundle.
 - Refreshed the direct test dependency gate by updating `coverlet.collector` to the latest stable patch release available during pre-merge validation.
 
-## [0.3.74] - 2026-03-19
+## [0.3.75] - 2026-03-19
 
-- Fixed Unix hook portability by enforcing LF line endings for `*.sh` files in the repository and by normalizing copied shell assets during both PowerShell and Bash installer scaffolding.
+- Fixed remaining Unix startup script portability by converting runtime shell assets to LF, by normalizing copied `.sh` destinations even when installers skip overwriting existing files, and by stripping CRLF from `/run.sh` during add-on image builds.
 - Hardened PostgreSQL array parameter creation in `PostgresRagStore` with an explicit typed `text[]` helper so optional array parameters do not fail Npgsql type resolution when null or empty.
 
 ## [0.3.72] - 2026-03-19

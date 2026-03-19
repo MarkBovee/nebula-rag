@@ -251,6 +251,7 @@ function Copy-FileSafe {
     $sourceFullPath = [System.IO.Path]::GetFullPath($Source)
     $destinationFullPath = [System.IO.Path]::GetFullPath($Destination)
     if ([System.StringComparer]::OrdinalIgnoreCase.Equals($sourceFullPath, $destinationFullPath)) {
+        Normalize-ShellScriptLineEndings -Path $Destination
         Write-Host "Skip same source/destination: $Destination"
         return
     }
@@ -259,12 +260,14 @@ function Copy-FileSafe {
         $sourceHash = (Get-FileHash -LiteralPath $Source -Algorithm SHA256).Hash
         $destinationHash = (Get-FileHash -LiteralPath $Destination -Algorithm SHA256).Hash
         if ([System.StringComparer]::OrdinalIgnoreCase.Equals($sourceHash, $destinationHash)) {
+            Normalize-ShellScriptLineEndings -Path $Destination
             Write-Host "Skip unchanged file: $Destination"
             return
         }
     }
 
     if ((Test-Path -LiteralPath $Destination) -and -not $ForceWrite) {
+        Normalize-ShellScriptLineEndings -Path $Destination
         Write-Host "Skip existing file: $Destination"
         return
     }

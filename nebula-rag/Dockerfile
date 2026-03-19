@@ -42,6 +42,6 @@ COPY --from=build /app/publish ./
 COPY --from=build /src/NebulaRAG/src/NebulaRAG.Cli/ragsettings.json /app/ragsettings.json
 COPY --from=build /tmp/nebularag_commit.txt /app/nebularag_commit.txt
 COPY run.sh /run.sh
-RUN chmod +x /run.sh
+RUN sed -i 's/\r$//' /run.sh && chmod +x /run.sh
 
 CMD ["/run.sh"]

@@ -59,6 +59,24 @@ warn() {
   printf 'Warning: %s\n' "$*" >&2
 }
 
+normalize_shell_script_line_endings() {
+  local path="$1"
+  if [[ "${path##*.}" != "sh" || ! -f "$path" ]]; then
+    return
+  fi
+
+  python3 - "$path" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+content = path.read_text(encoding="utf-8")
+normalized = content.replace("\r\n", "\n").replace("\r", "\n")
+if normalized != content:
+    path.write_text(normalized, encoding="utf-8", newline="\n")
+PY
+}
+
 ensure_directory() {
   local path="$1"
   mkdir -p "$path"
@@ -145,34 +163,26 @@ copy_file_safe() {
   destination_abs="$(python3 -c 'import os,sys; print(os.path.abspath(sys.argv[1]))' "$destination")"
 
   if [[ "$source_abs" == "$destination_abs" ]]; then
+    normalize_shell_script_line_endings "$destination"
     printf 'Skip same source/destination: %s\n' "$destination"
     return
   fi
 
   if [[ -f "$destination" ]] && cmp -s "$source" "$destination"; then
+    normalize_shell_script_line_endings "$destination"
     printf 'Skip unchanged file: %s\n' "$destination"
     return
   fi
 
   if [[ -f "$destination" && "$force_write" != "1" ]]; then
+    normalize_shell_script_line_endings "$destination"
     printf 'Skip existing file: %s\n' "$destination"
     return
   fi
 
   ensure_directory "$(dirname "$destination")"
   cp "$source" "$destination"
-  if [[ "${destination##*.}" == "sh" ]]; then
-    python3 - "$destination" <<'PY'
-from pathlib import Path
-import sys
-
-path = Path(sys.argv[1])
-content = path.read_text(encoding="utf-8")
-normalized = content.replace("\r\n", "\n").replace("\r", "\n")
-if normalized != content:
-    path.write_text(normalized, encoding="utf-8", newline="\n")
-PY
-  fi
+  normalize_shell_script_line_endings "$destination"
   printf 'Copied file: %s\n' "$destination"
 }
 
