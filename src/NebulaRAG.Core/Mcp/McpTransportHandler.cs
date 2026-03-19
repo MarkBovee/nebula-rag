@@ -18,7 +18,6 @@ public sealed partial class McpTransportHandler
     private const string RagSourcesToolName = "rag_sources";
     private const string RagAdminToolName = "rag_admin";
     private const string MemoryToolName = "memory";
-    private const string PlanToolName = "plan";
     private const string SystemToolName = "system";
 
     private const string QueryProjectRagToolName = "query_project_rag";
@@ -41,13 +40,6 @@ public sealed partial class McpTransportHandler
     private const string MemoryListToolName = "memory_list";
     private const string MemoryDeleteToolName = "memory_delete";
     private const string MemoryUpdateToolName = "memory_update";
-    private const string CreatePlanToolName = "create_plan";
-    private const string GetPlanToolName = "get_plan";
-    private const string ListPlansToolName = "list_plans";
-    private const string UpdatePlanToolName = "update_plan";
-    private const string CompleteTaskToolName = "complete_task";
-    private const string UpdateTaskToolName = "update_task";
-    private const string ArchivePlanToolName = "archive_plan";
 
     private readonly RagQueryService _queryService;
     private readonly RagManagementService _managementService;
@@ -60,11 +52,6 @@ public sealed partial class McpTransportHandler
     private readonly HttpClient _httpClient;
     private readonly IRuntimeTelemetrySink _telemetrySink;
     private readonly ILogger<McpTransportHandler> _logger;
-    private readonly PostgresPlanStore _planStore;
-    private readonly PlanService _planService;
-    private readonly TaskService _taskService;
-    private readonly SemaphoreSlim _planSchemaLock = new(1, 1);
-    private bool _planSchemaInitialized;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="McpTransportHandler"/> class.
@@ -92,9 +79,6 @@ public sealed partial class McpTransportHandler
         _httpClient = httpClient;
         _telemetrySink = telemetrySink ?? new NullRuntimeTelemetrySink();
         _logger = logger;
-        _planStore = new PostgresPlanStore(settings.Database.BuildConnectionString());
-        _planService = new PlanService(_planStore);
-        _taskService = new TaskService(_planStore);
     }
 
     /// <summary>
@@ -188,7 +172,6 @@ public sealed partial class McpTransportHandler
             BuildToolDefinition(RagSourcesToolName, "Unified RAG source management operations."),
             BuildToolDefinition(RagAdminToolName, "Unified RAG administrative operations."),
             BuildToolDefinition(MemoryToolName, "Unified memory operations."),
-            BuildToolDefinition(PlanToolName, "Unified planning operations."),
             BuildToolDefinition(SystemToolName, "Unified system metadata operations.")
         ];
     }
@@ -272,25 +255,6 @@ public sealed partial class McpTransportHandler
                         ["type"] = "array",
                         ["description"] = "Optional tags for store/update actions.",
                         ["items"] = BuildStringSchema("Memory tag.")
-                    }
-                },
-                "action"),
-            PlanToolName => BuildObjectSchema(
-                new JsonObject
-                {
-                    ["action"] = BuildEnumStringSchema("Plan action.", "create", "get", "list", "update", "complete_task", "update_task", "archive"),
-                    ["sessionId"] = BuildStringSchema("Session ID for create/list actions; optional audit override for plan-by-id actions."),
-                    ["planId"] = BuildIntegerSchema("Plan identifier for plan-by-id actions.", minimum: 1),
-                    ["taskId"] = BuildIntegerSchema("Task identifier for task actions.", minimum: 1),
-                    ["planName"] = BuildStringSchema("Plan name for create/update actions."),
-                    ["projectId"] = BuildStringSchema("Project id for create action."),
-                    ["status"] = BuildStringSchema("Status for update action (draft|active|completed|archived) or update_task action (pending|in_progress|completed|failed)."),
-                    ["taskName"] = BuildStringSchema("Task name for update_task action."),
-                    ["initialTasks"] = new JsonObject
-                    {
-                        ["type"] = "array",
-                        ["description"] = "Initial tasks for create action.",
-                        ["items"] = BuildStringSchema("Task name.")
                     }
                 },
                 "action"),
@@ -431,71 +395,6 @@ public sealed partial class McpTransportHandler
                     }
                 },
                 "memoryId"),
-            CreatePlanToolName => BuildObjectSchema(
-                    new JsonObject
-                    {
-                        ["sessionId"] = BuildStringSchema("Session ID for the plan."),
-                        ["planName"] = BuildStringSchema("Name of the new plan."),
-                        ["projectId"] = BuildStringSchema("Project ID for the plan."),
-                        ["initialTasks"] = new JsonObject
-                        {
-                            ["type"] = "array",
-                            ["description"] = "Initial tasks for the plan.",
-                            ["items"] = BuildStringSchema("Task name.")
-                        }
-                    },
-                    "sessionId",
-                    "planName",
-                    "projectId"),
-                GetPlanToolName => BuildObjectSchema(
-                    new JsonObject
-                    {
-                        ["sessionId"] = BuildStringSchema("Optional session ID override for audit metadata."),
-                        ["planId"] = BuildIntegerSchema("ID of the plan to retrieve.", minimum: 1)
-                    },
-                    "planId"),
-                ListPlansToolName => BuildObjectSchema(
-                    new JsonObject
-                    {
-                        ["sessionId"] = BuildStringSchema("Session ID to list plans for.")
-                    },
-                    "sessionId"),
-                UpdatePlanToolName => BuildObjectSchema(
-                    new JsonObject
-                    {
-                        ["sessionId"] = BuildStringSchema("Optional session ID override for audit metadata."),
-                        ["planId"] = BuildIntegerSchema("ID of the plan to update.", minimum: 1),
-                        ["planName"] = BuildStringSchema("New name for the plan (optional)."),
-                        ["status"] = BuildStringSchema("New status for the plan (optional).")
-                    },
-                    "planId"),
-                CompleteTaskToolName => BuildObjectSchema(
-                    new JsonObject
-                    {
-                        ["sessionId"] = BuildStringSchema("Optional session ID override for audit metadata."),
-                        ["planId"] = BuildIntegerSchema("ID of the plan containing the task.", minimum: 1),
-                        ["taskId"] = BuildIntegerSchema("ID of the task to complete.", minimum: 1)
-                    },
-                    "planId",
-                    "taskId"),
-                UpdateTaskToolName => BuildObjectSchema(
-                    new JsonObject
-                    {
-                        ["sessionId"] = BuildStringSchema("Optional session ID override for audit metadata."),
-                        ["planId"] = BuildIntegerSchema("ID of the plan containing the task.", minimum: 1),
-                        ["taskId"] = BuildIntegerSchema("ID of the task to update.", minimum: 1),
-                        ["taskName"] = BuildStringSchema("New name for the task (optional)."),
-                        ["status"] = BuildStringSchema("New status for the task (optional).")
-                    },
-                    "planId",
-                    "taskId"),
-                ArchivePlanToolName => BuildObjectSchema(
-                    new JsonObject
-                    {
-                        ["sessionId"] = BuildStringSchema("Optional session ID override for audit metadata."),
-                        ["planId"] = BuildIntegerSchema("ID of the plan to archive.", minimum: 1)
-                    },
-                    "planId"),
                 _ => BuildObjectSchema(new JsonObject())
         };
     }

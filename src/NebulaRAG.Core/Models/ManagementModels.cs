@@ -80,10 +80,6 @@ public sealed record ProjectMutationResult(
     string ProjectId,
     /// <summary>Destination project identifier for rename operations, or <c>null</c> for deletes.</summary>
     string? TargetProjectId,
-    /// <summary>Number of plans affected.</summary>
-    int PlansAffected,
-    /// <summary>Number of tasks affected through plan cascades.</summary>
-    int TasksAffected,
     /// <summary>Number of memories affected.</summary>
     long MemoriesAffected,
     /// <summary>Number of indexed documents affected.</summary>
@@ -127,28 +123,11 @@ public sealed record ProjectMemoryStats(
     DateTimeOffset? LastMemoryAtUtc);
 
 /// <summary>
-/// Per-project plan aggregates.
-/// </summary>
-public sealed record ProjectPlanStats(
-    /// <summary>Project identifier.</summary>
-    string ProjectId,
-    /// <summary>Total plans for the project.</summary>
-    int PlanCount,
-    /// <summary>Total tasks across all plans for the project.</summary>
-    int TaskCount,
-    /// <summary>Number of active plans for the project.</summary>
-    int ActivePlanCount,
-    /// <summary>Latest plan update timestamp for the project.</summary>
-    DateTimeOffset? LastUpdatedAtUtc);
-
-/// <summary>
-/// Hierarchical project dashboard node containing plans, RAG, and memory slices.
+/// Hierarchical project dashboard node containing RAG and memory slices.
 /// </summary>
 public sealed record ProjectDashboardNode(
     /// <summary>Project identifier.</summary>
     string ProjectId,
-    /// <summary>Plan slice for this project.</summary>
-    ProjectPlanStats Plans,
     /// <summary>RAG slice for this project.</summary>
     ProjectRagStats Rag,
     /// <summary>Memory slice for this project.</summary>

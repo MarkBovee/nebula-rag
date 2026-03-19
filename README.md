@@ -18,9 +18,9 @@
 
 NebulaRAG is a self-hosted Retrieval-Augmented Generation platform that gives AI agents fast, code-aware context from your actual project sources — without sending anything to the cloud.
 
-## MCP Integration for RAG, Memory, and Plans
+## MCP Integration for RAG and Memory
 
-NebulaRAG includes a broad MCP (Model Context Protocol) integration for retrieval, indexing, memory, and plan lifecycle operations.
+NebulaRAG includes a broad MCP (Model Context Protocol) integration for retrieval, indexing, and memory operations.
 
 ### Unified MCP Tools
 
@@ -29,63 +29,15 @@ NebulaRAG includes a broad MCP (Model Context Protocol) integration for retrieva
 - `rag_sources`: Unified source operations (`list`, `get_chunk`, `delete`, `normalize`)
 - `rag_admin`: Unified admin operations (`init_schema`, `health`, `stats`, `purge`)
 - `memory`: Unified memory operations (`store`, `recall`, `list`, `update`, `delete`)
-- `plan`: Unified planning operations (`create`, `get`, `list`, `update`, `complete_task`, `update_task`, `archive`)
 - `system`: Unified system metadata operations (`server_info`)
 
 ### tools/list Profiles
 
 - `tools/list` returns a `minimal` profile with only the unified tool set.
 
-### Plan Session Behavior
-
-Plan retrieval and mutation by `planId` are session-agnostic. `sessionId` is optional for these plan-by-id operations and is used as audit metadata when provided.
-
-### Usage Examples
-
-```bash
-# Create a new plan
-curl -X POST http://localhost:8099/mcp -d '{
-  "method": "tools/call",
-  "params": {
-    "name": "plan",
-    "arguments": {
-      "action": "create",
-      "sessionId": "agent-session-1",
-      "planName": "Project Planning",
-      "projectId": "project-123",
-      "initialTasks": ["Research requirements", "Design architecture", "Implement features"]
-    }
-  }
-}'
-
-# Get a specific plan
-curl -X POST http://localhost:8099/mcp -d '{
-  "method": "tools/call",
-  "params": {
-    "name": "plan",
-    "arguments": {
-      "action": "get",
-      "planId": 123
-    }
-  }
-}'
-
-# List all plans for a session
-curl -X POST http://localhost:8099/mcp -d '{
-  "method": "tools/call",
-  "params": {
-    "name": "plan",
-    "arguments": {
-      "action": "list",
-      "sessionId": "agent-session-1"
-    }
-  }
-}'
-```
-
 ### Security Features
 
-- Optional session metadata for plan/task audit attribution
+- Optional session and project metadata for scoped memory operations
 - Proper error handling for invalid sessions
 - JSON-RPC compliance
 - Comprehensive logging and error reporting
@@ -94,7 +46,7 @@ It combines:
 - A **.NET core retrieval engine** — chunking, embeddings, pgvector storage
 - A **local CLI** for indexing and querying
 - **MCP endpoints** for agents and editor tooling (Copilot CLI, Claude Code, Cursor)
-- A **Home Assistant add-on** with a built-in Blazor flight deck for overview, RAG, memory, and plan operations
+- A **Home Assistant add-on** with a built-in Blazor flight deck for overview, RAG, and memory operations
 
 ---
 
@@ -113,7 +65,7 @@ It combines:
 
 The current product roadmap is tracked in `ROADMAP.md`.
 
-That roadmap is focused on making NebulaRAG the default setup, MCP, RAG, memory, planning, and session-continuity stack for Nebula-centric workflows.
+That roadmap is focused on making NebulaRAG the default setup, MCP, RAG, memory, and session-continuity stack for Nebula-centric workflows.
 
 ---
 
@@ -191,13 +143,12 @@ docker compose up -d
 3. Configure `database.*` options
 4. Start the add-on and open ingress
 
-The ingress dashboard exposes a project switcher and four operator tabs:
+The ingress dashboard exposes a project switcher and three operator tabs:
 
 - `Project switcher` to keep the dashboard centered on one project when doing CRUD or investigation work.
 - `Overview` for health, telemetry, activity, and project breakdown.
 - `Rag` for semantic query, indexing, and source maintenance.
 - `Memory` for scoped analytics, recall, and memory editing.
-- `Plans` for session-filtered plans, task updates, and status changes.
 
 | Endpoint | URL |
 |---|---|
@@ -350,14 +301,6 @@ NebulaRAG/
 | Tool | Description |
 |---|---|
 | `memory` | Unified memory operations (`store`, `recall`, `list`, `update`, `delete`) |
-
-### Plans
-
-| Tool | Description |
-|---|---|
-| `plan` | Unified plan/task operations (`create`, `get`, `list`, `update`, `complete_task`, `update_task`, `archive`) |
-
-`plan` with `action: "update_task"` supports task statuses `pending`, `in_progress`, `completed`, and `failed` (validated transitions).
 
 > The `memories` table and indexes are created automatically through `rag_admin` with action `init_schema`.
 

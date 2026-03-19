@@ -21,7 +21,6 @@ Use NebulaRAG as an MCP-first local stack for:
 
 1. RAG retrieval
 2. memory recall and persistence
-3. planning and task progress
 4. setup and diagnostics
 5. later, session continuity and workflow orchestration
 
@@ -34,7 +33,6 @@ Prefer the consolidated Nebula MCP tools:
 3. `rag_sources`
 4. `rag_admin`
 5. `memory`
-6. `plan`
 7. `system`
 
 ## Instruction Layout

@@ -78,6 +78,11 @@ public sealed class PostgresRagStore
             ALTER TABLE memories
                 ADD COLUMN IF NOT EXISTS project_id TEXT;
 
+            DROP TABLE IF EXISTS task_history;
+            DROP TABLE IF EXISTS plan_history;
+            DROP TABLE IF EXISTS tasks;
+            DROP TABLE IF EXISTS plans;
+
             CREATE INDEX IF NOT EXISTS ix_rag_chunks_document_id ON rag_chunks(document_id);
             CREATE INDEX IF NOT EXISTS ix_rag_chunks_embedding_ivfflat
                 ON rag_chunks

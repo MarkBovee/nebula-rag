@@ -190,7 +190,7 @@ public sealed class RagApiController : ControllerBase
     }
 
     /// <summary>
-    /// Returns project-first dashboard hierarchy: projects -> plans/rag/memory.
+    /// Returns project-first dashboard hierarchy: projects -> rag/memory.
     /// </summary>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Project hierarchy payload.</returns>

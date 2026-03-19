@@ -18,6 +18,12 @@ The format is inspired by Keep a Changelog and follows semantic versioning.
 - Updated the PowerShell installer to scaffold the Unix hook asset too, so mixed-platform repositories keep one complete hook bundle.
 - Refreshed the direct test dependency gate by updating `coverlet.collector` to the latest stable patch release available during pre-merge validation.
 
+## [0.3.77] - 2026-03-19
+
+- Removed Nebula plan storage, MCP plan actions, and dashboard plan management so the product now focuses on RAG, memory, and diagnostics only.
+- Added startup schema cleanup that drops legacy `plans`, `tasks`, `plan_history`, and `task_history` tables during schema initialization.
+- Removed plan tool guidance from Nebula-specific README and instruction files so scaffolded agent behavior matches the runtime surface.
+
 ## [0.3.76] - 2026-03-19
 
 - Fixed add-on startup schema initialization by replacing the memories full-text index with an immutable-safe content-only GIN index and dropping the older incompatible index definition when encountered.

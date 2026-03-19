@@ -12,7 +12,7 @@
             <div class="brand-lockup">
                 <p class="eyebrow">NebulaRAG</p>
                 <h1>Flight Deck</h1>
-                <p>One operator surface for retrieval, memory, plans, telemetry, and index maintenance.</p>
+                <p>One operator surface for retrieval, memory, telemetry, and index maintenance.</p>
             </div>
 
             <div class="accent-rule"></div>
@@ -65,7 +65,7 @@
                                 <span class="nav-title mono">@project.ProjectId</span>
                                 <span class="nav-meta">@project.Rag.DocumentCount docs, @project.Memory.MemoryCount memories</span>
                             </span>
-                            <span class="nav-pill">@project.Plans.PlanCount</span>
+                            <span class="nav-pill">@project.Rag.DocumentCount</span>
                         </button>
                     }
                 </div>
@@ -110,12 +110,12 @@
                             <span class="mini-stat-value">@GetFocusedMemoryCount()</span>
                         </div>
                         <div class="context-kpi">
-                            <span class="mini-stat-label">Plans</span>
-                            <span class="mini-stat-value">@GetFocusedPlanCount()</span>
+                            <span class="mini-stat-label">Chunks</span>
+                            <span class="mini-stat-value">@GetFocusedChunkCount()</span>
                         </div>
                         <div class="context-kpi">
-                            <span class="mini-stat-label">Tasks</span>
-                            <span class="mini-stat-value">@GetFocusedTaskCount()</span>
+                            <span class="mini-stat-label">Projects</span>
+                            <span class="mini-stat-value">@GetFocusedProjectCount()</span>
                         </div>
                     </div>
                 </div>
@@ -149,11 +149,6 @@
             @if (_activeTab == DashboardTab.Memory)
             {
                 <MemoryManagementTab RefreshNonce="@_refreshNonce" SelectedProjectId="@_selectedProjectId" OnDataChanged="RefreshAsync" />
-            }
-
-            @if (_activeTab == DashboardTab.Plans)
-            {
-                <PlansManagementTab RefreshNonce="@_refreshNonce" SelectedProjectId="@_selectedProjectId" OnDataChanged="RefreshAsync" />
             }
         </main>
     </div>

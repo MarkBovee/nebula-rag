@@ -174,7 +174,7 @@ public sealed class McpTransportHandlerContractTests
         Assert.Contains("rag_sources", toolNames);
         Assert.Contains("rag_admin", toolNames);
         Assert.Contains("memory", toolNames);
-        Assert.Contains("plan", toolNames);
+        Assert.DoesNotContain("plan", toolNames);
         Assert.DoesNotContain("rag_health_check", toolNames);
         Assert.DoesNotContain("memory_recall", toolNames);
         Assert.DoesNotContain("create_plan", toolNames);

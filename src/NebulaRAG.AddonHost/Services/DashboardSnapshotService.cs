@@ -17,7 +17,6 @@ public sealed class DashboardSnapshotService : IRuntimeTelemetrySink
     private const int MaxActivityEntries = 500;
     private readonly RagManagementService _managementService;
     private readonly PostgresRagStore _ragStore;
-    private readonly PostgresPlanStore _planStore;
     private readonly TimedCache<HealthCheckResult> _healthCache;
     private readonly TimedCache<IndexStats> _statsCache;
     private readonly TimedCache<IndexStats> _statsWithSizeCache;
@@ -36,12 +35,10 @@ public sealed class DashboardSnapshotService : IRuntimeTelemetrySink
     /// </summary>
     /// <param name="managementService">Management service used for health, stats, and sources reads.</param>
     /// <param name="ragStore">RAG store used for project-level RAG and memory slices.</param>
-    /// <param name="planStore">Plan store used for project-level plan slices.</param>
-    public DashboardSnapshotService(RagManagementService managementService, PostgresRagStore ragStore, PostgresPlanStore planStore)
+    public DashboardSnapshotService(RagManagementService managementService, PostgresRagStore ragStore)
     {
         _managementService = managementService ?? throw new ArgumentNullException(nameof(managementService));
         _ragStore = ragStore ?? throw new ArgumentNullException(nameof(ragStore));
-        _planStore = planStore ?? throw new ArgumentNullException(nameof(planStore));
         _healthCache = new TimedCache<HealthCheckResult>(TimeSpan.FromSeconds(30));
         _statsCache = new TimedCache<IndexStats>(TimeSpan.FromSeconds(30));
         _statsWithSizeCache = new TimedCache<IndexStats>(TimeSpan.FromMinutes(2));
@@ -199,22 +196,16 @@ public sealed class DashboardSnapshotService : IRuntimeTelemetrySink
     }
 
     /// <summary>
-    /// Builds a project-first dashboard tree where each project contains plans, RAG, and memory aggregates.
+    /// Builds a project-first dashboard tree where each project contains RAG and memory aggregates.
     /// </summary>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Project hierarchy ordered by project id.</returns>
     public async Task<IReadOnlyList<ProjectDashboardNode>> GetProjectHierarchyAsync(CancellationToken cancellationToken = default)
     {
-        var planStats = await _planStore.GetProjectPlanStatsAsync(cancellationToken);
         var ragStats = await _ragStore.GetProjectRagStatsAsync(cancellationToken);
         var memoryStats = await _ragStore.GetProjectMemoryStatsAsync(cancellationToken);
 
         var allProjectIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var stat in planStats)
-        {
-            allProjectIds.Add(stat.ProjectId);
-        }
-
         foreach (var stat in ragStats)
         {
             allProjectIds.Add(stat.ProjectId);
@@ -225,17 +216,12 @@ public sealed class DashboardSnapshotService : IRuntimeTelemetrySink
             allProjectIds.Add(stat.ProjectId);
         }
 
-        var planByProject = planStats.ToDictionary(stat => stat.ProjectId, stat => stat, StringComparer.OrdinalIgnoreCase);
         var ragByProject = ragStats.ToDictionary(stat => stat.ProjectId, stat => stat, StringComparer.OrdinalIgnoreCase);
         var memoryByProject = memoryStats.ToDictionary(stat => stat.ProjectId, stat => stat, StringComparer.OrdinalIgnoreCase);
 
         var nodes = new List<ProjectDashboardNode>();
         foreach (var projectId in allProjectIds.OrderBy(id => id, StringComparer.OrdinalIgnoreCase))
         {
-            var plans = planByProject.TryGetValue(projectId, out var resolvedPlanStats)
-                ? resolvedPlanStats
-                : new ProjectPlanStats(projectId, 0, 0, 0, null);
-
             var rag = ragByProject.TryGetValue(projectId, out var resolvedRagStats)
                 ? resolvedRagStats
                 : new ProjectRagStats(projectId, 0, 0, 0, null);
@@ -244,7 +230,7 @@ public sealed class DashboardSnapshotService : IRuntimeTelemetrySink
                 ? resolvedMemoryStats
                 : new ProjectMemoryStats(projectId, 0, null);
 
-            nodes.Add(new ProjectDashboardNode(projectId, plans, rag, memory));
+            nodes.Add(new ProjectDashboardNode(projectId, rag, memory));
         }
 
         return nodes.AsReadOnly();

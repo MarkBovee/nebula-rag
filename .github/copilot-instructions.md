@@ -10,7 +10,7 @@ When answering project-specific questions in this repository:
 For implementation tasks:
 
 - Query RAG once before proposing code changes.
-- Prefer the consolidated Nebula MCP toolset: `rag_query`, `rag_ingest`, `rag_sources`, `rag_admin`, `memory`, `plan`, and `system`.
+- Prefer the consolidated Nebula MCP toolset: `rag_query`, `rag_ingest`, `rag_sources`, `rag_admin`, `memory`, and `system`.
 - Re-query only when validating behavior that depends on newly changed files or unresolved uncertainty.
 - Keep changes minimal and scoped to the request.
 - Before merge/push to `main`, run dependency freshness checks against latest stable package versions for all detected ecosystems in this repo.
@@ -26,14 +26,6 @@ Memory guidance:
 - For non-trivial implementation/debug tasks, do one memory recall at start and store at least one Nebula memory before finishing.
 - For multi-step tasks, store multiple concise Nebula memories that capture decisions, fixes, and operational conventions.
 - Never store secret values in memory; store only secret-source references (for example `.env`).
-
-Planning guidance:
-
-- For multi-step implementation tasks, create a Nebula plan before writing code.
-- Use `plan` tool actions in this order: `create` -> `get`/`list` -> `update`/`complete_task`.
-- Keep `projectId` explicit (for example `dot-claw`, `NebulaRAG`) and use stable `sessionId` values per workstream.
-- Keep plan tasks concrete and execution-oriented (one outcome per task).
-- Before ending a non-trivial session, update plan status/task completion to reflect real progress.
 
 Agent setup baseline:
 

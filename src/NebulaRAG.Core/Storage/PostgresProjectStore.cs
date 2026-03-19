@@ -4,7 +4,7 @@ using Npgsql;
 namespace NebulaRAG.Core.Storage;
 
 /// <summary>
-/// Coordinates project-wide rename and delete operations across plans, memory, and indexed documents.
+/// Coordinates project-wide rename and delete operations across memory and indexed documents.
 /// </summary>
 public sealed class PostgresProjectStore
 {
@@ -35,7 +35,7 @@ public sealed class PostgresProjectStore
     }
 
     /// <summary>
-    /// Deletes all plan, memory, and indexed-document data associated with a project.
+    /// Deletes all memory and indexed-document data associated with a project.
     /// </summary>
     /// <param name="projectId">Project identifier to delete.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
@@ -53,7 +53,6 @@ public sealed class PostgresProjectStore
             var summary = await CountProjectDataAsync(connection, transaction, normalizedProjectId, cancellationToken);
 
             await ExecuteNonQueryAsync(connection, transaction, "DELETE FROM memories WHERE project_id = @projectId", normalizedProjectId, cancellationToken);
-            await ExecuteNonQueryAsync(connection, transaction, "DELETE FROM plans WHERE project_id = @projectId", normalizedProjectId, cancellationToken);
             await ExecuteNonQueryAsync(
                 connection,
                 transaction,
@@ -62,7 +61,7 @@ public sealed class PostgresProjectStore
                 cancellationToken);
 
             await transaction.CommitAsync(cancellationToken);
-            return new ProjectMutationResult(normalizedProjectId, null, summary.PlanCount, summary.TaskCount, summary.MemoryCount, summary.DocumentCount, summary.ChunkCount);
+            return new ProjectMutationResult(normalizedProjectId, null, summary.MemoryCount, summary.DocumentCount, summary.ChunkCount);
         }
         catch
         {
@@ -72,7 +71,7 @@ public sealed class PostgresProjectStore
     }
 
     /// <summary>
-    /// Renames a project across plans, memory, and prefix-based indexed-document source keys.
+    /// Renames a project across memory and prefix-based indexed-document source keys.
     /// </summary>
     /// <param name="projectId">Current project identifier.</param>
     /// <param name="targetProjectId">Replacement project identifier.</param>
@@ -134,7 +133,7 @@ public sealed class PostgresProjectStore
             }
 
             await transaction.CommitAsync(cancellationToken);
-            return new ProjectMutationResult(normalizedProjectId, normalizedTargetProjectId, summary.PlanCount, summary.TaskCount, summary.MemoryCount, summary.DocumentCount, summary.ChunkCount);
+            return new ProjectMutationResult(normalizedProjectId, normalizedTargetProjectId, summary.MemoryCount, summary.DocumentCount, summary.ChunkCount);
         }
         catch
         {
@@ -181,30 +180,21 @@ public sealed class PostgresProjectStore
 
     private static async Task ExecuteRenameAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, string projectId, string targetProjectId, CancellationToken cancellationToken)
     {
-        await using var planCommand = new NpgsqlCommand("UPDATE plans SET project_id = @targetProjectId WHERE project_id = @projectId", connection, transaction);
-        planCommand.Parameters.AddWithValue("projectId", projectId);
-        planCommand.Parameters.AddWithValue("targetProjectId", targetProjectId);
-        await planCommand.ExecuteNonQueryAsync(cancellationToken);
-
         await using var memoryCommand = new NpgsqlCommand("UPDATE memories SET project_id = @targetProjectId WHERE project_id = @projectId", connection, transaction);
         memoryCommand.Parameters.AddWithValue("projectId", projectId);
         memoryCommand.Parameters.AddWithValue("targetProjectId", targetProjectId);
         await memoryCommand.ExecuteNonQueryAsync(cancellationToken);
     }
 
-    private static async Task<(int PlanCount, int TaskCount, long MemoryCount, int DocumentCount, int ChunkCount)> CountProjectDataAsync(
+    private static async Task<(long MemoryCount, int DocumentCount, int ChunkCount)> CountProjectDataAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         string projectId,
         CancellationToken cancellationToken)
     {
-        const string planCountSql = "SELECT COUNT(*)::int FROM plans WHERE project_id = @projectId";
-        const string taskCountSql = "SELECT COUNT(t.id)::int FROM tasks t INNER JOIN plans p ON p.id = t.plan_id WHERE p.project_id = @projectId";
         const string memoryCountSql = "SELECT COUNT(*)::bigint FROM memories WHERE project_id = @projectId";
         var documentCountSql = $"SELECT COUNT(DISTINCT d.id)::int, COALESCE(COUNT(c.id), 0)::int FROM rag_documents d LEFT JOIN rag_chunks c ON d.id = c.document_id WHERE {DerivedDocumentProjectSql} = @projectId";
 
-        var planCount = await ExecuteScalarAsync<int>(connection, transaction, planCountSql, projectId, cancellationToken);
-        var taskCount = await ExecuteScalarAsync<int>(connection, transaction, taskCountSql, projectId, cancellationToken);
         var memoryCount = await ExecuteScalarAsync<long>(connection, transaction, memoryCountSql, projectId, cancellationToken);
 
         await using var documentCommand = new NpgsqlCommand(documentCountSql, connection, transaction);
@@ -212,10 +202,10 @@ public sealed class PostgresProjectStore
         await using var reader = await documentCommand.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))
         {
-            return (planCount, taskCount, memoryCount, 0, 0);
+            return (memoryCount, 0, 0);
         }
 
-        return (planCount, taskCount, memoryCount, reader.GetInt32(0), reader.GetInt32(1));
+        return (memoryCount, reader.GetInt32(0), reader.GetInt32(1));
     }
 
     private static async Task<T> ExecuteScalarAsync<T>(NpgsqlConnection connection, NpgsqlTransaction transaction, string sql, string projectId, CancellationToken cancellationToken)

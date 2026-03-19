@@ -2,7 +2,7 @@
 
 This roadmap captures the first NebulaRAG evolution path inspired by context-mode.
 
-The goal is not to clone context-mode. The goal is to make NebulaRAG the default MCP, RAG, memory, planning, and session-continuity stack for Nebula-centric workflows.
+The goal is not to clone context-mode. The goal is to make NebulaRAG the default MCP, RAG, memory, and session-continuity stack for Nebula-centric workflows.
 
 ## Direction
 

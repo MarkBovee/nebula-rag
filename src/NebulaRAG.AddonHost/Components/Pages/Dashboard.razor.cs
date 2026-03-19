@@ -18,7 +18,7 @@ public partial class Dashboard : IAsyncDisposable
     [Parameter]
     public string? IngressPath { get; set; }
 
-    private static readonly DashboardTab[] Tabs = [DashboardTab.Overview, DashboardTab.Rag, DashboardTab.Memory, DashboardTab.Plans];
+    private static readonly DashboardTab[] Tabs = [DashboardTab.Overview, DashboardTab.Rag, DashboardTab.Memory];
     private PeriodicTimer? _refreshTimer;
     private CancellationTokenSource? _refreshCancellation;
     private DashboardTab _activeTab = DashboardTab.Overview;
@@ -167,7 +167,6 @@ public partial class Dashboard : IAsyncDisposable
             DashboardTab.Overview => "Pulse, projects, activity",
             DashboardTab.Rag => "Docs, indexing, purge",
             DashboardTab.Memory => "Ledger, search, purge",
-            DashboardTab.Plans => "Plans, tasks, purge",
             _ => "Operations"
         };
     }
@@ -184,7 +183,6 @@ public partial class Dashboard : IAsyncDisposable
             DashboardTab.Overview => "Overview",
             DashboardTab.Rag => "RAG",
             DashboardTab.Memory => "Memory",
-            DashboardTab.Plans => "Plans",
             _ => "Nebula operations"
         };
     }
@@ -201,7 +199,6 @@ public partial class Dashboard : IAsyncDisposable
             DashboardTab.Overview => "Watch health, throughput, memory growth, and project balance in one pass. This is the system-wide control room for NebulaRAG.",
             DashboardTab.Rag => "List, search, view, edit, delete, and purge indexed documents without dropping into MCP tooling.",
             DashboardTab.Memory => "Manage project-owned memory records directly: create, search, edit, delete, and purge from one ledger.",
-            DashboardTab.Plans => "Manage project-owned plans and tasks directly, without using session filters as the primary dashboard axis.",
             _ => "Operational dashboard"
         };
     }
@@ -219,7 +216,6 @@ public partial class Dashboard : IAsyncDisposable
             DashboardTab.Overview => (selectedProject is null ? _shellSnapshot?.Stats.ProjectCount ?? 0 : 1).ToString(),
             DashboardTab.Rag => (selectedProject?.Rag.DocumentCount ?? _shellSnapshot?.Stats.DocumentCount ?? 0).ToString(),
             DashboardTab.Memory => (selectedProject?.Memory.MemoryCount ?? _shellSnapshot?.MemoryStats.TotalMemories ?? 0).ToString(),
-            DashboardTab.Plans => (selectedProject?.Plans.PlanCount ?? _projects.Sum(project => project.Plans.PlanCount)).ToString(),
             _ => "0"
         };
     }
@@ -263,14 +259,12 @@ public partial class Dashboard : IAsyncDisposable
     {
         return _activeTab switch
         {
-            DashboardTab.Overview when GetSelectedProject() is null => "A compact control view across all indexed projects, memory, plans, and recent operator activity.",
+            DashboardTab.Overview when GetSelectedProject() is null => "A compact control view across all indexed projects, memory, and recent operator activity.",
             DashboardTab.Overview => "Project-centered telemetry, footprint, and execution posture without an oversized landing page.",
             DashboardTab.Rag when GetSelectedProject() is null => "Document-level RAG management across the full Nebula corpus, including view, edit, delete, and purge flows.",
             DashboardTab.Rag => "Document-level RAG CRUD pinned to the selected project ledger.",
             DashboardTab.Memory when GetSelectedProject() is null => "Create, search, update, delete, and purge memory records across the shared store.",
             DashboardTab.Memory => "Memory CRUD pinned to the selected project without making session filtering the primary dashboard flow.",
-            DashboardTab.Plans when GetSelectedProject() is null => "Plan creation, editing, task completion, delete, and purge flows across the workspace.",
-            DashboardTab.Plans => "Project-first plan CRUD and purge flows for the active project.",
             _ => "Nebula operations"
         };
     }
@@ -305,21 +299,12 @@ public partial class Dashboard : IAsyncDisposable
     }
 
     /// <summary>
-    /// Gets the plan count for the active context.
+    /// Gets the project count for the active context.
     /// </summary>
-    /// <returns>Plan count.</returns>
-    private int GetFocusedPlanCount()
+    /// <returns>Project count.</returns>
+    private int GetFocusedProjectCount()
     {
-        return GetSelectedProject()?.Plans.PlanCount ?? _projects.Sum(project => project.Plans.PlanCount);
-    }
-
-    /// <summary>
-    /// Gets the task count for the active context.
-    /// </summary>
-    /// <returns>Task count.</returns>
-    private int GetFocusedTaskCount()
-    {
-        return GetSelectedProject()?.Plans.TaskCount ?? _projects.Sum(project => project.Plans.TaskCount);
+        return GetSelectedProject() is null ? _projects.Count : 1;
     }
 
     /// <summary>
@@ -416,7 +401,6 @@ public partial class Dashboard : IAsyncDisposable
     {
         Overview,
         Rag,
-        Memory,
-        Plans
+        Memory
     }
 }

@@ -64,7 +64,6 @@ var loggerFactory = LoggerFactory.Create(loggingBuilder =>
 });
 
 var store = new PostgresRagStore(settings.Database.BuildConnectionString());
-var planStore = new PostgresPlanStore(settings.Database.BuildConnectionString());
 var projectStore = new PostgresProjectStore(settings.Database.BuildConnectionString());
 var chunker = new TextChunker();
 var embeddingGenerator = new HashEmbeddingGenerator();
@@ -78,7 +77,6 @@ builder.Services.AddSingleton(queryService);
 builder.Services.AddSingleton(managementService);
 builder.Services.AddSingleton(sourcesManifestService);
 builder.Services.AddSingleton(store);
-builder.Services.AddSingleton(planStore);
 builder.Services.AddSingleton(projectStore);
 builder.Services.AddSingleton(chunker);
 builder.Services.AddSingleton<IEmbeddingGenerator>(embeddingGenerator);
@@ -90,7 +88,6 @@ builder.Services.AddSingleton<IRuntimeTelemetrySink>(serviceProvider => serviceP
 builder.Services.AddSingleton<McpTransportHandler>();
 
 await store.InitializeSchemaAsync(settings.Ingestion.VectorDimensions);
-await planStore.InitializeSchemaAsync();
 
 var app = builder.Build();
 Microsoft.Extensions.Logging.ILogger appLogger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("NebulaRAG.AddonHost.McpTransport");

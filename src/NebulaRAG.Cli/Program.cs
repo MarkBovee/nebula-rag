@@ -296,10 +296,6 @@ internal static class ProgramMain
                         Console.WriteLine($"  rag_documents: {verification.Source.RagDocuments}");
                         Console.WriteLine($"  rag_chunks: {verification.Source.RagChunks}");
                         Console.WriteLine($"  memories: {verification.Source.Memories}");
-                        Console.WriteLine($"  plans: {verification.Source.Plans}");
-                        Console.WriteLine($"  tasks: {verification.Source.Tasks}");
-                        Console.WriteLine($"  plan_history: {verification.Source.PlanHistory}");
-                        Console.WriteLine($"  task_history: {verification.Source.TaskHistory}");
                         Console.WriteLine("✓ Verification: key table counts match.");
                         return 0;
                     }
@@ -965,11 +961,7 @@ internal static class ProgramMain
             SELECT
                 (SELECT COUNT(*) FROM public.rag_documents)::bigint,
                 (SELECT COUNT(*) FROM public.rag_chunks)::bigint,
-                (SELECT COUNT(*) FROM public.memories)::bigint,
-                (SELECT COUNT(*) FROM public.plans)::bigint,
-                (SELECT COUNT(*) FROM public.tasks)::bigint,
-                (SELECT COUNT(*) FROM public.plan_history)::bigint,
-                (SELECT COUNT(*) FROM public.task_history)::bigint;
+                (SELECT COUNT(*) FROM public.memories)::bigint;
             """;
 
         await using var reader = await command.ExecuteReaderAsync();
@@ -978,11 +970,7 @@ internal static class ProgramMain
         return new CoreTableCounts(
             RagDocuments: reader.GetInt64(0),
             RagChunks: reader.GetInt64(1),
-            Memories: reader.GetInt64(2),
-            Plans: reader.GetInt64(3),
-            Tasks: reader.GetInt64(4),
-            PlanHistory: reader.GetInt64(5),
-            TaskHistory: reader.GetInt64(6));
+            Memories: reader.GetInt64(2));
     }
 
     /// <summary>
@@ -1000,11 +988,7 @@ internal static class ProgramMain
     /// <param name="RagDocuments">Count of rag_documents rows.</param>
     /// <param name="RagChunks">Count of rag_chunks rows.</param>
     /// <param name="Memories">Count of memories rows.</param>
-    /// <param name="Plans">Count of plans rows.</param>
-    /// <param name="Tasks">Count of tasks rows.</param>
-    /// <param name="PlanHistory">Count of plan_history rows.</param>
-    /// <param name="TaskHistory">Count of task_history rows.</param>
-    private sealed record CoreTableCounts(long RagDocuments, long RagChunks, long Memories, long Plans, long Tasks, long PlanHistory, long TaskHistory);
+    private sealed record CoreTableCounts(long RagDocuments, long RagChunks, long Memories);
 
     /// <summary>
     /// Clone verification payload for source and target table counts.
