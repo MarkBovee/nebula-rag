@@ -300,7 +300,8 @@ NebulaRAG/
 
 | Tool | Description |
 |---|---|
-| `memory` | Unified memory operations (`store`, `recall`, `list`, `update`, `delete`) |
+| `memory` | Unified memory operations (`store`, `recall`, `list`, `update`, `delete`, `sync`) |
+| `nebula_setup` | Hook management (`install-hooks`, `uninstall-hooks`, `status`) |
 
 > The `memories` table and indexes are created automatically through `rag_admin` with action `init_schema`.
 
@@ -347,6 +348,54 @@ Both commands use the shared intake skill at `.github/skills/intake-questioning/
 - Security workflow: [`.github/workflows/security.yml`](.github/workflows/security.yml)
 
 **Never commit secrets or credential-bearing env files.**
+
+---
+
+## Auto-Memory Sync
+
+Nebula automatically bridges Claude Code auto-memory files into the RAG index, prunes stale memories, and reindexes dirty sources.
+
+### How It Works
+
+Call `memory(action: "sync")` to run a three-phase maintenance pass:
+
+1. **Auto-Memory Bridge** — Globs `~/.claude/projects/*/memory/*.md`, hashes each file, and ingests new or changed files into the RAG index under `auto-memory:<project-slug>` source tags. Unchanged files are skipped.
+2. **Stale Memory Pruning** — Removes auto-memory entries older than `AutoMemory.RetentionDays` (default: 30 days). Set to `0` to disable.
+3. **Dirty Source Reindex** — Compares SHA-256 hashes for all tracked RAG sources. Reindexes only sources whose content has changed since last index.
+
+### Installing the Stop Hook
+
+To run sync automatically on session end, install the Claude Code Stop hook:
+
+```json
+{ "name": "nebula_setup", "arguments": { "action": "install-hooks" } }
+```
+
+Or for GitHub Copilot:
+```json
+{ "name": "nebula_setup", "arguments": { "action": "install-hooks", "client": "copilot" } }
+```
+
+### Checking Status
+
+```json
+{ "name": "nebula_setup", "arguments": { "action": "status" } }
+```
+
+Returns hook installation status and endpoint health for all supported clients.
+
+### Configuration
+
+Add to `ragsettings.json`:
+
+```json
+{
+  "AutoMemory": {
+    "BaseDirectory": "~/.claude/projects",
+    "RetentionDays": 30
+  }
+}
+```
 
 ---
 

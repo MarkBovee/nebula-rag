@@ -147,6 +147,13 @@ When querying memory:
 - `memory` `action: "list"` to list recent or tag-filtered memories
 - `memory` `action: "delete"` to remove a specific memory entry
 - `memory` `action: "update"` to update an existing memory
+- `memory` `action: "sync"` — run full three-phase maintenance pass at session end (auto-memory bridge + stale prune + dirty reindex)
+
+### Preferred Setup tools
+
+- `nebula_setup` `action: "install-hooks"` — install the Nebula Stop hook in Claude Code or GitHub Copilot settings
+- `nebula_setup` `action: "uninstall-hooks"` — remove the hook (supports `dry_run: true`)
+- `nebula_setup` `action: "status"` — check hook installation + endpoint health for all clients
 
 If a preferred tool is unavailable in the current runtime, gracefully fall back to available equivalents and continue the task.
 
@@ -214,12 +221,14 @@ Preferred tags: `architecture`, `preference`, `bug`, `convention`, `decision`, `
 
 ### Session End
 
-1. Store important project decisions and insights in Nebula memory.
-2. Store remaining project open tasks/questions in Nebula memory when they should be queryable later.
-3. Store user preference updates in VS Code memory.
-4. Store any newly agreed conventions in Nebula memory (and VS Code memory when user-specific).
-5. Ensure stored entries include useful tags (`project:NebulaRAG` plus `decision|bug|convention|architecture`).
-6. Confirm no secrets were persisted; if sensitive context was involved, keep memory at reference-only level.
+1. Call `memory(action: "sync")` to bridge new auto-memory files into Nebula RAG, prune stale memories, and reindex dirty sources.
+2. This is called automatically via the Claude Code `Stop` hook if installed via `nebula_setup(action: "install-hooks")`.
+3. Store important project decisions and insights in Nebula memory.
+4. Store remaining project open tasks/questions in Nebula memory when they should be queryable later.
+5. Store user preference updates in VS Code memory.
+6. Store any newly agreed conventions in Nebula memory (and VS Code memory when user-specific).
+7. Ensure stored entries include useful tags (`project:NebulaRAG` plus `decision|bug|convention|architecture`).
+8. Confirm no secrets were persisted; if sensitive context was involved, keep memory at reference-only level.
 
 ## Coding Standards
 
