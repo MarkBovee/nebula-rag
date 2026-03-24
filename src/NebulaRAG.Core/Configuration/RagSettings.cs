@@ -12,6 +12,7 @@ public sealed class RagSettings
     public DatabaseSettings Database { get; init; } = new();
     public IngestionSettings Ingestion { get; init; } = new();
     public RetrievalSettings Retrieval { get; init; } = new();
+    public AutoMemorySettings AutoMemory { get; init; } = new();
 
     /// <summary>
     /// Validates all configuration settings.
@@ -160,4 +161,24 @@ public sealed class RetrievalSettings
         if (DefaultTopK <= 0 || DefaultTopK > 100)
             errors.Add("Retrieval.DefaultTopK must be between 1 and 100.");
     }
+}
+
+/// <summary>
+/// Settings for Claude Code auto-memory sync integration.
+/// </summary>
+public sealed class AutoMemorySettings
+{
+    /// <summary>
+    /// Base directory for Claude Code auto-memory project files.
+    /// Tilde (~) is resolved via Environment.GetFolderPath(SpecialFolder.UserProfile).
+    /// Default: ~/.claude/projects
+    /// </summary>
+    public string BaseDirectory { get; init; } = "~/.claude/projects";
+
+    /// <summary>
+    /// Number of days after last sync before an auto-memory entry is pruned.
+    /// Set to 0 to disable pruning entirely.
+    /// Default: 30
+    /// </summary>
+    public int RetentionDays { get; init; } = 30;
 }
