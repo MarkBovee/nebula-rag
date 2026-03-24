@@ -42,6 +42,16 @@ var queryService = new RagQueryService(store, embeddingGenerator, settings, logg
 var managementService = new RagManagementService(store, chunker, embeddingGenerator, settings, loggerFactory.CreateLogger<RagManagementService>());
 var sourcesManifestService = new RagSourcesManifestService(store, settings, loggerFactory.CreateLogger<RagSourcesManifestService>());
 var indexer = new RagIndexer(store, chunker, embeddingGenerator, settings, loggerFactory.CreateLogger<RagIndexer>());
+
+var autoMemorySyncService = new AutoMemorySyncService(
+    store,
+    indexer,
+    settings,
+    loggerFactory.CreateLogger<AutoMemorySyncService>());
+
+var hookInstallService = new HookInstallService(
+    loggerFactory.CreateLogger<HookInstallService>());
+
 var handler = new McpTransportHandler(
     queryService,
     managementService,
@@ -52,7 +62,9 @@ var handler = new McpTransportHandler(
     indexer,
     settings,
     new HttpClient(),
-    loggerFactory.CreateLogger<McpTransportHandler>());
+    loggerFactory.CreateLogger<McpTransportHandler>(),
+    autoMemorySyncService,
+    hookInstallService);
 
 await RunServerAsync(handler);
 

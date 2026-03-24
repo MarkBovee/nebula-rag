@@ -44,7 +44,7 @@ public sealed class McpTransportHandlerContractTests
         Assert.Equal("2.0", response["jsonrpc"]?.GetValue<string>());
         Assert.Equal("2025-11-25", response["result"]?["protocolVersion"]?.GetValue<string>());
         Assert.Equal("Nebula RAG", response["result"]?["serverInfo"]?["name"]?.GetValue<string>());
-        Assert.Equal("0.2.0", response["result"]?["serverInfo"]?["version"]?.GetValue<string>());
+        Assert.Equal("0.3.83", response["result"]?["serverInfo"]?["version"]?.GetValue<string>());
         Assert.False(response["result"]?["capabilities"]?["tools"]?["listChanged"]?.GetValue<bool>());
     }
 
@@ -174,6 +174,7 @@ public sealed class McpTransportHandlerContractTests
         Assert.Contains("rag_sources", toolNames);
         Assert.Contains("rag_admin", toolNames);
         Assert.Contains("memory", toolNames);
+        Assert.Contains("nebula_setup", toolNames);
         Assert.DoesNotContain("plan", toolNames);
         Assert.DoesNotContain("rag_health_check", toolNames);
         Assert.DoesNotContain("memory_recall", toolNames);
@@ -270,6 +271,14 @@ public sealed class McpTransportHandlerContractTests
         var sourcesManifestService = new RagSourcesManifestService(store, settings, NullLogger<RagSourcesManifestService>.Instance);
         var indexer = new RagIndexer(store, chunker, embeddingGenerator, settings, NullLogger<RagIndexer>.Instance);
 
+        var autoMemorySyncService = new AutoMemorySyncService(
+            store,
+            indexer,
+            settings,
+            NullLogger<AutoMemorySyncService>.Instance);
+
+        var hookInstallService = new HookInstallService(NullLogger<HookInstallService>.Instance);
+
         return new McpTransportHandler(
             queryService,
             managementService,
@@ -280,6 +289,8 @@ public sealed class McpTransportHandlerContractTests
             indexer,
             settings,
             new HttpClient(),
-            NullLogger<McpTransportHandler>.Instance);
+            NullLogger<McpTransportHandler>.Instance,
+            autoMemorySyncService,
+            hookInstallService);
     }
 }

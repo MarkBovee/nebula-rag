@@ -113,7 +113,7 @@ public sealed partial class McpTransportHandler
             return BuildResult(id, new JsonObject
             {
                 ["protocolVersion"] = "2025-11-25",
-                ["serverInfo"] = new JsonObject { ["name"] = "Nebula RAG", ["version"] = "0.2.0" },
+                ["serverInfo"] = new JsonObject { ["name"] = "Nebula RAG", ["version"] = "0.3.83" },
                 ["capabilities"] = new JsonObject { ["tools"] = new JsonObject { ["listChanged"] = false } }
             });
         }
