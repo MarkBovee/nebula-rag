@@ -14,7 +14,7 @@ namespace NebulaRAG.Core.Services;
 /// <summary>
 /// Indexes documents and creates embedding vectors.
 /// </summary>
-public sealed class RagIndexer
+public sealed class RagIndexer : IAutoMemoryIndexer
 {
     private readonly PostgresRagStore _store;
     private readonly TextChunker _chunker;
@@ -246,6 +246,20 @@ public sealed class RagIndexer
             _logger.LogError(ex, "Indexing failed for file: {File}", sourceFile);
             throw new RagIndexingException($"Failed to index file: {sourceFile}", ex);
         }
+    }
+
+    /// <inheritdoc/>
+    public async Task IngestFileAsync(string filePath, string projectSlug, CancellationToken cancellationToken = default)
+    {
+        await _store.DeleteDocumentBySourcePathAsync($"auto-memory:{projectSlug}", cancellationToken);
+        await IndexFileAsync(filePath, projectSlug, cancellationToken);
+    }
+
+    /// <inheritdoc/>
+    public async Task ReindexSourceAsync(string sourcePath, CancellationToken cancellationToken = default)
+    {
+        await _store.DeleteDocumentBySourcePathAsync(sourcePath, cancellationToken);
+        await IndexFileAsync(sourcePath, null, cancellationToken);
     }
 
     /// <summary>

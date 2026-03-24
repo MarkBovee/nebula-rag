@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text;
 using NebulaRAG.Core.Models;
 using NebulaRAG.Core.Pathing;
+using NebulaRAG.Core.Services;
 using Npgsql;
 using NpgsqlTypes;
 
@@ -11,7 +12,7 @@ namespace NebulaRAG.Core.Storage;
 /// PostgreSQL-based storage backend for the RAG system.
 /// Manages document index, chunks, embeddings, and semantic search via pgvector.
 /// </summary>
-public sealed class PostgresRagStore
+public sealed class PostgresRagStore : IAutoMemoryStore
 {
     private readonly string _connectionString;
 
@@ -2111,6 +2112,22 @@ public sealed class PostgresRagStore
             """, connection);
         cmd.Parameters.AddWithValue("tagPattern", tagPrefix + "%");
         cmd.Parameters.AddWithValue("cutoff", cutoff);
+        return await cmd.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Deletes all RAG document chunks associated with the given source path.
+    /// </summary>
+    /// <param name="sourcePath">Exact source path stored in rag_documents.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Number of deleted document rows.</returns>
+    public async Task<int> DeleteDocumentBySourcePathAsync(string sourcePath, CancellationToken cancellationToken = default)
+    {
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var cmd = new NpgsqlCommand(
+            "DELETE FROM rag_documents WHERE source_path = @sp", connection);
+        cmd.Parameters.AddWithValue("sp", sourcePath);
         return await cmd.ExecuteNonQueryAsync(cancellationToken);
     }
 
