@@ -37,7 +37,7 @@ Two MCP surface changes:
 | Tool | Change |
 |------|--------|
 | `memory` | New `sync` action |
-| `nebula_setup` | New top-level tool with `install-hooks`, `uninstall-hooks`, `status` actions |
+| `nebula_setup` | New top-level tool with `install-hooks`, `uninstall-hooks`, `status` actions — handler at `NebulaRAG.Mcp/Tools/NebulaSetupToolHandler.cs` |
 
 Both backed by new Core services. The Claude Code `Stop` hook calls `memory(action: "sync")` automatically.
 
@@ -56,22 +56,23 @@ Executes three sequential phases. Each phase is fault-isolated — a failure add
 1. Glob `~/.claude/projects/*/memory/*.md` (configurable base via `AutoMemory.BaseDirectory`, default `~/.claude/projects`).
 2. For each file, compute SHA-256 hash.
 3. Compare against `nebula_sync_state` table (`file_path`, `last_hash`, `synced_at`).
-4. New or changed files → ingest via `RagIndexer` with source tag `auto-memory:{project-slug}` where `project-slug` is the parent directory name.
+4. New or changed files → delete any existing RAG chunks for `source = auto-memory:{project-slug}`, then ingest via `RagIndexer` with source tag `auto-memory:{project-slug}` where `project-slug` is the parent directory name. Deleting before re-ingest prevents stale chunk accumulation if a file is moved or renamed.
 5. Update `nebula_sync_state` with new hash and timestamp.
 6. Unchanged files → skip.
 
 #### Phase 2: Stale Memory Pruning
 
-1. Query Nebula memory entries where `tags` contains `auto-memory` AND `created_at < NOW() - RetentionDays`.
-2. Delete matching entries via existing memory store.
-3. `RetentionDays` configurable via `ragsettings.json` → `AutoMemory.RetentionDays` (default: `30`).
+1. Phase 1 updates `nebula_sync_state.synced_at` for every file seen on disk during this run.
+2. Query Nebula memory entries tagged `auto-memory` where `synced_at < NOW() - RetentionDays`. The link between memory entries and `nebula_sync_state` is the source tag `auto-memory:{project-slug}` — Phase 1 stamps `synced_at` in `nebula_sync_state` per file, and Phase 2 uses that timestamp to identify memory entries whose backing file has not been seen on disk within the retention window. A memory entry is considered stale when no file with its slug has been synced recently.
+3. Delete matching entries via existing memory store.
+4. `RetentionDays` configurable via `ragsettings.json` → `AutoMemory.RetentionDays` (default: `30`). Setting `0` disables pruning entirely.
 
 #### Phase 3: Dirty RAG Source Reindex
 
-1. Query all tracked sources from `RagSourcesManifestService`.
-2. For each source backed by a file path: hash current content on disk.
-3. Compare against stored hash in manifest.
-4. Dirty sources (hash mismatch or file missing) → re-chunk and re-embed via `RagIndexer`.
+1. Query all tracked sources from `RagSourcesManifestService`. The manifest already stores a SHA-256 `ContentHash` field per source (same format as Phase 1). No extension needed.
+2. For each source backed by a file path: hash current content on disk using SHA-256.
+3. Compare against `ContentHash` stored in manifest.
+4. Dirty sources (hash mismatch) → delete existing chunks for that source, then re-chunk and re-embed via `RagIndexer`. Deletion before re-ingest prevents stale chunk accumulation even if the source slug or path changes.
 5. Clean sources → skip.
 6. Missing files → log warning, add to `errors[]`, do not delete source (safety — could be a temp unmount).
 
@@ -122,8 +123,8 @@ Location: `NebulaRAG.Core/Services/HookInstallService.cs`
 - Dry-run support identical to install.
 
 **`status`**
-- For each supported client: check if settings file exists, whether Nebula hook is present, whether the Nebula MCP HTTP endpoint is reachable.
-- Returns structured status per client.
+- For each supported client: check if settings file exists, whether Nebula hook is present, whether the Nebula MCP HTTP endpoint is reachable (via `HTTP GET /health` with a 2-second timeout; failure is reported as a warning, not a hard error — the server may be the one running this check).
+- Returns `HookStatusResult[]`, one entry per client.
 
 #### Supported Clients
 
@@ -137,8 +138,8 @@ Location: `NebulaRAG.Core/Services/HookInstallService.cs`
 | Param | Type | Required | Description |
 |-------|------|----------|-------------|
 | `action` | `string` | yes | `install-hooks` / `uninstall-hooks` / `status` |
-| `client` | `string` | no | `claude` (default) or `copilot` |
-| `dry_run` | `bool` | no | Default `false`. If `true`, returns diff without writing. |
+| `client` | `string` | no | `claude` (default) or `copilot`. Applies to `install-hooks` and `uninstall-hooks` only. `status` always checks all supported clients and ignores this parameter. |
+| `dry_run` | `bool` | no | Default `false`. If `true`, returns diff without writing. Applies to `install-hooks` and `uninstall-hooks` only. |
 
 ---
 
@@ -154,6 +155,28 @@ CREATE TABLE IF NOT EXISTS nebula_sync_state (
 );
 ```
 
+### Return Models
+
+```csharp
+// nebula_setup tool responses
+public record HookOperationResult(
+    bool Success,
+    string Client,
+    string? Diff,       // populated when dry_run: true
+    string Message
+);
+
+public record HookStatusResult(
+    string Client,
+    bool SettingsFileExists,
+    bool HookInstalled,
+    bool EndpointReachable,
+    string? EndpointWarning   // set if reachability check failed (non-blocking)
+);
+```
+
+`AutoMemory.BaseDirectory` tilde (`~`) is resolved by the service itself via `Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)` — not delegated to the shell.
+
 ---
 
 ## Error Handling
@@ -168,8 +191,11 @@ CREATE TABLE IF NOT EXISTS nebula_sync_state (
 
 | Layer | Coverage |
 |-------|----------|
-| Unit | `AutoMemorySyncService` with mocked `IFileSystem` and mocked store |
-| Unit | `HookInstallService` with mocked settings file reads/writes for both clients |
+| Unit | `AutoMemorySyncService` Phase 1 — new file ingested, unchanged file skipped, unreadable file → error in `SyncSummary.Errors`, remaining files continue |
+| Unit | `AutoMemorySyncService` Phase 2 — entries pruned when `synced_at` outside window; `RetentionDays: 0` skips pruning entirely |
+| Unit | `AutoMemorySyncService` Phase 3 — dirty source reindexed, clean source skipped, missing file → warning in errors, source not deleted |
+| Unit | `HookInstallService` — install writes hook, install is idempotent, uninstall removes hook, `dry_run: true` returns diff without writing |
+| Unit | `HookInstallService` — both `claude` and `copilot` client paths resolved correctly per OS |
 | Unit | `SyncSummary` serialization |
 | Integration | Full sync cycle against test Postgres instance with real files |
 | Integration | `nebula_setup install-hooks` → verify settings file mutation + idempotency |
