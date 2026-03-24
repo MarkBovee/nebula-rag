@@ -104,6 +104,12 @@ public sealed class PostgresRagStore
                 ON memories
                 USING ivfflat (embedding vector_cosine_ops)
                 WITH (lists = 100);
+
+            CREATE TABLE IF NOT EXISTS nebula_sync_state (
+                file_path   TEXT        PRIMARY KEY,
+                last_hash   TEXT        NOT NULL,
+                synced_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+            );
             """;
 
         // Open connection and execute schema creation, including pgvector extension
@@ -2034,6 +2040,78 @@ public sealed class PostgresRagStore
 
         builder.Append(']');
         return builder.ToString();
+    }
+
+    /// <summary>Gets the sync state entry for a file path, or null if not tracked.</summary>
+    public async Task<SyncStateEntry?> GetSyncStateAsync(string filePath, CancellationToken cancellationToken = default)
+    {
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var cmd = new NpgsqlCommand(
+            "SELECT file_path, last_hash, synced_at FROM nebula_sync_state WHERE file_path = @fp",
+            connection);
+        cmd.Parameters.AddWithValue("fp", filePath);
+        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken)) return null;
+        return new SyncStateEntry(
+            reader.GetString(0),
+            reader.GetString(1),
+            reader.GetFieldValue<DateTimeOffset>(2));
+    }
+
+    /// <summary>Inserts or updates the sync state for a file.</summary>
+    public async Task UpsertSyncStateAsync(string filePath, string hash, CancellationToken cancellationToken = default)
+    {
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var cmd = new NpgsqlCommand("""
+            INSERT INTO nebula_sync_state (file_path, last_hash, synced_at)
+            VALUES (@fp, @hash, NOW())
+            ON CONFLICT (file_path) DO UPDATE
+                SET last_hash = EXCLUDED.last_hash, synced_at = NOW()
+            """, connection);
+        cmd.Parameters.AddWithValue("fp", filePath);
+        cmd.Parameters.AddWithValue("hash", hash);
+        await cmd.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Lists nebula_sync_state entries not updated since the cutoff (used for pruning).
+    /// </summary>
+    public async Task<IReadOnlyList<SyncStateEntry>> ListStaleSyncEntriesAsync(
+        DateTimeOffset cutoff, CancellationToken cancellationToken = default)
+    {
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var cmd = new NpgsqlCommand(
+            "SELECT file_path, last_hash, synced_at FROM nebula_sync_state WHERE synced_at < @cutoff",
+            connection);
+        cmd.Parameters.AddWithValue("cutoff", cutoff);
+        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
+        var results = new List<SyncStateEntry>();
+        while (await reader.ReadAsync(cancellationToken))
+            results.Add(new SyncStateEntry(reader.GetString(0), reader.GetString(1), reader.GetFieldValue<DateTimeOffset>(2)));
+        return results;
+    }
+
+    /// <summary>
+    /// Deletes all memory entries tagged with the given prefix that are older than the cutoff.
+    /// Uses created_at for age check — entries are re-created fresh each sync cycle.
+    /// Returns count of deleted entries.
+    /// </summary>
+    public async Task<int> DeleteMemoriesByTagOlderThanAsync(
+        string tagPrefix, DateTimeOffset cutoff, CancellationToken cancellationToken = default)
+    {
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var cmd = new NpgsqlCommand("""
+            DELETE FROM memories
+            WHERE EXISTS (SELECT 1 FROM unnest(tags) t WHERE t LIKE @tagPattern)
+            AND created_at < @cutoff
+            """, connection);
+        cmd.Parameters.AddWithValue("tagPattern", tagPrefix + "%");
+        cmd.Parameters.AddWithValue("cutoff", cutoff);
+        return await cmd.ExecuteNonQueryAsync(cancellationToken);
     }
 
     /// <summary>
