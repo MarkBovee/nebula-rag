@@ -19,6 +19,7 @@ public sealed partial class McpTransportHandler
     private const string RagAdminToolName = "rag_admin";
     private const string MemoryToolName = "memory";
     private const string SystemToolName = "system";
+    private const string NebulaSetupToolName = "nebula_setup";
 
     private const string QueryProjectRagToolName = "query_project_rag";
     private const string RagInitSchemaToolName = "rag_init_schema";
@@ -52,6 +53,8 @@ public sealed partial class McpTransportHandler
     private readonly HttpClient _httpClient;
     private readonly IRuntimeTelemetrySink _telemetrySink;
     private readonly ILogger<McpTransportHandler> _logger;
+    private readonly AutoMemorySyncService _autoMemorySyncService;
+    private readonly HookInstallService _hookInstallService;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="McpTransportHandler"/> class.
@@ -66,7 +69,7 @@ public sealed partial class McpTransportHandler
     /// <param name="settings">Runtime settings.</param>
     /// <param name="httpClient">HTTP client for URL ingestion.</param>
     /// <param name="logger">Handler logger.</param>
-    public McpTransportHandler(RagQueryService queryService, RagManagementService managementService, RagSourcesManifestService sourcesManifestService, PostgresRagStore store, TextChunker chunker, IEmbeddingGenerator embeddingGenerator, RagIndexer indexer, RagSettings settings, HttpClient httpClient, ILogger<McpTransportHandler> logger, IRuntimeTelemetrySink? telemetrySink = null)
+    public McpTransportHandler(RagQueryService queryService, RagManagementService managementService, RagSourcesManifestService sourcesManifestService, PostgresRagStore store, TextChunker chunker, IEmbeddingGenerator embeddingGenerator, RagIndexer indexer, RagSettings settings, HttpClient httpClient, ILogger<McpTransportHandler> logger, AutoMemorySyncService autoMemorySyncService, HookInstallService hookInstallService, IRuntimeTelemetrySink? telemetrySink = null)
     {
         _queryService = queryService;
         _managementService = managementService;
@@ -79,6 +82,8 @@ public sealed partial class McpTransportHandler
         _httpClient = httpClient;
         _telemetrySink = telemetrySink ?? new NullRuntimeTelemetrySink();
         _logger = logger;
+        _autoMemorySyncService = autoMemorySyncService;
+        _hookInstallService = hookInstallService;
     }
 
     /// <summary>
@@ -172,7 +177,8 @@ public sealed partial class McpTransportHandler
             BuildToolDefinition(RagSourcesToolName, "Unified RAG source management operations."),
             BuildToolDefinition(RagAdminToolName, "Unified RAG administrative operations."),
             BuildToolDefinition(MemoryToolName, "Unified memory operations."),
-            BuildToolDefinition(SystemToolName, "Unified system metadata operations.")
+            BuildToolDefinition(SystemToolName, "Unified system metadata operations."),
+            BuildToolDefinition(NebulaSetupToolName, "Install, uninstall, or check the status of the Nebula Stop hook in AI client settings files (Claude Code, GitHub Copilot).")
         ];
     }
 
@@ -241,7 +247,7 @@ public sealed partial class McpTransportHandler
             MemoryToolName => BuildObjectSchema(
                 new JsonObject
                 {
-                    ["action"] = BuildEnumStringSchema("Memory action.", "store", "recall", "list", "update", "delete"),
+                    ["action"] = BuildEnumStringSchema("Memory action.", "store", "recall", "list", "update", "delete", "sync"),
                     ["memoryId"] = BuildIntegerSchema("Memory identifier for update/delete actions.", minimum: 1),
                     ["sessionId"] = BuildStringSchema("Optional session-id for grouping and filtering."),
                     ["projectId"] = BuildStringSchema("Optional project-id for scoping."),
@@ -262,6 +268,14 @@ public sealed partial class McpTransportHandler
                 new JsonObject
                 {
                     ["action"] = BuildEnumStringSchema("System action.", "server_info")
+                },
+                "action"),
+            NebulaSetupToolName => BuildObjectSchema(
+                new JsonObject
+                {
+                    ["action"] = BuildEnumStringSchema("Setup action.", "install-hooks", "uninstall-hooks", "status"),
+                    ["client"] = BuildEnumStringSchema("Target client.", "claude", "copilot"),
+                    ["dry_run"] = BuildBooleanSchema("If true, returns diff without writing.")
                 },
                 "action"),
             QueryProjectRagToolName => BuildObjectSchema(

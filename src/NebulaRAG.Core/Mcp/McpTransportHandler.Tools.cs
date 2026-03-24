@@ -35,6 +35,7 @@ public sealed partial class McpTransportHandler
                 RagAdminToolName => await ExecuteRagAdminToolAsync(arguments, cancellationToken),
                 MemoryToolName => await ExecuteMemoryToolAsync(arguments, cancellationToken),
                 SystemToolName => ExecuteSystemTool(arguments),
+                NebulaSetupToolName => await ExecuteNebulaSetupToolAsync(arguments, cancellationToken),
                 _ => BuildToolResult($"Unknown tool: {toolName}", isError: true)
             };
 
@@ -157,7 +158,7 @@ public sealed partial class McpTransportHandler
         var action = arguments?["action"]?.GetValue<string>()?.Trim();
         if (string.IsNullOrWhiteSpace(action))
         {
-            return BuildToolResult("action is required and must be one of: store, recall, list, update, delete.", isError: true);
+            return BuildToolResult("action is required and must be one of: store, recall, list, update, delete, sync.", isError: true);
         }
 
         return action.ToLowerInvariant() switch
@@ -167,7 +168,8 @@ public sealed partial class McpTransportHandler
             "list" => await ExecuteMemoryListToolAsync(arguments, cancellationToken),
             "update" => await ExecuteMemoryUpdateToolAsync(arguments, cancellationToken),
             "delete" => await ExecuteMemoryDeleteToolAsync(arguments, cancellationToken),
-            _ => BuildToolResult("Unsupported memory action. Use: store, recall, list, update, or delete.", isError: true)
+            "sync" => await ExecuteMemorySyncToolAsync(cancellationToken),
+            _ => BuildToolResult("Unsupported memory action. Use: store, recall, list, update, delete, or sync.", isError: true)
         };
     }
 
@@ -1019,6 +1021,27 @@ public sealed partial class McpTransportHandler
         }
 
         return null;
+    }
+
+    /// <summary>Executes the three-phase auto-memory sync.</summary>
+    private async Task<JsonObject> ExecuteMemorySyncToolAsync(CancellationToken cancellationToken)
+    {
+        var summary = await _autoMemorySyncService.SyncAsync(cancellationToken);
+        return BuildToolResult("Sync complete.", new JsonObject
+        {
+            ["filesIngested"] = summary.FilesIngested,
+            ["memoriesPruned"] = summary.MemoriesPruned,
+            ["sourcesReindexed"] = summary.SourcesReindexed,
+            ["errors"] = new JsonArray(summary.Errors.Select(e => JsonValue.Create(e)).ToArray()),
+            ["durationMs"] = summary.DurationMs
+        });
+    }
+
+    /// <summary>Delegates to NebulaSetupToolHandler.</summary>
+    private async Task<JsonObject> ExecuteNebulaSetupToolAsync(JsonObject? arguments, CancellationToken cancellationToken)
+    {
+        var handler = new NebulaSetupToolHandler(_hookInstallService);
+        return await handler.HandleAsync(arguments, cancellationToken);
     }
 
     /// <summary>

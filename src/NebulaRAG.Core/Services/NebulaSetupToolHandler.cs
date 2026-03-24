@@ -1,0 +1,93 @@
+using System.Text.Json.Nodes;
+
+namespace NebulaRAG.Core.Services;
+
+/// <summary>
+/// Handles the nebula_setup MCP tool: install-hooks, uninstall-hooks, status.
+/// </summary>
+public sealed class NebulaSetupToolHandler
+{
+    private readonly HookInstallService _hookInstallService;
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="NebulaSetupToolHandler"/> class.
+    /// </summary>
+    /// <param name="hookInstallService">Hook install service for performing setup operations.</param>
+    public NebulaSetupToolHandler(HookInstallService hookInstallService)
+    {
+        _hookInstallService = hookInstallService;
+    }
+
+    /// <summary>Dispatches the nebula_setup action to the appropriate handler.</summary>
+    /// <param name="arguments">Tool arguments.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>MCP tool result payload.</returns>
+    public async Task<JsonObject> HandleAsync(JsonObject? arguments, CancellationToken cancellationToken)
+    {
+        var action = arguments?["action"]?.GetValue<string>();
+        if (string.IsNullOrWhiteSpace(action))
+        {
+            return BuildError("action is required and must be one of: install-hooks, uninstall-hooks, status.");
+        }
+
+        return action switch
+        {
+            "install-hooks" => await HandleInstallAsync(arguments!, GetDryRun(arguments), cancellationToken),
+            "uninstall-hooks" => await HandleUninstallAsync(arguments!, GetDryRun(arguments), cancellationToken),
+            "status" => await HandleStatusAsync(cancellationToken),
+            _ => BuildError("Unsupported action. Use: install-hooks, uninstall-hooks, status.")
+        };
+    }
+
+    private async Task<JsonObject> HandleInstallAsync(JsonObject args, bool dryRun, CancellationToken ct)
+    {
+        var client = args["client"]?.GetValue<string>() ?? "claude";
+        var result = await _hookInstallService.InstallHooksAsync(client, dryRun);
+        return BuildResult(result.Success, result.Message, result.Diff);
+    }
+
+    private async Task<JsonObject> HandleUninstallAsync(JsonObject args, bool dryRun, CancellationToken ct)
+    {
+        var client = args["client"]?.GetValue<string>() ?? "claude";
+        var result = await _hookInstallService.UninstallHooksAsync(client, dryRun);
+        return BuildResult(result.Success, result.Message, result.Diff);
+    }
+
+    private async Task<JsonObject> HandleStatusAsync(CancellationToken ct)
+    {
+        var statuses = await _hookInstallService.GetStatusAsync(cancellationToken: ct);
+        var arr = new JsonArray(statuses.Select(s => (JsonNode)new JsonObject
+        {
+            ["client"] = s.Client,
+            ["settingsFileExists"] = s.SettingsFileExists,
+            ["hookInstalled"] = s.HookInstalled,
+            ["endpointReachable"] = s.EndpointReachable,
+            ["endpointWarning"] = s.EndpointWarning
+        }).ToArray());
+        return new JsonObject
+        {
+            ["content"] = new JsonArray(new JsonObject { ["type"] = "text", ["text"] = arr.ToJsonString() })
+        };
+    }
+
+    private static bool GetDryRun(JsonObject? args) =>
+        args?["dry_run"]?.GetValue<bool>() ?? false;
+
+    private static JsonObject BuildResult(bool success, string message, string? diff) =>
+        new()
+        {
+            ["content"] = new JsonArray(new JsonObject
+            {
+                ["type"] = "text",
+                ["text"] = $"{(success ? "✓" : "✗")} {message}" + (diff is not null ? $"\n{diff}" : "")
+            }),
+            ["isError"] = !success
+        };
+
+    private static JsonObject BuildError(string message) =>
+        new()
+        {
+            ["content"] = new JsonArray(new JsonObject { ["type"] = "text", ["text"] = message }),
+            ["isError"] = true
+        };
+}
