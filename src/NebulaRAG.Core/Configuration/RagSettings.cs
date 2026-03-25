@@ -163,22 +163,43 @@ public sealed class RetrievalSettings
     }
 }
 
-/// <summary>
-/// Settings for Claude Code auto-memory sync integration.
-/// </summary>
+/// <summary>Settings for Claude Code auto-memory sync integration.</summary>
 public sealed class AutoMemorySettings
 {
-    /// <summary>
-    /// Base directory for Claude Code auto-memory project files.
-    /// Tilde (~) is resolved via Environment.GetFolderPath(SpecialFolder.UserProfile).
-    /// Default: ~/.claude/projects
-    /// </summary>
+    /// <summary>Base directory for Claude Code auto-memory project files. Default: ~/.claude/projects</summary>
     public string BaseDirectory { get; init; } = "~/.claude/projects";
 
     /// <summary>
-    /// Number of days after last sync before an auto-memory entry is pruned.
-    /// Set to 0 to disable pruning entirely.
-    /// Default: 30
+    /// Age cutoff in days for short-term auto-pruning. 0 = disable pruning.
+    /// Negative values are clamped to 0 with a startup warning. Default: 30
     /// </summary>
-    public int RetentionDays { get; init; } = 30;
+    public int ShortTermRetentionDays { get; init; } = 30;
+
+    /// <summary>
+    /// How often long-term memories need review (days). Minimum: 1.
+    /// 0 or negative causes a startup validation error. Default: 90
+    /// </summary>
+    public int LongTermReviewIntervalDays { get; init; } = 90;
+
+    /// <summary>Deprecated alias for ShortTermRetentionDays. Honoured on load.</summary>
+    [Obsolete("Use ShortTermRetentionDays")]
+    public int? RetentionDays
+    {
+        get => null;
+        init => _shortTermRetentionDaysOverride = value;
+    }
+
+    private int? _shortTermRetentionDaysOverride;
+
+    /// <summary>Resolved short-term retention: deprecated RetentionDays alias wins over ShortTermRetentionDays.</summary>
+    public int ResolvedShortTermRetentionDays =>
+        _shortTermRetentionDaysOverride ?? ShortTermRetentionDays;
+
+    internal void Validate(List<string> errors)
+    {
+        if (LongTermReviewIntervalDays <= 0)
+            errors.Add("AutoMemory.LongTermReviewIntervalDays must be >= 1.");
+        if (ResolvedShortTermRetentionDays < 0)
+            errors.Add("AutoMemory.ShortTermRetentionDays must be >= 0 (0 = disabled).");
+    }
 }

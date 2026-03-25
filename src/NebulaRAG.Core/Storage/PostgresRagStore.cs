@@ -461,7 +461,9 @@ public sealed class PostgresRagStore : IAutoMemoryStore
                 Content: reader.GetString(4),
                 Tags: reader.GetFieldValue<string[]>(5),
                 CreatedAtUtc: reader.GetFieldValue<DateTimeOffset>(6),
-                Score: TryReadScore(reader, scoreOrdinal, fallbackOrdinal: 7)));
+                Score: TryReadScore(reader, scoreOrdinal, fallbackOrdinal: 7),
+                Tier: MemoryTier.ShortTerm,
+                LastReviewedAtUtc: null));
         }
 
         return rows;
@@ -1361,7 +1363,9 @@ public sealed class PostgresRagStore : IAutoMemoryStore
                 Type: reader.GetString(3),
                 Content: reader.GetString(4),
                 Tags: reader.GetFieldValue<string[]>(5),
-                CreatedAtUtc: reader.GetFieldValue<DateTimeOffset>(6)));
+                CreatedAtUtc: reader.GetFieldValue<DateTimeOffset>(6),
+                Tier: MemoryTier.ShortTerm,
+                LastReviewedAtUtc: null));
         }
 
         return rows;
@@ -1450,7 +1454,9 @@ public sealed class PostgresRagStore : IAutoMemoryStore
                 Content: reader.GetString(4),
                 Tags: reader.GetFieldValue<string[]>(5),
                 CreatedAtUtc: reader.GetFieldValue<DateTimeOffset>(6),
-                Score: score));
+                Score: score,
+                Tier: MemoryTier.ShortTerm,
+                LastReviewedAtUtc: null));
         }
 
         return rows;

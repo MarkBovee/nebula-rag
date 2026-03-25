@@ -788,7 +788,7 @@ public sealed partial class McpTransportHandler
             // Fallback to recent-memory listing so recall remains useful when semantic ranking returns no hits.
             var listedMemories = await _store.ListMemoriesAsync(limit, type, tag, sessionId, projectId, cancellationToken);
             memories = listedMemories
-                .Select(memory => new MemorySearchResult(memory.Id, memory.SessionId, memory.ProjectId, memory.Type, memory.Content, memory.Tags, memory.CreatedAtUtc, 0d))
+                .Select(memory => new MemorySearchResult(memory.Id, memory.SessionId, memory.ProjectId, memory.Type, memory.Content, memory.Tags, memory.CreatedAtUtc, 0d, memory.Tier, memory.LastReviewedAtUtc))
                 .ToList();
             if (memories.Count > 0)
             {

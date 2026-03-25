@@ -91,8 +91,8 @@ public sealed class AutoMemorySyncService
 
     private async Task<int> PruneStaleMemoriesAsync(CancellationToken ct)
     {
-        if (_settings.AutoMemory.RetentionDays == 0) return 0;
-        var cutoff = DateTimeOffset.UtcNow.AddDays(-_settings.AutoMemory.RetentionDays);
+        if (_settings.AutoMemory.ResolvedShortTermRetentionDays == 0) return 0;
+        var cutoff = DateTimeOffset.UtcNow.AddDays(-_settings.AutoMemory.ResolvedShortTermRetentionDays);
         return await _store.DeleteMemoriesByTagOlderThanAsync("auto-memory", cutoff, ct);
     }
 

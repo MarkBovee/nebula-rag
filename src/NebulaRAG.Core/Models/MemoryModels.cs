@@ -10,7 +10,16 @@ namespace NebulaRAG.Core.Models;
 /// <param name="Content">Natural language memory content.</param>
 /// <param name="Tags">Tags associated with the memory for filtering.</param>
 /// <param name="CreatedAtUtc">UTC timestamp when the memory was created.</param>
-public sealed record MemoryRecord(long Id, string SessionId, string? ProjectId, string Type, string Content, IReadOnlyList<string> Tags, DateTimeOffset CreatedAtUtc);
+public sealed record MemoryRecord(
+    long Id,
+    string SessionId,
+    string? ProjectId,
+    string Type,
+    string Content,
+    IReadOnlyList<string> Tags,
+    DateTimeOffset CreatedAtUtc,
+    string Tier,
+    DateTimeOffset? LastReviewedAtUtc);
 
 /// <summary>
 /// Represents a memory recall result including semantic score.
@@ -23,7 +32,17 @@ public sealed record MemoryRecord(long Id, string SessionId, string? ProjectId, 
 /// <param name="Tags">Tags associated with the memory for filtering.</param>
 /// <param name="CreatedAtUtc">UTC timestamp when the memory was created.</param>
 /// <param name="Score">Cosine similarity score against the recall query.</param>
-public sealed record MemorySearchResult(long Id, string SessionId, string? ProjectId, string Type, string Content, IReadOnlyList<string> Tags, DateTimeOffset CreatedAtUtc, double Score);
+public sealed record MemorySearchResult(
+    long Id,
+    string SessionId,
+    string? ProjectId,
+    string Type,
+    string Content,
+    IReadOnlyList<string> Tags,
+    DateTimeOffset CreatedAtUtc,
+    double Score,
+    string Tier,
+    DateTimeOffset? LastReviewedAtUtc);
 
 /// <summary>
 /// Represents the outcome of hybrid memory recall, including fallback diagnostics.
@@ -85,6 +104,31 @@ public sealed record MemoryTagCount(string Tag, long Count);
 /// <param name="DateUtc">UTC date bucket for this count.</param>
 /// <param name="Count">Number of memories created on the date.</param>
 public sealed record MemoryDailyCount(DateOnly DateUtc, long Count);
+
+/// <summary>Well-known memory tier values.</summary>
+public static class MemoryTier
+{
+    public const string ShortTerm = "short_term";
+    public const string LongTerm  = "long_term";
+
+    private static readonly HashSet<string> Valid = [ShortTerm, LongTerm];
+
+    /// <summary>Returns true if <paramref name="value"/> is a recognized tier string.</summary>
+    public static bool IsValid(string? value) => value is not null && Valid.Contains(value);
+}
+
+/// <summary>A long-term memory returned from a review queue query.</summary>
+public sealed record MemoryReviewResult(
+    long Id,
+    string SessionId,
+    string? ProjectId,
+    string Type,
+    string Content,
+    IReadOnlyList<string> Tags,
+    DateTimeOffset CreatedAtUtc,
+    DateTimeOffset? LastReviewedAtUtc,
+    DateTimeOffset ReviewDueAtUtc,
+    string ReviewStatus);
 
 /// <summary>
 /// Session-level memory summary.
