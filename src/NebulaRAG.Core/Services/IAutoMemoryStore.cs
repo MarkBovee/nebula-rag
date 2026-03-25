@@ -26,7 +26,6 @@ public interface IAutoMemoryStore
     /// <param name="cutoff">Memories created before this UTC timestamp are eligible for deletion.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Number of deleted memory rows.</returns>
-    [Obsolete("Use DeleteMemoriesByTierOlderThanAsync")]
     Task<int> DeleteMemoriesByTagOlderThanAsync(string tagPrefix, DateTimeOffset cutoff, CancellationToken cancellationToken = default);
 
     /// <summary>Deletes short-term memory rows older than <paramref name="cutoff"/>.</summary>

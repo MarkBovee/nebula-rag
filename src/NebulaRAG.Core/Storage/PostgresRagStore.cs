@@ -16,6 +16,8 @@ public sealed class PostgresRagStore : IAutoMemoryStore
 {
     private readonly string _connectionString;
 
+    private const int OverdueThresholdDays = 30;
+
     /// <summary>
     /// Initializes a new instance of the <see cref="PostgresRagStore"/> class.
     /// </summary>
@@ -1569,6 +1571,12 @@ public sealed class PostgresRagStore : IAutoMemoryStore
     /// <param name="embedding">Updated embedding, required when content changes.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns><c>true</c> when a row was updated, otherwise <c>false</c>.</returns>
+    /// <remarks>
+    /// When <paramref name="tier"/> is set, <c>last_reviewed_at_utc</c> is cleared unless
+    /// <paramref name="stampReviewed"/> is also true, in which case the review stamp takes precedence.
+    /// In practice these two parameters are mutually exclusive — tier changes come from
+    /// <c>memory update</c> and review stamps come from <c>memory review confirm/update</c>.
+    /// </remarks>
     public async Task<bool> UpdateMemoryAsync(long memoryId, string? type, string? content, IReadOnlyList<string>? tags, IReadOnlyList<float>? embedding, bool stampReviewed = false, string? tier = null, CancellationToken cancellationToken = default)
     {
         if (memoryId <= 0)
@@ -2193,7 +2201,7 @@ public sealed class PostgresRagStore : IAutoMemoryStore
         {
             var reviewDue = reader.GetFieldValue<DateTimeOffset>(8);
             var daysOverdue = (DateTimeOffset.UtcNow - reviewDue).TotalDays;
-            var status = daysOverdue > 30 ? "overdue" : "due";
+            var status = daysOverdue > OverdueThresholdDays ? "overdue" : "due";
             rows.Add(new MemoryReviewResult(
                 Id: reader.GetInt64(0),
                 SessionId: reader.IsDBNull(1) ? "" : reader.GetString(1),
