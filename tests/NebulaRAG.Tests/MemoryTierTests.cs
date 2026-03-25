@@ -26,6 +26,25 @@ public class MemoryTierTests
         Assert.Equal(expected, MemoryTier.IsValid(value));
     }
 
+    [Theory]
+    [InlineData("short_term")]
+    [InlineData("long_term")]
+    [InlineData(null)]
+    public void MemoryTier_ValidOrNull_ShouldNotError(string? tier)
+    {
+        var result = tier is null || MemoryTier.IsValid(tier);
+        Assert.True(result);
+    }
+
+    [Theory]
+    [InlineData("medium")]
+    [InlineData("LONG_TERM")]
+    [InlineData("")]
+    public void MemoryTier_Invalid_ShouldError(string tier)
+    {
+        Assert.False(MemoryTier.IsValid(tier));
+    }
+
     [Fact]
     public void AutoMemorySettings_RetentionDaysAlias_MapsToShortTerm()
     {

@@ -158,7 +158,7 @@ public sealed partial class McpTransportHandler
         var action = arguments?["action"]?.GetValue<string>()?.Trim();
         if (string.IsNullOrWhiteSpace(action))
         {
-            return BuildToolResult("action is required and must be one of: store, recall, list, update, delete, sync.", isError: true);
+            return BuildToolResult("action is required and must be one of: store, recall, list, update, delete, sync, review.", isError: true);
         }
 
         return action.ToLowerInvariant() switch
@@ -169,7 +169,8 @@ public sealed partial class McpTransportHandler
             "update" => await ExecuteMemoryUpdateToolAsync(arguments, cancellationToken),
             "delete" => await ExecuteMemoryDeleteToolAsync(arguments, cancellationToken),
             "sync" => await ExecuteMemorySyncToolAsync(cancellationToken),
-            _ => BuildToolResult("Unsupported memory action. Use: store, recall, list, update, delete, or sync.", isError: true)
+            "review" => await ExecuteMemoryReviewToolAsync(arguments, cancellationToken),
+            _ => BuildToolResult("Unsupported memory action. Use: store, recall, list, update, delete, sync, or review.", isError: true)
         };
     }
 
@@ -744,8 +745,11 @@ public sealed partial class McpTransportHandler
             : sessionId;
         var tags = ParseTags(arguments?["tags"]);
         var resolvedProjectId = ResolveProjectId(explicitProjectId, tags);
+        var rawTier = arguments?["tier"]?.GetValue<string?>();
+        var tier = ValidateTier(rawTier, out var tierError);
+        if (tierError is not null) return tierError;
         var embedding = _embeddingGenerator.GenerateEmbedding(content, _settings.Ingestion.VectorDimensions);
-        var memoryId = await _store.CreateMemoryAsync(resolvedSessionId, resolvedProjectId, type, content, tags, embedding, tier: null, cancellationToken);
+        var memoryId = await _store.CreateMemoryAsync(resolvedSessionId, resolvedProjectId, type, content, tags, embedding, tier: tier, cancellationToken);
         return BuildToolResult("Memory stored.", new JsonObject
         {
             ["memoryId"] = memoryId,
@@ -775,7 +779,10 @@ public sealed partial class McpTransportHandler
         var tag = arguments?["tag"]?.GetValue<string>();
         var sessionId = arguments?["sessionId"]?.GetValue<string>();
         var projectId = ResolveProjectId(arguments?["projectId"]?.GetValue<string>(), tags: null);
-        var searchOutcome = await _managementService.SearchMemoriesWithDiagnosticsAsync(text, limit, type, tag, sessionId, projectId, tier: null, cancellationToken);
+        var tierFilter = arguments?["tier"]?.GetValue<string?>();
+        if (tierFilter is not null && !MemoryTier.IsValid(tierFilter))
+            return BuildToolResult("Invalid tier value. Use: short_term or long_term.", isError: true);
+        var searchOutcome = await _managementService.SearchMemoriesWithDiagnosticsAsync(text, limit, type, tag, sessionId, projectId, tier: tierFilter, cancellationToken);
         var memories = searchOutcome.Results;
         var fallbackKinds = new JsonArray();
         if (searchOutcome.LexicalFallbackUsed)
@@ -808,7 +815,8 @@ public sealed partial class McpTransportHandler
                 ["content"] = memory.Content,
                 ["tags"] = JsonSerializer.SerializeToNode(memory.Tags),
                 ["createdAtUtc"] = memory.CreatedAtUtc.ToUniversalTime().ToString("O"),
-                ["score"] = memory.Score
+                ["score"] = memory.Score,
+                ["tier"] = memory.Tier
             });
         }
 
@@ -911,9 +919,96 @@ public sealed partial class McpTransportHandler
         var content = arguments?["content"]?.GetValue<string>();
         var tagsNode = arguments?["tags"];
         var tags = tagsNode is null ? null : ParseTags(tagsNode);
+        var rawTier = arguments?["tier"]?.GetValue<string?>();
+        var tier = ValidateTier(rawTier, out var tierError);
+        if (tierError is not null) return tierError;
         var embedding = string.IsNullOrWhiteSpace(content) ? null : _embeddingGenerator.GenerateEmbedding(content, _settings.Ingestion.VectorDimensions);
-        var updated = await _store.UpdateMemoryAsync(memoryId.Value, type, content, tags, embedding, stampReviewed: false, tier: null, cancellationToken);
+        var updated = await _store.UpdateMemoryAsync(memoryId.Value, type, content, tags, embedding, stampReviewed: false, tier: tier, cancellationToken);
         return BuildToolResult(updated ? "Memory updated." : "Memory not found.", new JsonObject { ["updated"] = updated });
+    }
+
+    /// <summary>
+    /// Validates a tier value from tool arguments, defaulting to short_term if null.
+    /// </summary>
+    private static string? ValidateTier(string? tier, out JsonObject? error)
+    {
+        error = null;
+        if (tier is null) return MemoryTier.ShortTerm; // default
+        if (!MemoryTier.IsValid(tier))
+        {
+            error = BuildToolResult("Invalid tier value. Use: short_term or long_term.", isError: true);
+            return null;
+        }
+        return tier;
+    }
+
+    /// <summary>
+    /// Dispatches memory review sub-actions.
+    /// </summary>
+    private async Task<JsonObject> ExecuteMemoryReviewToolAsync(JsonObject? arguments, CancellationToken cancellationToken)
+    {
+        var subAction = arguments?["subAction"]?.GetValue<string?>()?.ToLowerInvariant();
+        return subAction switch
+        {
+            "list"    => await ExecuteMemoryReviewListAsync(arguments, cancellationToken),
+            "confirm" => await ExecuteMemoryReviewConfirmAsync(arguments, cancellationToken),
+            "update"  => await ExecuteMemoryReviewUpdateAsync(arguments, cancellationToken),
+            "delete"  => await ExecuteMemoryReviewDeleteAsync(arguments, cancellationToken),
+            _ => BuildToolResult("subAction is required. Use: list, confirm, update, or delete.", isError: true)
+        };
+    }
+
+    private async Task<JsonObject> ExecuteMemoryReviewListAsync(JsonObject? arguments, CancellationToken ct)
+    {
+        var limit = arguments?["limit"]?.GetValue<int?>() ?? 20;
+        var results = await _store.ListMemoriesDueForReviewAsync(_settings.AutoMemory.LongTermReviewIntervalDays, limit, ct);
+        var items = new JsonArray();
+        foreach (var m in results)
+        {
+            items.Add(new JsonObject
+            {
+                ["id"] = m.Id,
+                ["content"] = m.Content,
+                ["type"] = m.Type,
+                ["tags"] = JsonSerializer.SerializeToNode(m.Tags),
+                ["createdAtUtc"] = m.CreatedAtUtc.ToString("O"),
+                ["lastReviewedAtUtc"] = m.LastReviewedAtUtc?.ToString("O"),
+                ["reviewDueAtUtc"] = m.ReviewDueAtUtc.ToString("O"),
+                ["reviewStatus"] = m.ReviewStatus
+            });
+        }
+        return BuildToolResult($"{results.Count} memories due for review.", new JsonObject { ["memories"] = items });
+    }
+
+    private async Task<JsonObject> ExecuteMemoryReviewConfirmAsync(JsonObject? arguments, CancellationToken ct)
+    {
+        var memoryId = arguments?["memoryId"]?.GetValue<long?>();
+        if (memoryId is null) return BuildToolResult("memoryId is required.", isError: true);
+        var updated = await _store.UpdateMemoryAsync(memoryId.Value, type: null, content: null,
+            tags: null, embedding: null, stampReviewed: true, cancellationToken: ct);
+        return BuildToolResult(updated ? "Memory review confirmed." : "Memory not found.",
+            new JsonObject { ["updated"] = updated });
+    }
+
+    private async Task<JsonObject> ExecuteMemoryReviewUpdateAsync(JsonObject? arguments, CancellationToken ct)
+    {
+        var memoryId = arguments?["memoryId"]?.GetValue<long?>();
+        if (memoryId is null) return BuildToolResult("memoryId is required.", isError: true);
+        var content = arguments?["content"]?.GetValue<string?>();
+        IReadOnlyList<float>? embedding = content is not null ? _embeddingGenerator.GenerateEmbedding(content, _settings.Ingestion.VectorDimensions) : null;
+        var updated = await _store.UpdateMemoryAsync(memoryId.Value, type: null, content: content,
+            tags: null, embedding: embedding, stampReviewed: true, cancellationToken: ct);
+        return BuildToolResult(updated ? "Memory updated and review confirmed." : "Memory not found.",
+            new JsonObject { ["updated"] = updated });
+    }
+
+    private async Task<JsonObject> ExecuteMemoryReviewDeleteAsync(JsonObject? arguments, CancellationToken ct)
+    {
+        var memoryId = arguments?["memoryId"]?.GetValue<long?>();
+        if (memoryId is null) return BuildToolResult("memoryId is required.", isError: true);
+        var deleted = await _store.DeleteMemoryAsync(memoryId.Value, ct);
+        return BuildToolResult(deleted ? "Memory deleted." : "Memory not found.",
+            new JsonObject { ["deleted"] = deleted });
     }
 
     /// <summary>
