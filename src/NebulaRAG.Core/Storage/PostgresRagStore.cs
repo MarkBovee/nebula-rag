@@ -79,6 +79,11 @@ public sealed class PostgresRagStore : IAutoMemoryStore
             ALTER TABLE memories
                 ADD COLUMN IF NOT EXISTS project_id TEXT;
 
+            ALTER TABLE memories ADD COLUMN IF NOT EXISTS tier TEXT NOT NULL DEFAULT 'short_term';
+            ALTER TABLE memories ADD COLUMN IF NOT EXISTS last_reviewed_at_utc TIMESTAMPTZ NULL;
+            CREATE INDEX IF NOT EXISTS ix_memories_tier ON memories (tier);
+            CREATE INDEX IF NOT EXISTS ix_memories_review ON memories (tier, last_reviewed_at_utc) WHERE tier = 'long_term';
+
             DROP TABLE IF EXISTS task_history;
             DROP TABLE IF EXISTS plan_history;
             DROP TABLE IF EXISTS tasks;
@@ -422,7 +427,9 @@ public sealed class PostgresRagStore : IAutoMemoryStore
                    ts_rank_cd(
                        setweight(to_tsvector('english', COALESCE(array_to_string(tags, ' '), '')), 'A') ||
                        setweight(to_tsvector('english', content), 'B'),
-                       query.tsquery) AS score
+                       query.tsquery) AS score,
+                   tier,
+                   last_reviewed_at_utc
             FROM memories
             CROSS JOIN query
             WHERE numnode(query.tsquery) > 0
@@ -462,8 +469,8 @@ public sealed class PostgresRagStore : IAutoMemoryStore
                 Tags: reader.GetFieldValue<string[]>(5),
                 CreatedAtUtc: reader.GetFieldValue<DateTimeOffset>(6),
                 Score: TryReadScore(reader, scoreOrdinal, fallbackOrdinal: 7),
-                Tier: MemoryTier.ShortTerm,
-                LastReviewedAtUtc: null));
+                Tier: reader.GetString(8),
+                LastReviewedAtUtc: reader.IsDBNull(9) ? null : reader.GetFieldValue<DateTimeOffset>(9)));
         }
 
         return rows;
@@ -1257,9 +1264,9 @@ public sealed class PostgresRagStore : IAutoMemoryStore
     /// <param name="embedding">Memory embedding vector.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Identifier of the inserted memory row.</returns>
-    public Task<long> CreateMemoryAsync(string? sessionId, string type, string content, IReadOnlyList<string> tags, IReadOnlyList<float> embedding, CancellationToken cancellationToken = default)
+    public Task<long> CreateMemoryAsync(string? sessionId, string type, string content, IReadOnlyList<string> tags, IReadOnlyList<float> embedding, string? tier = null, CancellationToken cancellationToken = default)
     {
-        return CreateMemoryAsync(sessionId, projectId: null, type, content, tags, embedding, cancellationToken);
+        return CreateMemoryAsync(sessionId, projectId: null, type, content, tags, embedding, tier, cancellationToken);
     }
 
     /// <summary>
@@ -1273,15 +1280,15 @@ public sealed class PostgresRagStore : IAutoMemoryStore
     /// <param name="embedding">Memory embedding vector.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Identifier of the inserted memory row.</returns>
-    public async Task<long> CreateMemoryAsync(string? sessionId, string? projectId, string type, string content, IReadOnlyList<string> tags, IReadOnlyList<float> embedding, CancellationToken cancellationToken = default)
+    public async Task<long> CreateMemoryAsync(string? sessionId, string? projectId, string type, string content, IReadOnlyList<string> tags, IReadOnlyList<float> embedding, string? tier = null, CancellationToken cancellationToken = default)
     {
         ValidateMemoryArguments(type, content, embedding);
         var resolvedSessionId = NormalizeSessionId(sessionId);
         var resolvedProjectId = NormalizeProjectId(projectId);
 
         const string sql = """
-            INSERT INTO memories (session_id, project_id, type, content, embedding, tags)
-            VALUES (@sessionId, @projectId, @type, @content, CAST(@embedding AS vector), @tags)
+            INSERT INTO memories (session_id, project_id, type, content, embedding, tags, tier)
+            VALUES (@sessionId, @projectId, @type, @content, CAST(@embedding AS vector), @tags, @tier)
             RETURNING id
             """;
 
@@ -1290,6 +1297,7 @@ public sealed class PostgresRagStore : IAutoMemoryStore
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue("sessionId", resolvedSessionId);
         command.Parameters.Add(CreateNullableTextParameter("projectId", resolvedProjectId));
+        command.Parameters.AddWithValue("tier", tier ?? MemoryTier.ShortTerm);
         command.Parameters.AddWithValue("type", type);
         command.Parameters.AddWithValue("content", content);
         command.Parameters.AddWithValue("embedding", ToVectorLiteral(embedding));
@@ -1323,7 +1331,15 @@ public sealed class PostgresRagStore : IAutoMemoryStore
     /// <param name="projectId">Optional project-id filter.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Recent memory rows sorted by creation date descending.</returns>
-    public async Task<IReadOnlyList<MemoryRecord>> ListMemoriesAsync(int limit, string? type, string? tag, string? sessionId, string? projectId, CancellationToken cancellationToken = default)
+    public Task<IReadOnlyList<MemoryRecord>> ListMemoriesAsync(int limit, string? type, string? tag, string? sessionId, string? projectId, CancellationToken cancellationToken = default)
+    {
+        return ListMemoriesAsync(limit, type, tag, sessionId, projectId, tier: null, cancellationToken);
+    }
+
+    /// <summary>
+    /// Lists the most recent memories optionally filtered by type, tag, session, project, and tier.
+    /// </summary>
+    public async Task<IReadOnlyList<MemoryRecord>> ListMemoriesAsync(int limit, string? type, string? tag, string? sessionId, string? projectId, string? tier, CancellationToken cancellationToken = default)
     {
         if (limit <= 0)
         {
@@ -1332,13 +1348,14 @@ public sealed class PostgresRagStore : IAutoMemoryStore
 
         var normalizedProjectId = NormalizeProjectId(projectId);
 
-        const string sql = """
-            SELECT id, session_id, project_id, type, content, tags, created_at
+        var sql = $"""
+            SELECT id, session_id, project_id, type, content, tags, created_at, tier, last_reviewed_at_utc
             FROM memories
                         WHERE (@type::text IS NULL OR type = @type::text)
                             AND (@tag::text IS NULL OR @tag::text = ANY(tags))
                             AND (@sessionId::text IS NULL OR session_id = @sessionId::text)
                             AND (@projectId::text IS NULL OR project_id = @projectId::text)
+                            {(tier is not null ? "AND tier = @tier" : "")}
             ORDER BY created_at DESC
             LIMIT @limit
             """;
@@ -1351,6 +1368,7 @@ public sealed class PostgresRagStore : IAutoMemoryStore
         command.Parameters.Add(CreateNullableTextParameter("sessionId", sessionId));
         command.Parameters.Add(CreateNullableTextParameter("projectId", normalizedProjectId));
         command.Parameters.AddWithValue("limit", limit);
+        if (tier is not null) command.Parameters.AddWithValue("tier", tier);
 
         var rows = new List<MemoryRecord>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -1364,8 +1382,8 @@ public sealed class PostgresRagStore : IAutoMemoryStore
                 Content: reader.GetString(4),
                 Tags: reader.GetFieldValue<string[]>(5),
                 CreatedAtUtc: reader.GetFieldValue<DateTimeOffset>(6),
-                Tier: MemoryTier.ShortTerm,
-                LastReviewedAtUtc: null));
+                Tier: reader.GetString(7),
+                LastReviewedAtUtc: reader.IsDBNull(8) ? null : reader.GetFieldValue<DateTimeOffset>(8)));
         }
 
         return rows;
@@ -1397,7 +1415,15 @@ public sealed class PostgresRagStore : IAutoMemoryStore
     /// <param name="projectId">Optional project-id filter.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Semantically ranked memory rows.</returns>
-    public async Task<IReadOnlyList<MemorySearchResult>> SearchMemoriesAsync(float[] queryEmbedding, int limit, string? type, string? tag, string? sessionId, string? projectId, CancellationToken cancellationToken = default)
+    public Task<IReadOnlyList<MemorySearchResult>> SearchMemoriesAsync(float[] queryEmbedding, int limit, string? type, string? tag, string? sessionId, string? projectId, CancellationToken cancellationToken = default)
+    {
+        return SearchMemoriesAsync(queryEmbedding, limit, type, tag, sessionId, projectId, tier: null, cancellationToken);
+    }
+
+    /// <summary>
+    /// Performs semantic recall over memories using cosine similarity with optional tier filter.
+    /// </summary>
+    public async Task<IReadOnlyList<MemorySearchResult>> SearchMemoriesAsync(float[] queryEmbedding, int limit, string? type, string? tag, string? sessionId, string? projectId, string? tier, CancellationToken cancellationToken = default)
     {
         if (queryEmbedding.Length == 0)
         {
@@ -1411,7 +1437,7 @@ public sealed class PostgresRagStore : IAutoMemoryStore
 
         var normalizedProjectId = NormalizeProjectId(projectId);
 
-        const string sql = """
+        var sql = $"""
             SELECT id,
                    session_id,
                    project_id,
@@ -1419,12 +1445,15 @@ public sealed class PostgresRagStore : IAutoMemoryStore
                    content,
                    tags,
                    created_at,
-                   1 - (embedding <=> CAST(@embedding AS vector)) AS score
+                   1 - (embedding <=> CAST(@embedding AS vector)) AS score,
+                   tier,
+                   last_reviewed_at_utc
             FROM memories
                         WHERE (@type::text IS NULL OR type = @type::text)
                             AND (@tag::text IS NULL OR @tag::text = ANY(tags))
                             AND (@sessionId::text IS NULL OR session_id = @sessionId::text)
                             AND (@projectId::text IS NULL OR project_id = @projectId::text)
+                            {(tier is not null ? "AND tier = @tier" : "")}
             ORDER BY embedding <=> CAST(@embedding AS vector)
             LIMIT @limit
             """;
@@ -1438,13 +1467,14 @@ public sealed class PostgresRagStore : IAutoMemoryStore
         command.Parameters.Add(CreateNullableTextParameter("sessionId", sessionId));
         command.Parameters.Add(CreateNullableTextParameter("projectId", normalizedProjectId));
         command.Parameters.AddWithValue("limit", limit);
+        if (tier is not null) command.Parameters.AddWithValue("tier", tier);
 
         var rows = new List<MemorySearchResult>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         var scoreOrdinal = ResolveScoreOrdinal(reader);
         while (await reader.ReadAsync(cancellationToken))
         {
-            var score = TryReadScore(reader, scoreOrdinal, fallbackOrdinal: 6);
+            var score = TryReadScore(reader, scoreOrdinal, fallbackOrdinal: 7);
 
             rows.Add(new MemorySearchResult(
                 Id: reader.GetInt64(0),
@@ -1455,8 +1485,8 @@ public sealed class PostgresRagStore : IAutoMemoryStore
                 Tags: reader.GetFieldValue<string[]>(5),
                 CreatedAtUtc: reader.GetFieldValue<DateTimeOffset>(6),
                 Score: score,
-                Tier: MemoryTier.ShortTerm,
-                LastReviewedAtUtc: null));
+                Tier: reader.GetString(8),
+                LastReviewedAtUtc: reader.IsDBNull(9) ? null : reader.GetFieldValue<DateTimeOffset>(9)));
         }
 
         return rows;
@@ -1539,7 +1569,7 @@ public sealed class PostgresRagStore : IAutoMemoryStore
     /// <param name="embedding">Updated embedding, required when content changes.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns><c>true</c> when a row was updated, otherwise <c>false</c>.</returns>
-    public async Task<bool> UpdateMemoryAsync(long memoryId, string? type, string? content, IReadOnlyList<string>? tags, IReadOnlyList<float>? embedding, CancellationToken cancellationToken = default)
+    public async Task<bool> UpdateMemoryAsync(long memoryId, string? type, string? content, IReadOnlyList<string>? tags, IReadOnlyList<float>? embedding, bool stampReviewed = false, string? tier = null, CancellationToken cancellationToken = default)
     {
         if (memoryId <= 0)
         {
@@ -1551,24 +1581,30 @@ public sealed class PostgresRagStore : IAutoMemoryStore
             throw new ArgumentException("Embedding is required when content is updated.", nameof(embedding));
         }
 
-        const string sql = """
-            UPDATE memories
-            SET type = COALESCE(@type::text, type),
-                content = COALESCE(@content::text, content),
-                embedding = CASE WHEN @embedding::text IS NULL THEN embedding ELSE CAST(@embedding AS vector) END,
-                tags = COALESCE(@tags::text[], tags)
-            WHERE id = @id
-            """;
+        var setClauses = new List<string>();
+        if (type is not null)    setClauses.Add("type = @type");
+        if (content is not null) setClauses.Add("content = @content, embedding = CASE WHEN @embedding::text IS NULL THEN embedding ELSE CAST(@embedding AS vector) END");
+        if (tags is not null)    setClauses.Add("tags = @tags");
+        if (tier is not null)
+        {
+            setClauses.Add("tier = @tier");
+            if (!stampReviewed)
+                setClauses.Add("last_reviewed_at_utc = NULL");
+        }
+        if (stampReviewed)       setClauses.Add("last_reviewed_at_utc = NOW()");
+        if (setClauses.Count == 0) return false;
+        var sql = $"UPDATE memories SET {string.Join(", ", setClauses)} WHERE id = @id";
 
         await using var connection = new NpgsqlConnection(_connectionString);
         await connection.OpenAsync(cancellationToken);
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue("id", memoryId);
-        command.Parameters.Add(CreateNullableTextParameter("type", type));
-        command.Parameters.Add(CreateNullableTextParameter("content", content));
-        command.Parameters.Add(CreateNullableTextParameter("embedding", embedding is null ? null : ToVectorLiteral(embedding)));
-
-        command.Parameters.Add(CreateNullableTextArrayParameter("tags", tags, treatEmptyAsNull: false));
+        if (type is not null)    command.Parameters.Add(CreateNullableTextParameter("type", type));
+        if (content is not null || embedding is not null)
+            command.Parameters.Add(CreateNullableTextParameter("embedding", embedding is null ? null : ToVectorLiteral(embedding)));
+        if (content is not null) command.Parameters.Add(CreateNullableTextParameter("content", content));
+        if (tags is not null)    command.Parameters.Add(CreateNullableTextArrayParameter("tags", tags, treatEmptyAsNull: false));
+        if (tier is not null)    command.Parameters.AddWithValue("tier", tier);
 
         var updated = await command.ExecuteNonQueryAsync(cancellationToken);
         return updated > 0;
@@ -2119,6 +2155,58 @@ public sealed class PostgresRagStore : IAutoMemoryStore
         cmd.Parameters.AddWithValue("tagPattern", tagPrefix + "%");
         cmd.Parameters.AddWithValue("cutoff", cutoff);
         return await cmd.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    /// <summary>Deletes short-term memory rows older than <paramref name="cutoff"/>.</summary>
+    public async Task<int> DeleteMemoriesByTierOlderThanAsync(string tier, DateTimeOffset cutoff, CancellationToken cancellationToken = default)
+    {
+        const string sql = "DELETE FROM memories WHERE tier = @tier AND created_at < @cutoff";
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var cmd = new NpgsqlCommand(sql, connection);
+        cmd.Parameters.AddWithValue("tier", tier);
+        cmd.Parameters.AddWithValue("cutoff", cutoff);
+        return await cmd.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    /// <summary>Returns long-term memories whose review is due.</summary>
+    public async Task<IReadOnlyList<MemoryReviewResult>> ListMemoriesDueForReviewAsync(
+        int reviewIntervalDays, int limit = 50, CancellationToken cancellationToken = default)
+    {
+        const string sql = """
+            SELECT id, session_id, project_id, type, content, tags, created_at, last_reviewed_at_utc,
+                   COALESCE(last_reviewed_at_utc, created_at) + (@intervalDays * INTERVAL '1 day') AS review_due_at
+            FROM memories
+            WHERE tier = 'long_term'
+              AND COALESCE(last_reviewed_at_utc, created_at) + (@intervalDays * INTERVAL '1 day') <= NOW()
+            ORDER BY review_due_at ASC
+            LIMIT @limit
+            """;
+        await using var connection = new NpgsqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var cmd = new NpgsqlCommand(sql, connection);
+        cmd.Parameters.AddWithValue("intervalDays", reviewIntervalDays);
+        cmd.Parameters.AddWithValue("limit", limit);
+        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
+        var rows = new List<MemoryReviewResult>();
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var reviewDue = reader.GetFieldValue<DateTimeOffset>(8);
+            var daysOverdue = (DateTimeOffset.UtcNow - reviewDue).TotalDays;
+            var status = daysOverdue > 30 ? "overdue" : "due";
+            rows.Add(new MemoryReviewResult(
+                Id: reader.GetInt64(0),
+                SessionId: reader.IsDBNull(1) ? "" : reader.GetString(1),
+                ProjectId: reader.IsDBNull(2) ? null : reader.GetString(2),
+                Type: reader.GetString(3),
+                Content: reader.GetString(4),
+                Tags: reader.IsDBNull(5) ? [] : reader.GetFieldValue<string[]>(5),
+                CreatedAtUtc: reader.GetFieldValue<DateTimeOffset>(6),
+                LastReviewedAtUtc: reader.IsDBNull(7) ? null : reader.GetFieldValue<DateTimeOffset>(7),
+                ReviewDueAtUtc: reviewDue,
+                ReviewStatus: status));
+        }
+        return rows;
     }
 
     /// <summary>

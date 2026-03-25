@@ -107,7 +107,7 @@ public sealed class RagApiController : ControllerBase
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Memory rows ordered by most recent first.</returns>
     [HttpGet("memory/list")]
-    public async Task<ActionResult<IReadOnlyList<MemoryRecord>>> ListMemoriesAsync([FromQuery] string? scope, [FromQuery] string? projectId, [FromQuery] string? sessionId, [FromQuery] string? type, [FromQuery] string? tag, [FromQuery] int? limit, CancellationToken cancellationToken)
+    public async Task<ActionResult<IReadOnlyList<MemoryRecord>>> ListMemoriesAsync([FromQuery] string? scope, [FromQuery] string? projectId, [FromQuery] string? sessionId, [FromQuery] string? type, [FromQuery] string? tag, [FromQuery] int? limit, [FromQuery] string? tier, CancellationToken cancellationToken)
     {
         var resolvedScope = _memoryScopeResolver.Resolve(scope, sessionId, projectId);
         if (!resolvedScope.IsSuccess)
@@ -121,6 +121,7 @@ public sealed class RagApiController : ControllerBase
             tag: tag,
             sessionId: resolvedScope.SessionId,
             projectId: resolvedScope.ProjectId,
+            tier: tier,
             cancellationToken: cancellationToken);
 
         return Ok(memories);
@@ -153,6 +154,7 @@ public sealed class RagApiController : ControllerBase
             tag: request.Tag,
             sessionId: resolvedScope.SessionId,
             projectId: resolvedScope.ProjectId,
+            tier: request.Tier,
             cancellationToken: cancellationToken);
 
         _telemetrySink.RecordActivity("query", "API memory search", new Dictionary<string, string?>

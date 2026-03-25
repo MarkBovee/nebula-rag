@@ -356,7 +356,7 @@ public sealed class RagManagementService
     /// <param name="projectId">Optional project-id filter.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Recent memory records.</returns>
-    public async Task<IReadOnlyList<MemoryRecord>> ListMemoriesAsync(int limit, string? type = null, string? tag = null, string? sessionId = null, string? projectId = null, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<MemoryRecord>> ListMemoriesAsync(int limit, string? type = null, string? tag = null, string? sessionId = null, string? projectId = null, string? tier = null, CancellationToken cancellationToken = default)
     {
         _logger.LogDebug(
             "Listing memories (limit={Limit}, type={Type}, tag={Tag}, sessionId={SessionId}, projectId={ProjectId})",
@@ -368,7 +368,7 @@ public sealed class RagManagementService
 
         try
         {
-            return await _store.ListMemoriesAsync(limit, type, tag, sessionId, projectId, cancellationToken);
+            return await _store.ListMemoriesAsync(limit, type, tag, sessionId, projectId, tier, cancellationToken);
         }
         catch (Exception ex) when (!(ex is RagException))
         {
@@ -388,7 +388,7 @@ public sealed class RagManagementService
     /// <param name="projectId">Optional project-id filter.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Ranked memory results plus fallback diagnostics.</returns>
-    public async Task<MemorySearchOutcome> SearchMemoriesWithDiagnosticsAsync(string text, int limit, string? type = null, string? tag = null, string? sessionId = null, string? projectId = null, CancellationToken cancellationToken = default)
+    public async Task<MemorySearchOutcome> SearchMemoriesWithDiagnosticsAsync(string text, int limit, string? type = null, string? tag = null, string? sessionId = null, string? projectId = null, string? tier = null, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(text))
         {
@@ -414,7 +414,7 @@ public sealed class RagManagementService
         try
         {
             var queryEmbedding = _embeddingGenerator.GenerateEmbedding(text, _settings.Ingestion.VectorDimensions);
-            semanticResults = await _store.SearchMemoriesAsync(queryEmbedding, limit, type, tag, sessionId, projectId, cancellationToken);
+            semanticResults = await _store.SearchMemoriesAsync(queryEmbedding, limit, type, tag, sessionId, projectId, tier, cancellationToken);
         }
         catch (Exception ex) when (!(ex is RagException))
         {
@@ -478,8 +478,8 @@ public sealed class RagManagementService
     /// <param name="projectId">Optional project-id filter.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Ranked memory results.</returns>
-    public async Task<IReadOnlyList<MemorySearchResult>> SearchMemoriesAsync(string text, int limit, string? type = null, string? tag = null, string? sessionId = null, string? projectId = null, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<MemorySearchResult>> SearchMemoriesAsync(string text, int limit, string? type = null, string? tag = null, string? sessionId = null, string? projectId = null, string? tier = null, CancellationToken cancellationToken = default)
     {
-        return (await SearchMemoriesWithDiagnosticsAsync(text, limit, type, tag, sessionId, projectId, cancellationToken)).Results;
+        return (await SearchMemoriesWithDiagnosticsAsync(text, limit, type, tag, sessionId, projectId, tier, cancellationToken)).Results;
     }
 }

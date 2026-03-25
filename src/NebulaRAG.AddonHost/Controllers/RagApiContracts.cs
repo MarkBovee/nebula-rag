@@ -34,6 +34,7 @@ public sealed record ApiIndexRequest(string SourcePath);
 /// <param name="ProjectId">Optional project-id filter.</param>
 /// <param name="Type">Optional memory type filter.</param>
 /// <param name="Tag">Optional memory tag filter.</param>
+/// <param name="Tier">Optional memory tier filter (short_term or long_term).</param>
 public sealed record ApiMemorySearchRequest(
     string Text,
     int? Limit,
@@ -41,7 +42,8 @@ public sealed record ApiMemorySearchRequest(
     [property: JsonPropertyName("sessionId")] string? SessionId,
     [property: JsonPropertyName("projectId")] string? ProjectId,
     string? Type,
-    string? Tag);
+    string? Tag,
+    string? Tier = null);
 
 /// <summary>
 /// Delete source API request model.

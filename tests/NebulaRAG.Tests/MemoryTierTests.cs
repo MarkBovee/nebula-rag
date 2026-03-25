@@ -1,6 +1,7 @@
 using Xunit;
 using NebulaRAG.Core.Models;
 using NebulaRAG.Core.Configuration;
+using NebulaRAG.Core.Services;
 
 namespace NebulaRAG.Tests;
 
@@ -78,5 +79,19 @@ public class MemoryTierTests
             [], DateTimeOffset.UtcNow, MemoryTier.ShortTerm, null);
         Assert.Equal(MemoryTier.ShortTerm, record.Tier);
         Assert.Null(record.LastReviewedAtUtc);
+    }
+
+    [Fact]
+    public void IAutoMemoryStore_HasDeleteByTierMethod()
+    {
+        var methods = typeof(IAutoMemoryStore).GetMethods();
+        Assert.Contains(methods, m => m.Name == "DeleteMemoriesByTierOlderThanAsync");
+    }
+
+    [Fact]
+    public void IAutoMemoryStore_HasListMemoriesDueForReviewMethod()
+    {
+        var methods = typeof(IAutoMemoryStore).GetMethods();
+        Assert.Contains(methods, m => m.Name == "ListMemoriesDueForReviewAsync");
     }
 }

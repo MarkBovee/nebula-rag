@@ -745,7 +745,7 @@ public sealed partial class McpTransportHandler
         var tags = ParseTags(arguments?["tags"]);
         var resolvedProjectId = ResolveProjectId(explicitProjectId, tags);
         var embedding = _embeddingGenerator.GenerateEmbedding(content, _settings.Ingestion.VectorDimensions);
-        var memoryId = await _store.CreateMemoryAsync(resolvedSessionId, resolvedProjectId, type, content, tags, embedding, cancellationToken);
+        var memoryId = await _store.CreateMemoryAsync(resolvedSessionId, resolvedProjectId, type, content, tags, embedding, tier: null, cancellationToken);
         return BuildToolResult("Memory stored.", new JsonObject
         {
             ["memoryId"] = memoryId,
@@ -775,7 +775,7 @@ public sealed partial class McpTransportHandler
         var tag = arguments?["tag"]?.GetValue<string>();
         var sessionId = arguments?["sessionId"]?.GetValue<string>();
         var projectId = ResolveProjectId(arguments?["projectId"]?.GetValue<string>(), tags: null);
-        var searchOutcome = await _managementService.SearchMemoriesWithDiagnosticsAsync(text, limit, type, tag, sessionId, projectId, cancellationToken);
+        var searchOutcome = await _managementService.SearchMemoriesWithDiagnosticsAsync(text, limit, type, tag, sessionId, projectId, tier: null, cancellationToken);
         var memories = searchOutcome.Results;
         var fallbackKinds = new JsonArray();
         if (searchOutcome.LexicalFallbackUsed)
@@ -912,7 +912,7 @@ public sealed partial class McpTransportHandler
         var tagsNode = arguments?["tags"];
         var tags = tagsNode is null ? null : ParseTags(tagsNode);
         var embedding = string.IsNullOrWhiteSpace(content) ? null : _embeddingGenerator.GenerateEmbedding(content, _settings.Ingestion.VectorDimensions);
-        var updated = await _store.UpdateMemoryAsync(memoryId.Value, type, content, tags, embedding, cancellationToken);
+        var updated = await _store.UpdateMemoryAsync(memoryId.Value, type, content, tags, embedding, stampReviewed: false, tier: null, cancellationToken);
         return BuildToolResult(updated ? "Memory updated." : "Memory not found.", new JsonObject { ["updated"] = updated });
     }
 

@@ -26,7 +26,14 @@ public interface IAutoMemoryStore
     /// <param name="cutoff">Memories created before this UTC timestamp are eligible for deletion.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Number of deleted memory rows.</returns>
+    [Obsolete("Use DeleteMemoriesByTierOlderThanAsync")]
     Task<int> DeleteMemoriesByTagOlderThanAsync(string tagPrefix, DateTimeOffset cutoff, CancellationToken cancellationToken = default);
+
+    /// <summary>Deletes short-term memory rows older than <paramref name="cutoff"/>.</summary>
+    Task<int> DeleteMemoriesByTierOlderThanAsync(string tier, DateTimeOffset cutoff, CancellationToken cancellationToken = default);
+
+    /// <summary>Returns long-term memories whose review interval has elapsed.</summary>
+    Task<IReadOnlyList<MemoryReviewResult>> ListMemoriesDueForReviewAsync(int reviewIntervalDays, int limit = 50, CancellationToken cancellationToken = default);
 
     /// <summary>Returns a list of indexed RAG document sources, up to <paramref name="limit"/> entries.</summary>
     /// <param name="limit">Maximum number of sources to return.</param>
