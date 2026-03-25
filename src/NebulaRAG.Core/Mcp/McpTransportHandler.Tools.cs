@@ -1140,7 +1140,8 @@ public sealed partial class McpTransportHandler
     /// <summary>Delegates to NebulaSetupToolHandler.</summary>
     private async Task<JsonObject> ExecuteNebulaSetupToolAsync(JsonObject? arguments, CancellationToken cancellationToken)
     {
-        var handler = new NebulaSetupToolHandler(_hookInstallService);
+        var endpointUrl = string.IsNullOrWhiteSpace(_settings.McpEndpointUrl) ? null : _settings.McpEndpointUrl;
+        var handler = new NebulaSetupToolHandler(_hookInstallService, endpointUrl);
         return await handler.HandleAsync(arguments, cancellationToken);
     }
 

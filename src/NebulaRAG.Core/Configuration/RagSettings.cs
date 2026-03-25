@@ -15,6 +15,13 @@ public sealed class RagSettings
     public AutoMemorySettings AutoMemory { get; init; } = new();
 
     /// <summary>
+    /// Public MCP endpoint URL used by nebula_setup status/install to verify reachability.
+    /// Example: "http://192.168.1.135:8099/nebula/mcp"
+    /// Leave empty to skip the reachability check.
+    /// </summary>
+    public string McpEndpointUrl { get; init; } = string.Empty;
+
+    /// <summary>
     /// Validates all configuration settings.
     /// </summary>
     /// <exception cref="RagConfigurationException">Thrown if any settings are invalid.</exception>

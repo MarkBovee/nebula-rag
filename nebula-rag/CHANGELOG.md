@@ -4,6 +4,10 @@ All notable changes to the Nebula RAG Home Assistant add-on are documented in th
 
 The format is inspired by Keep a Changelog and follows semantic versioning.
 
+## [0.3.84] - 2026-03-25
+
+- Added `mcp_endpoint_url` config option. Set it to your Nebula URL (e.g. `http://192.168.1.135:8099/nebula/mcp`) so `nebula_setup status` can correctly verify reachability instead of checking `localhost:5001`.
+
 ## [0.3.83] - 2026-03-25
 
 - Fixed `recall` crash ("Failed to search memories with hybrid ranking") — now returns empty results gracefully when both semantic and lexical searches find no matches.

@@ -1,6 +1,6 @@
 {
   "name": "Nebula",
-  "version": "0.3.83",
+  "version": "0.3.84",
   "slug": "nebula_rag",
   "description": "RAG mcp server for Home Assistant",
   "url": "https://github.com/MarkBovee/NebulaRAG/tree/main/nebula-rag",
@@ -30,6 +30,7 @@
   "options": {
     "default_index_path": "/share",
     "path_base": "/nebula",
+    "mcp_endpoint_url": "",
     "database": {
       "host": "homeassistant.local",
       "port": 5432,
@@ -45,6 +46,7 @@
   "schema": {
     "default_index_path": "str?",
     "path_base": "str?",
+    "mcp_endpoint_url": "str?",
     "database": {
       "host": "str",
       "port": "int(1,65535)",
