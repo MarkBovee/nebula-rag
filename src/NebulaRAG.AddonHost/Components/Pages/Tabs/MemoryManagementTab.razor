@@ -224,6 +224,49 @@
         </div>
     </section>
 
+    @if (_reviewQueueCount > 0)
+    {
+        <div class="alert alert-warning mb-4">
+            <span class="font-bold">@_reviewQueueCount long-term @(_reviewQueueCount == 1 ? "memory" : "memories") due for review</span>
+            <button class="btn btn-sm btn-outline ml-4" @onclick="ToggleReviewQueue">
+                @(_showReviewQueue ? "Hide" : "Show") Queue
+            </button>
+        </div>
+    }
+
+    @if (_showReviewQueue && _reviewQueue.Count > 0)
+    {
+        <div class="card bg-base-200 mb-6">
+            <div class="card-body p-4">
+                <div class="flex justify-between items-center mb-3">
+                    <h3 class="font-semibold">Review Queue</h3>
+                    <button class="btn btn-xs btn-ghost" @onclick="MarkAllReviewedAsync">Mark all reviewed</button>
+                </div>
+                @foreach (var item in _reviewQueue)
+                {
+                    <div class="border border-base-300 rounded p-3 mb-2 text-sm">
+                        <div class="flex justify-between items-start gap-2">
+                            <p class="flex-1">@item.Content</p>
+                            <span class="badge @(item.ReviewStatus == "overdue" ? "badge-error" : "badge-warning") badge-sm shrink-0">
+                                @item.ReviewStatus
+                            </span>
+                        </div>
+                        <div class="text-xs text-base-content/50 mt-1">
+                            Created @item.CreatedAtUtc.ToString("yyyy-MM-dd") ·
+                            Last reviewed: @(item.LastReviewedAtUtc?.ToString("yyyy-MM-dd") ?? "never") ·
+                            Due: @item.ReviewDueAtUtc.ToString("yyyy-MM-dd")
+                        </div>
+                        <div class="flex gap-2 mt-2">
+                            <button class="btn btn-xs btn-ghost" @onclick="() => ConfirmReviewAsync(item.Id)">Confirm</button>
+                            <button class="btn btn-xs btn-ghost text-error" @onclick="() => DeleteMemoryAsync(item.Id)">Delete</button>
+                            <button class="btn btn-xs btn-outline" @onclick="() => DemoteToShortTermAsync(item.Id)">Demote to ST</button>
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+    }
+
     <section class="panel table-panel">
         <div class="panel-header">
             <div>
@@ -255,13 +298,22 @@
                                 <div class="cell-title mono">@(memory.ProjectId ?? "unscoped")</div>
                                 <div class="cell-subtitle mono">@memory.SessionId</div>
                             </td>
-                            <td><div class="cell-title">@memory.Type</div></td>
+                            <td>
+                                <div class="cell-title">@memory.Type</div>
+                                <span class="badge @(memory.Tier == MemoryTier.LongTerm ? "badge-primary" : "badge-ghost") badge-sm">
+                                    @(memory.Tier == MemoryTier.LongTerm ? "LT" : "ST")
+                                </span>
+                            </td>
                             <td class="truncate-cell"><div class="cell-title">@TrimText(memory.Content, 160)</div></td>
                             <td><div class="cell-title">@string.Join(", ", memory.Tags)</div></td>
                             <td>
                                 <div class="table-actions">
                                     <button class="button button-muted" @onclick="() => LoadMemoryIntoEditor(memory)">Edit</button>
                                     <button class="button button-danger" @onclick="() => OpenDeleteRowConfirm(memory.Id)">Delete</button>
+                                    @if (memory.Tier == MemoryTier.ShortTerm)
+                                    {
+                                        <button class="button button-muted" @onclick="() => PromoteToLongTermAsync(memory.Id)">Promote to LT</button>
+                                    }
                                 </div>
                             </td>
                         </tr>
@@ -287,6 +339,9 @@
 
     private readonly List<MemoryRecord> _memories = new();
     private readonly List<MemorySearchResult> _memorySearchResults = new();
+    private List<MemoryReviewResult> _reviewQueue = [];
+    private int _reviewQueueCount = 0;
+    private bool _showReviewQueue = false;
     private long _lastRefreshNonce = -1;
     private string? _lastSelectedProjectId;
     private bool _statusIsError;
@@ -363,6 +418,7 @@
             _memoryStats = await ManagementService.GetMemoryStatsAsync(projectId: projectId);
             _memories.Clear();
             _memories.AddRange(memories);
+            await LoadReviewQueueAsync();
             SetStatus($"Loaded {_memories.Count} memories.");
         }
         catch (Exception exception)
@@ -525,6 +581,51 @@
         {
             await OnDataChanged.InvokeAsync();
         }
+    }
+
+    private async Task LoadReviewQueueAsync()
+    {
+        var results = await RagStore.ListMemoriesDueForReviewAsync(
+            Settings.AutoMemory.LongTermReviewIntervalDays, limit: 50);
+        _reviewQueue = results.ToList();
+        _reviewQueueCount = _reviewQueue.Count;
+    }
+
+    private void ToggleReviewQueue() => _showReviewQueue = !_showReviewQueue;
+
+    private async Task ConfirmReviewAsync(long id)
+    {
+        await RagStore.UpdateMemoryAsync(id, null, null, null, null, stampReviewed: true);
+        await LoadReviewQueueAsync();
+        StateHasChanged();
+    }
+
+    private async Task MarkAllReviewedAsync()
+    {
+        foreach (var item in _reviewQueue)
+            await RagStore.UpdateMemoryAsync(item.Id, null, null, null, null, stampReviewed: true);
+        await LoadReviewQueueAsync();
+        StateHasChanged();
+    }
+
+    private async Task DeleteMemoryAsync(long id)
+    {
+        await RagStore.DeleteMemoryAsync(id);
+        await NotifyDataChangedAsync();
+    }
+
+    private async Task DemoteToShortTermAsync(long id)
+    {
+        await RagStore.UpdateMemoryAsync(id, null, null, null, null, stampReviewed: false, tier: MemoryTier.ShortTerm);
+        await LoadReviewQueueAsync();
+        StateHasChanged();
+    }
+
+    private async Task PromoteToLongTermAsync(long id)
+    {
+        await RagStore.UpdateMemoryAsync(id, null, null, null, null, stampReviewed: false, tier: MemoryTier.LongTerm);
+        await NotifyDataChangedAsync();
+        StateHasChanged();
     }
 
     private void SetStatus(string message, bool isError = false)
