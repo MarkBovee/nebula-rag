@@ -339,9 +339,15 @@ public sealed class HookInstallService
     {
         try
         {
-            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(2) };
-            var resp = await http.GetAsync(url, cancellationToken);
-            return (resp.IsSuccessStatusCode, null);
+            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(3) };
+            // MCP endpoints only accept POST; send a JSON-RPC ping to verify reachability.
+            var body = new StringContent(
+                "{\"jsonrpc\":\"2.0\",\"id\":\"health\",\"method\":\"ping\"}",
+                System.Text.Encoding.UTF8,
+                "application/json");
+            var resp = await http.PostAsync(url, body, cancellationToken);
+            // Any HTTP response (including 4xx) means the server is reachable.
+            return (true, null);
         }
         catch (Exception ex)
         {

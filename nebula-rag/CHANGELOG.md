@@ -4,6 +4,10 @@ All notable changes to the Nebula RAG Home Assistant add-on are documented in th
 
 The format is inspired by Keep a Changelog and follows semantic versioning.
 
+## [0.3.87] - 2026-03-25
+
+- Fixed `nebula_setup status` endpoint reachability check: now sends a JSON-RPC POST ping instead of a GET request, so MCP endpoints (`/nebula/mcp`) are correctly reported as reachable.
+
 ## [0.3.86] - 2026-03-25
 
 - Added `project_path` parameter to `nebula_setup install-hooks` and `uninstall-hooks`. Pass the absolute path to the project root so the balanced Claude Code hooks (SessionStart, PreToolUse, PostToolUseFailure, StopFailure) are written to the correct project-level `.claude/settings.json` instead of the server's working directory.
