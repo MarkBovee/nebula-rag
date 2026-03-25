@@ -4,6 +4,17 @@ All notable changes to the Nebula RAG Home Assistant add-on are documented in th
 
 The format is inspired by Keep a Changelog and follows semantic versioning.
 
+## [0.3.80] - 2026-03-25
+
+- Added `short_term` / `long_term` memory tiers. All existing memories default to `short_term`.
+- `memory store` and `memory update` now accept an optional `tier` parameter. Invalid values return an explicit error.
+- `memory recall` now accepts an optional `tier` filter; default returns both tiers.
+- Added `memory review` MCP action with sub-actions: `list`, `confirm`, `update`, `delete`.
+- Auto-pruning in `AutoMemorySyncService` now targets `tier = short_term` instead of `auto-memory` tag.
+- Added `ShortTermRetentionDays` (default 30) and `LongTermReviewIntervalDays` (default 90) config keys.
+- `RetentionDays` is now a deprecated alias for `ShortTermRetentionDays` — existing configs continue to work.
+- Dashboard memory tab: tier badges (ST/LT) on all rows, promote/demote buttons, and a review queue with overdue badge count, per-row confirm/edit/delete/demote, and bulk "mark all reviewed".
+
 ## [0.3.79] - 2026-03-25
 
 - Migrated project to WSL to resolve build artifact issues with Windows-side dotnet builds.
