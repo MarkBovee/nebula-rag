@@ -363,3 +363,6 @@ NUL
 **/mcp.json
 **/ragsettings.local.json
 
+.claude/settings.local.json
+.env
+.claude/settings.local.json

@@ -7,7 +7,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash .github/nebula/hooks/Invoke-NebulaAgentHook.sh --agent Claude --event SessionStart",
+            "command": "pwsh -NoLogo -NoProfile -File .github/nebula/hooks/Invoke-NebulaAgentHook.ps1 -Agent Claude -Event SessionStart",
             "timeout": 10,
             "statusMessage": "Loading Nebula hook context"
           }
@@ -20,7 +20,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash .github/nebula/hooks/Invoke-NebulaAgentHook.sh --agent Claude --event PreToolUse",
+            "command": "pwsh -NoLogo -NoProfile -File .github/nebula/hooks/Invoke-NebulaAgentHook.ps1 -Agent Claude -Event PreToolUse",
             "timeout": 10,
             "statusMessage": "Checking Nebula shell guardrails"
           }
@@ -33,7 +33,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash .github/nebula/hooks/Invoke-NebulaAgentHook.sh --agent Claude --event PostToolUseFailure",
+            "command": "pwsh -NoLogo -NoProfile -File .github/nebula/hooks/Invoke-NebulaAgentHook.ps1 -Agent Claude -Event PostToolUseFailure",
             "timeout": 10,
             "statusMessage": "Capturing Nebula failure details"
           }
@@ -46,7 +46,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash .github/nebula/hooks/Invoke-NebulaAgentHook.sh --agent Claude --event StopFailure",
+            "command": "pwsh -NoLogo -NoProfile -File .github/nebula/hooks/Invoke-NebulaAgentHook.ps1 -Agent Claude -Event StopFailure",
             "timeout": 10,
             "statusMessage": "Capturing Claude failure details"
           }
