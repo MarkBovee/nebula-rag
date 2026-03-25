@@ -4,6 +4,10 @@ All notable changes to the Nebula RAG Home Assistant add-on are documented in th
 
 The format is inspired by Keep a Changelog and follows semantic versioning.
 
+## [0.3.85] - 2026-03-25
+
+- `nebula_setup install-hooks` now installs the full balanced hook set for Claude Code: SessionStart (Nebula context recall on session start), PreToolUse (shell guardrails), PostToolUseFailure (failure capture), and StopFailure, written to the project-level `.claude/settings.json` in the current working directory — in addition to the user-level Stop hook (`memory sync`). `uninstall-hooks` removes both. Copilot install is unchanged (Stop hook only).
+
 ## [0.3.84] - 2026-03-25
 
 - Added `mcp_endpoint_url` config option. Set it to your Nebula URL (e.g. `http://192.168.1.135:8099/nebula/mcp`) so `nebula_setup status` can correctly verify reachability instead of checking `localhost:5001`.

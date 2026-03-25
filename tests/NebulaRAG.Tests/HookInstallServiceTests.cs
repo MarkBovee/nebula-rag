@@ -8,6 +8,7 @@ namespace NebulaRAG.Tests;
 public sealed class HookInstallServiceTests
 {
     private static readonly string NebulaHookCommand = "nebula-rag memory sync";
+    private static readonly string NebulaHookScript = "Invoke-NebulaAgentHook.sh";
 
     private static string WriteSettings(string json)
     {
@@ -16,74 +17,142 @@ public sealed class HookInstallServiceTests
         return path;
     }
 
-    [Fact]
-    public async Task InstallHooks_WritesHookEntry_IntoEmptySettings()
+    private static string EmptyTempFile()
     {
-        var path = WriteSettings("{}");
+        var path = Path.GetTempFileName();
+        File.WriteAllText(path, "{}");
+        return path;
+    }
+
+    [Fact]
+    public async Task InstallHooks_WritesStopHook_IntoEmptySettings()
+    {
+        var userPath = WriteSettings("{}");
+        var projectPath = EmptyTempFile();
         var svc = new HookInstallService();
-        var result = await svc.InstallHooksAsync("claude", dryRun: false, settingsPathOverride: path);
+        var result = await svc.InstallHooksAsync("claude", dryRun: false,
+            settingsPathOverride: userPath, projectSettingsPathOverride: projectPath);
 
         Assert.True(result.Success);
-        var content = await File.ReadAllTextAsync(path);
+        var content = await File.ReadAllTextAsync(userPath);
         Assert.Contains(NebulaHookCommand, content);
-        File.Delete(path);
+        File.Delete(userPath);
+        File.Delete(projectPath);
+    }
+
+    [Fact]
+    public async Task InstallHooks_WritesBalancedHooks_IntoProjectSettings()
+    {
+        var userPath = WriteSettings("{}");
+        var projectPath = EmptyTempFile();
+        var svc = new HookInstallService();
+        await svc.InstallHooksAsync("claude", dryRun: false,
+            settingsPathOverride: userPath, projectSettingsPathOverride: projectPath);
+
+        var content = await File.ReadAllTextAsync(projectPath);
+        Assert.Contains(NebulaHookScript, content);
+        Assert.Contains("SessionStart", content);
+        Assert.Contains("PreToolUse", content);
+        Assert.Contains("PostToolUseFailure", content);
+        Assert.Contains("StopFailure", content);
+        File.Delete(userPath);
+        File.Delete(projectPath);
     }
 
     [Fact]
     public async Task InstallHooks_IsIdempotent()
     {
-        var path = WriteSettings("{}");
+        var userPath = WriteSettings("{}");
+        var projectPath = EmptyTempFile();
         var svc = new HookInstallService();
-        await svc.InstallHooksAsync("claude", dryRun: false, settingsPathOverride: path);
-        await svc.InstallHooksAsync("claude", dryRun: false, settingsPathOverride: path);
+        await svc.InstallHooksAsync("claude", dryRun: false,
+            settingsPathOverride: userPath, projectSettingsPathOverride: projectPath);
+        await svc.InstallHooksAsync("claude", dryRun: false,
+            settingsPathOverride: userPath, projectSettingsPathOverride: projectPath);
 
-        var content = await File.ReadAllTextAsync(path);
-        var count = CountOccurrences(content, NebulaHookCommand);
-        Assert.Equal(1, count);
-        File.Delete(path);
+        var userContent = await File.ReadAllTextAsync(userPath);
+        Assert.Equal(1, CountOccurrences(userContent, NebulaHookCommand));
+
+        var projectContent = await File.ReadAllTextAsync(projectPath);
+        // Each balanced hook event key should appear exactly once as a JSON property
+        Assert.Equal(1, CountOccurrences(projectContent, "\"SessionStart\""));
+        Assert.Equal(1, CountOccurrences(projectContent, "\"PreToolUse\""));
+        Assert.Equal(1, CountOccurrences(projectContent, "\"PostToolUseFailure\""));
+        File.Delete(userPath);
+        File.Delete(projectPath);
     }
 
     [Fact]
     public async Task InstallHooks_DryRun_DoesNotWriteFile()
     {
-        var path = WriteSettings("{}");
-        var original = await File.ReadAllTextAsync(path);
+        var userPath = WriteSettings("{}");
+        var projectPath = EmptyTempFile();
+        var originalUser = await File.ReadAllTextAsync(userPath);
+        var originalProject = await File.ReadAllTextAsync(projectPath);
         var svc = new HookInstallService();
-        var result = await svc.InstallHooksAsync("claude", dryRun: true, settingsPathOverride: path);
+        var result = await svc.InstallHooksAsync("claude", dryRun: true,
+            settingsPathOverride: userPath, projectSettingsPathOverride: projectPath);
 
         Assert.True(result.Success);
         Assert.NotNull(result.Diff);
         Assert.Contains(NebulaHookCommand, result.Diff);
-        Assert.Equal(original, await File.ReadAllTextAsync(path));
-        File.Delete(path);
+        Assert.Equal(originalUser, await File.ReadAllTextAsync(userPath));
+        Assert.Equal(originalProject, await File.ReadAllTextAsync(projectPath));
+        File.Delete(userPath);
+        File.Delete(projectPath);
     }
 
     [Fact]
-    public async Task UninstallHooks_RemovesHookEntry()
+    public async Task UninstallHooks_RemovesStopAndBalancedHooks()
     {
-        var path = WriteSettings("{}");
+        var userPath = WriteSettings("{}");
+        var projectPath = EmptyTempFile();
         var svc = new HookInstallService();
-        await svc.InstallHooksAsync("claude", dryRun: false, settingsPathOverride: path);
-        var result = await svc.UninstallHooksAsync("claude", dryRun: false, settingsPathOverride: path);
+        await svc.InstallHooksAsync("claude", dryRun: false,
+            settingsPathOverride: userPath, projectSettingsPathOverride: projectPath);
+        var result = await svc.UninstallHooksAsync("claude", dryRun: false,
+            settingsPathOverride: userPath, projectSettingsPathOverride: projectPath);
 
         Assert.True(result.Success);
-        var content = await File.ReadAllTextAsync(path);
-        Assert.DoesNotContain(NebulaHookCommand, content);
-        File.Delete(path);
+        Assert.DoesNotContain(NebulaHookCommand, await File.ReadAllTextAsync(userPath));
+        Assert.DoesNotContain(NebulaHookScript, await File.ReadAllTextAsync(projectPath));
+        File.Delete(userPath);
+        File.Delete(projectPath);
     }
 
     [Fact]
     public async Task UninstallHooks_DryRun_DoesNotWriteFile()
     {
-        var path = WriteSettings("{}");
+        var userPath = WriteSettings("{}");
+        var projectPath = EmptyTempFile();
         var svc = new HookInstallService();
-        await svc.InstallHooksAsync("claude", dryRun: false, settingsPathOverride: path);
-        var beforeUninstall = await File.ReadAllTextAsync(path);
-        var result = await svc.UninstallHooksAsync("claude", dryRun: true, settingsPathOverride: path);
+        await svc.InstallHooksAsync("claude", dryRun: false,
+            settingsPathOverride: userPath, projectSettingsPathOverride: projectPath);
+        var beforeUser = await File.ReadAllTextAsync(userPath);
+        var beforeProject = await File.ReadAllTextAsync(projectPath);
+        var result = await svc.UninstallHooksAsync("claude", dryRun: true,
+            settingsPathOverride: userPath, projectSettingsPathOverride: projectPath);
 
         Assert.True(result.Success);
-        Assert.Equal(beforeUninstall, await File.ReadAllTextAsync(path));
-        File.Delete(path);
+        Assert.Equal(beforeUser, await File.ReadAllTextAsync(userPath));
+        Assert.Equal(beforeProject, await File.ReadAllTextAsync(projectPath));
+        File.Delete(userPath);
+        File.Delete(projectPath);
+    }
+
+    [Fact]
+    public async Task InstallHooks_Copilot_DoesNotWriteProjectHooks()
+    {
+        var userPath = WriteSettings("{}");
+        var svc = new HookInstallService();
+        var result = await svc.InstallHooksAsync("copilot", dryRun: false,
+            settingsPathOverride: userPath);
+
+        Assert.True(result.Success);
+        var content = await File.ReadAllTextAsync(userPath);
+        Assert.Contains(NebulaHookCommand, content);
+        Assert.DoesNotContain(NebulaHookScript, content);
+        File.Delete(userPath);
     }
 
     [Fact]
@@ -107,6 +176,13 @@ public sealed class HookInstallServiceTests
     {
         var path = HookInstallService.ResolveSettingsPath("unknown-client");
         Assert.Null(path);
+    }
+
+    [Fact]
+    public void ResolveProjectSettingsPath_ReturnsClaudeSettingsInCwd()
+    {
+        var path = HookInstallService.ResolveProjectSettingsPath();
+        Assert.EndsWith(Path.Combine(".claude", "settings.json"), path);
     }
 
     private static int CountOccurrences(string text, string pattern) =>
