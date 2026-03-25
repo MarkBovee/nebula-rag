@@ -32,6 +32,7 @@ bld/
 [Ll]og/
 [Dd]ist/
 [Tt]est-results/
+/MSBuildTemp*/
 
 # Openspec folder
 [Oo]penspec/

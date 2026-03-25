@@ -110,6 +110,20 @@ bash "$script_path"
 
 The Bash installer writes the same user-level MCP registrations, merges Bash-based Claude hook settings, and scaffolds both `.ps1` and `.sh` shared hook runners so the project bundle works across Windows and Unix environments.
 
+### WSL mounted-drive guard
+
+If you build .NET repos from WSL under `/mnt/*`, mounted Windows drives can leave `MSBuildTemp*` and other transient directories in the repo root. Install the WSL guard once per WSL user to block those builds and push you toward a Linux-side workspace instead:
+
+```bash
+bash ./scripts/install-wsl-dotnet-guard.sh --force
+```
+
+When you need to clean an already-polluted repo, NebulaRAG now includes a targeted cleanup command:
+
+```powershell
+dotnet run --project src\NebulaRAG.Cli -- cleanup-build-artifacts --source . --dry-run
+```
+
 ---
 
 ## Quick Start
@@ -120,6 +134,7 @@ The Bash installer writes the same user-level MCP registrations, merges Bash-bas
 dotnet run --project src\NebulaRAG.Cli -- init
 dotnet run --project src\NebulaRAG.Cli -- index --source .
 dotnet run --project src\NebulaRAG.Cli -- query --text "How is MCP transport handled?"
+dotnet run --project src\NebulaRAG.Cli -- cleanup-build-artifacts --source .
 ```
 
 ### MCP (stdio)

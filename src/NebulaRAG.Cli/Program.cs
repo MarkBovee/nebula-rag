@@ -57,6 +57,11 @@ internal static class ProgramMain
         });
         var logger = loggerFactory.CreateLogger("NebulaRAG.CLI");
 
+        if (command == "cleanup-build-artifacts")
+        {
+            return ExecuteCleanupBuildArtifacts(options);
+        }
+
         var dotEnvResult = DotEnvLoader.LoadStandardDotEnv();
         if (dotEnvResult.FoundFile)
         {
@@ -802,6 +807,7 @@ internal static class ProgramMain
         Console.WriteLine("Usage:");
         Console.WriteLine();
         Console.WriteLine("Core Commands:");
+        Console.WriteLine("  cleanup-build-artifacts [--source <directory>] [--dry-run]  Remove root WSL/MSBuild temp junk");
         Console.WriteLine("  init                                  Initialize database schema");
         Console.WriteLine("  index [--source <directory>]          Index documents from directory");
         Console.WriteLine("  preload [--source <directory>] [--dry-run]  Auto-detect and preload project data");
@@ -823,6 +829,47 @@ internal static class ProgramMain
         Console.WriteLine("  dotnet run -- index --source ./docs");
         Console.WriteLine("  dotnet run -- query --text 'How does indexing work?'");
         Console.WriteLine("  dotnet run -- stats");
+    }
+
+    /// <summary>
+    /// Removes root-level WSL/MSBuild artifact directories from a repository.
+    /// </summary>
+    /// <param name="options">Command-line options.</param>
+    /// <returns>Process exit code.</returns>
+    private static int ExecuteCleanupBuildArtifacts(Dictionary<string, string> options)
+    {
+        var sourcePath = options.TryGetValue("source", out var providedSourcePath) && !string.IsNullOrWhiteSpace(providedSourcePath)
+            ? providedSourcePath
+            : Directory.GetCurrentDirectory();
+        var repositoryRoot = Path.GetFullPath(sourcePath);
+        var dryRun = IsOptionEnabled(options, "dry-run");
+
+        var cleanupService = new BuildArtifactCleanupService();
+        var candidates = cleanupService.GetCleanupCandidates(repositoryRoot)
+            .OrderBy(candidate => candidate.DirectoryName, StringComparer.Ordinal)
+            .ToArray();
+
+        if (candidates.Length == 0)
+        {
+            Console.WriteLine($"No build artifact directories found under {repositoryRoot}.");
+            return 0;
+        }
+
+        Console.WriteLine($"✓ Found {candidates.Length} build artifact director{(candidates.Length == 1 ? "y" : "ies")} under {repositoryRoot}:");
+        foreach (var candidate in candidates)
+        {
+            Console.WriteLine($"  [{candidate.Kind}] {candidate.DirectoryName}");
+        }
+
+        if (dryRun)
+        {
+            Console.WriteLine("Dry run only. Nothing was deleted.");
+            return 0;
+        }
+
+        var removedCount = cleanupService.CleanupCandidates(repositoryRoot);
+        Console.WriteLine($"✓ Removed {removedCount} build artifact director{(removedCount == 1 ? "y" : "ies")}.");
+        return 0;
     }
 
     /// <summary>

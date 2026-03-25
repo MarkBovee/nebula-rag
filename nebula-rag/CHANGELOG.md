@@ -4,6 +4,20 @@ All notable changes to the Nebula RAG Home Assistant add-on are documented in th
 
 The format is inspired by Keep a Changelog and follows semantic versioning.
 
+## [0.3.79] - 2026-03-25
+
+- Migrated project to WSL to resolve build artifact issues with Windows-side dotnet builds.
+- Added `BuildArtifactCleanupService` to detect and remove stale MSBuild temp directories and WSL junk folders.
+- Added `cleanup-build-artifacts` CLI command for targeted artifact cleanup.
+- Added `scripts/install-wsl-dotnet-guard.sh` to block accidental `/mnt/*` builds and steer users to Linux-side workspace.
+- Updated `.gitignore` to ignore root-level `MSBuildTemp*` directories.
+
+## [0.3.78] - 2026-03-25
+
+- Added a targeted `cleanup-build-artifacts` CLI command that removes root-level `MSBuildTemp*` directories and empty six-character WSL junk folders without touching real project directories.
+- Added `scripts/install-wsl-dotnet-guard.sh`, which installs a user-local WSL `dotnet` guard that blocks mounted-drive builds under `/mnt/*` and steers users toward Linux-side workspaces.
+- Ignored root-level `MSBuildTemp*` directories in git and documented the new WSL guard plus cleanup workflow in the README.
+
 ## [0.3.71] - 2026-03-17
 
 - Refocused the dashboard around project-owned operations by adding project rename/delete flows with plan, memory, and indexed-document cascades.
