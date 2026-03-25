@@ -19,7 +19,8 @@ public class MemoryTierTests
     [InlineData("medium", false)]
     [InlineData("LONG_TERM", false)]
     [InlineData("", false)]
-    public void MemoryTier_IsValid_CorrectlyClassifies(string value, bool expected)
+    [InlineData(null, false)]
+    public void MemoryTier_IsValid_CorrectlyClassifies(string? value, bool expected)
     {
         Assert.Equal(expected, MemoryTier.IsValid(value));
     }
@@ -37,6 +38,15 @@ public class MemoryTierTests
         var settings = new AutoMemorySettings();
         Assert.Equal(30, settings.ShortTermRetentionDays);
         Assert.Equal(90, settings.LongTermReviewIntervalDays);
+    }
+
+    [Fact]
+    public void AutoMemorySettings_Validate_InvalidReviewInterval_AccumulatesError()
+    {
+        var settings = new AutoMemorySettings { LongTermReviewIntervalDays = 0 };
+        var errors = new List<string>();
+        settings.Validate(errors);
+        Assert.Single(errors);
     }
 
     [Fact]

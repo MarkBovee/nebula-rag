@@ -37,6 +37,11 @@ public sealed class RagSettings
         else
             Retrieval.Validate(errors);
 
+        if (AutoMemory == null)
+            errors.Add("AutoMemory settings are required.");
+        else
+            AutoMemory.Validate(errors);
+
         if (errors.Count > 0)
         {
             var message = string.Join("; ", errors);
