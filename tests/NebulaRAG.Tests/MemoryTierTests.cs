@@ -112,6 +112,23 @@ public class MemoryTierTests
         Assert.Equal(MemoryTier.ShortTerm, store.LastDeletedTier);
         Assert.False(store.DeleteByTagWasCalled);
     }
+
+    [Fact]
+    public async Task AutoMemorySyncService_PrunePhase_ZeroRetentionDays_DisablesPruning()
+    {
+        var store = new FakeAutoMemoryStore();
+        var settings = new RagSettings
+        {
+            AutoMemory = new AutoMemorySettings { ShortTermRetentionDays = 0 }
+        };
+        var svc = new AutoMemorySyncService(store, new FakeAutoMemoryIndexer(), settings,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<AutoMemorySyncService>.Instance);
+
+        await svc.SyncAsync();
+
+        Assert.False(store.DeleteByTierWasCalled);
+        Assert.False(store.DeleteByTagWasCalled);
+    }
 }
 
 internal sealed class FakeAutoMemoryStore : IAutoMemoryStore
