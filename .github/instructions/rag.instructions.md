@@ -12,6 +12,8 @@ Use memory and RAG together with explicit scope:
 - Use `rag_query` (`mode: "project"`) for current codebase facts and implementation details.
 - For non-trivial implementation/debug tasks, store at least one Nebula memory before finishing.
 - For multi-step tasks, store 2-5 concise Nebula memories covering decisions, fixes, and operational conventions.
+- Use `tier: "long_term"` for durable architectural decisions, recurring bug patterns, and project conventions. Use `tier: "short_term"` (default) for session-scoped notes.
+- Use `action: "review"` with `subAction: "list"` to preview auto-captured memories before promoting them.
 - Never store secret values in memory; store only references to secret locations (for example `.env`).
 
 If memory and RAG disagree, treat source code/RAG-backed source snippets as the implementation truth and call out the discrepancy.

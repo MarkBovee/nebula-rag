@@ -20,9 +20,18 @@ The setup script is responsible for:
 Use NebulaRAG as an MCP-first local stack for:
 
 1. RAG retrieval
-2. memory recall and persistence
-4. setup and diagnostics
-5. later, session continuity and workflow orchestration
+2. memory recall and persistence — with `short_term` and `long_term` tier support
+3. setup and diagnostics
+4. session continuity via auto-memory sync and review cycle
+
+## Memory Tier Model
+
+NebulaRAG memory supports two tiers:
+
+- `short_term` (default) — session-scoped notes, transient context, in-progress decisions.
+- `long_term` — durable architectural decisions, recurring bug patterns, project conventions, operational runbooks.
+
+Pass `tier` on `store`, `recall`, and `update` actions. Use `action: "review"` + `subAction: "list"` to inspect auto-captured memories before promoting them to long-term.
 
 ## Tool Routing
 
@@ -52,9 +61,11 @@ NebulaRAG should absorb the parts of context-mode that improve Nebula workflows,
 
 NebulaRAG is not currently trying to become a full general-purpose sandbox execution server.
 
-## Next Planned Capabilities
+## Shipped Capabilities
 
-1. unified workflow actions such as batch query and fetch-and-index
-2. a `doctor` command and diagnostic MCP action
-3. session snapshots keyed by `sessionId` and `projectId`
-4. lexical and exact-match fallback beneath semantic search
+1. Unified RAG + memory + admin MCP tools with project and session scoping
+2. `nebula_setup` — `install-hooks`, `uninstall-hooks`, `status` with endpoint health check
+3. Memory tiers: `short_term` / `long_term` with tier-scoped recall
+4. Auto-memory sync via `action: "sync"` and review cycle via `action: "review"`
+5. Lexical fallback search beneath semantic memory recall
+6. Hybrid ranking for memory recall (semantic + lexical)

@@ -247,7 +247,7 @@ function Invoke-SessionStartHook {
             $message += "Nebula MCP config not detected in .mcp.json. "
         }
 
-        $message += "For project-specific work, prefer Nebula memory recall for prior decisions and rag_query for current source context. If Nebula fails, capture the issue and fall back to direct source inspection."
+        $message += "For project-specific work, prefer Nebula memory recall for prior decisions and rag_query for current source context. Use tier='long_term' for durable decisions; tier='short_term' is the default for session notes. If Nebula fails, capture the issue and fall back to direct source inspection."
         Write-Output $message
     }
 }

@@ -92,7 +92,7 @@ Work like a professional developer: define expectations, plan, implement clean c
 Use both memory systems with clear scope boundaries:
 
 - VS Code memory tool: user-level assistant behavior and preferences (communication style, recurring personal preferences, cross-project habits).
-- NebulaRAG `memory` tool (actions: `recall`, `store`, `list`, `update`, `delete`): project/domain memory that should be queryable by MCP clients and retained in Nebula storage.
+- NebulaRAG `memory` tool (actions: `recall`, `store`, `list`, `update`, `delete`, `sync`, `review`): project/domain memory that should be queryable by MCP clients and retained in Nebula storage. Supports `tier: "short_term"` (default) and `tier: "long_term"` on store/recall/update.
 
 When a memory is both user-relevant and project-relevant, dual-write:
 
@@ -142,12 +142,13 @@ When querying memory:
 
 ### Preferred Memory tools
 
-- `memory` `action: "store"` to persist facts/observations with tags and category
-- `memory` `action: "recall"` for semantic lookup across memories
+- `memory` `action: "store"` to persist facts/observations with tags and category; use `tier: "long_term"` for durable decisions, `tier: "short_term"` (default) for session-scoped notes
+- `memory` `action: "recall"` for semantic lookup across memories; pass `tier` to scope results
 - `memory` `action: "list"` to list recent or tag-filtered memories
 - `memory` `action: "delete"` to remove a specific memory entry
-- `memory` `action: "update"` to update an existing memory
+- `memory` `action: "update"` to update an existing memory (supports `tier` change)
 - `memory` `action: "sync"` — run full three-phase maintenance pass at session end (auto-memory bridge + stale prune + dirty reindex)
+- `memory` `action: "review"` — inspect pending auto-memories; use `subAction: "list"` to preview, `subAction: "confirm"` to promote, `subAction: "update"` or `subAction: "delete"` to curate
 
 ### Preferred Setup tools
 
@@ -213,7 +214,7 @@ Preferred tags: `architecture`, `preference`, `bug`, `convention`, `decision`, `
 
 ### Session Start
 
-1. Run Nebula memory recall (`memory` with `action: "recall"`) for recent project context, decisions, and bug history.
+1. Run Nebula memory recall (`memory` with `action: "recall"`) for recent project context, decisions, and bug history. Use `tier: "long_term"` to prioritize durable decisions.
 2. Run Nebula memory listing (`memory` with `action: "list"`) when available to quickly spot recent/duplicate entries.
 3. Run VS Code memory recall for user preferences and communication expectations.
 4. Run `rag_admin` with `action: "health"` to verify index availability.
@@ -281,6 +282,7 @@ For agent memory support, use a dedicated `memories` table in PostgreSQL with at
 
 - `session_id`
 - `type` (`episodic` | `semantic` | `procedural`)
+- `tier` (`short_term` | `long_term`)
 - `content`
 - `embedding`
 - `created_at`
