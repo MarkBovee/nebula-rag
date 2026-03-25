@@ -83,6 +83,8 @@ builder.Services.AddSingleton<IEmbeddingGenerator>(embeddingGenerator);
 builder.Services.AddSingleton(indexer);
 var autoMemorySyncService = new AutoMemorySyncService(store, indexer, settings, loggerFactory.CreateLogger<AutoMemorySyncService>());
 builder.Services.AddSingleton(autoMemorySyncService);
+var hookInstallService = new HookInstallService(loggerFactory.CreateLogger<HookInstallService>());
+builder.Services.AddSingleton(hookInstallService);
 builder.Services.AddSingleton<DashboardSnapshotService>();
 builder.Services.AddSingleton<RagOperationsService>();
 builder.Services.AddSingleton<MemoryScopeResolver>();

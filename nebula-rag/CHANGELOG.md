@@ -4,6 +4,10 @@ All notable changes to the Nebula RAG Home Assistant add-on are documented in th
 
 The format is inspired by Keep a Changelog and follows semantic versioning.
 
+## [0.3.82] - 2026-03-25
+
+- Fixed missing `HookInstallService` DI registration causing startup crash on MCP requests.
+
 ## [0.3.81] - 2026-03-25
 
 - Fixed missing `AutoMemorySyncService` DI registration that caused startup crash on first MCP request.
