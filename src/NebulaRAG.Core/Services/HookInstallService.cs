@@ -172,10 +172,13 @@ public sealed class HookInstallService
     /// <summary>
     /// Returns status for all supported clients (always checks both claude and copilot).
     /// </summary>
-    /// <param name="nebulaEndpoint">Optional health check URL override.</param>
+    /// <param name="localHealthUrl">Health check URL, typically built via <c>RagSettings.BuildLocalHealthUrl()</c>.</param>
+    /// <param name="projectSettingsPathOverride">Override project-level settings file path (used in tests).</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     public async Task<IReadOnlyList<HookStatusResult>> GetStatusAsync(
-        string? nebulaEndpoint = null, CancellationToken cancellationToken = default)
+        string? localHealthUrl = null,
+        string? projectSettingsPathOverride = null,
+        CancellationToken cancellationToken = default)
     {
         var clients = new[] { "claude", "copilot" };
         var results = new List<HookStatusResult>();
@@ -193,8 +196,20 @@ public sealed class HookInstallService
                 hookInstalled = root is not null && IsStopHookPresent(root);
             }
 
+            // For Claude: also check project-level balanced hooks
+            if (!hookInstalled && client.Equals("claude", StringComparison.OrdinalIgnoreCase))
+            {
+                var projectPath = projectSettingsPathOverride ?? ResolveProjectSettingsPath();
+                if (File.Exists(projectPath))
+                {
+                    var projectJson = await File.ReadAllTextAsync(projectPath, cancellationToken);
+                    var projectRoot = JsonNode.Parse(projectJson)?.AsObject();
+                    hookInstalled = projectRoot is not null && IsAnyBalancedHookPresent(projectRoot);
+                }
+            }
+
             (bool reachable, string? warning) = await CheckEndpointAsync(
-                ResolveHealthUrl(nebulaEndpoint), cancellationToken);
+                localHealthUrl ?? "http://localhost:8099/api/health", cancellationToken);
 
             results.Add(new HookStatusResult(client, exists, hookInstalled, reachable, warning));
         }
@@ -213,6 +228,28 @@ public sealed class HookInstallService
         return stopArr.Any(entry =>
             entry?["hooks"]?.AsArray()
                    ?.Any(h => h?["command"]?.GetValue<string>()?.Contains(HookMarker) == true) == true);
+    }
+
+    /// <summary>
+    /// Returns true if any balanced project hook (SessionStart, PreToolUse, etc.) installed by Nebula is present.
+    /// Used by status checks to detect manually-authored or previously-installed balanced hooks.
+    /// </summary>
+    private static bool IsAnyBalancedHookPresent(JsonObject root)
+    {
+        var hooksNode = root["hooks"]?.AsObject();
+        if (hooksNode is null) return false;
+
+        foreach (var (eventName, _, _, _) in BalancedHooks)
+        {
+            var arr = hooksNode[eventName]?.AsArray();
+            if (arr is null) continue;
+            if (arr.Any(entry =>
+                    entry?["hooks"]?.AsArray()
+                        ?.Any(h => h?["command"]?.GetValue<string>()?.Contains(BalancedHookScript) == true) == true))
+                return true;
+        }
+
+        return false;
     }
 
     private static void InjectStopHook(JsonObject root)
@@ -332,25 +369,6 @@ public sealed class HookInstallService
         var tmp = path + ".nebula.tmp";
         await File.WriteAllTextAsync(tmp, content);
         File.Move(tmp, path, overwrite: true);
-    }
-
-    /// <summary>
-    /// Derives the health check URL from the configured MCP endpoint URL.
-    /// Strips a trailing <c>/mcp</c> segment and appends <c>/api/health</c>.
-    /// Falls back to <c>http://localhost:5001/api/health</c> when no URL is configured.
-    /// Example: <c>http://192.168.1.135:8099/nebula/mcp</c> → <c>http://192.168.1.135:8099/nebula/api/health</c>
-    /// </summary>
-    internal static string ResolveHealthUrl(string? mcpEndpointUrl)
-    {
-        if (string.IsNullOrWhiteSpace(mcpEndpointUrl))
-            return "http://localhost:5001/api/health";
-
-        var trimmed = mcpEndpointUrl.TrimEnd('/');
-        var baseUrl = trimmed.EndsWith("/mcp", StringComparison.OrdinalIgnoreCase)
-            ? trimmed[..^4]
-            : trimmed;
-
-        return baseUrl.TrimEnd('/') + "/api/health";
     }
 
     private static async Task<(bool reachable, string? warning)> CheckEndpointAsync(

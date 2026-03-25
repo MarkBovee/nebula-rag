@@ -8,17 +8,17 @@ namespace NebulaRAG.Core.Services;
 public sealed class NebulaSetupToolHandler
 {
     private readonly HookInstallService _hookInstallService;
-    private readonly string? _mcpEndpointUrl;
+    private readonly string? _localHealthUrl;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="NebulaSetupToolHandler"/> class.
     /// </summary>
     /// <param name="hookInstallService">Hook install service for performing setup operations.</param>
-    /// <param name="mcpEndpointUrl">Optional public MCP endpoint URL for reachability checks.</param>
-    public NebulaSetupToolHandler(HookInstallService hookInstallService, string? mcpEndpointUrl = null)
+    /// <param name="localHealthUrl">Local health check URL, built via <c>RagSettings.BuildLocalHealthUrl()</c>.</param>
+    public NebulaSetupToolHandler(HookInstallService hookInstallService, string? localHealthUrl = null)
     {
         _hookInstallService = hookInstallService;
-        _mcpEndpointUrl = mcpEndpointUrl;
+        _localHealthUrl = localHealthUrl;
     }
 
     /// <summary>Dispatches the nebula_setup action to the appropriate handler.</summary>
@@ -37,7 +37,7 @@ public sealed class NebulaSetupToolHandler
         {
             "install-hooks" => await HandleInstallAsync(arguments!, GetDryRun(arguments), cancellationToken),
             "uninstall-hooks" => await HandleUninstallAsync(arguments!, GetDryRun(arguments), cancellationToken),
-            "status" => await HandleStatusAsync(cancellationToken),
+            "status" => await HandleStatusAsync(arguments, cancellationToken),
             _ => BuildError("Unsupported action. Use: install-hooks, uninstall-hooks, status.")
         };
     }
@@ -58,9 +58,10 @@ public sealed class NebulaSetupToolHandler
         return BuildResult(result.Success, result.Message, result.Diff);
     }
 
-    private async Task<JsonObject> HandleStatusAsync(CancellationToken ct)
+    private async Task<JsonObject> HandleStatusAsync(JsonObject? args, CancellationToken ct)
     {
-        var statuses = await _hookInstallService.GetStatusAsync(_mcpEndpointUrl, cancellationToken: ct);
+        var projectPath = GetProjectPath(args);
+        var statuses = await _hookInstallService.GetStatusAsync(_localHealthUrl, projectSettingsPathOverride: projectPath, cancellationToken: ct);
         var arr = new JsonArray(statuses.Select(s => (JsonNode)new JsonObject
         {
             ["client"] = s.Client,
