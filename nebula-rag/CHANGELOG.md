@@ -4,6 +4,10 @@ All notable changes to the Nebula RAG Home Assistant add-on are documented in th
 
 The format is inspired by Keep a Changelog and follows semantic versioning.
 
+## [0.3.88] - 2026-03-25
+
+- Fixed `nebula_setup status` endpoint reachability check: derives the health URL from `mcp_endpoint_url` by stripping `/mcp` and appending `/api/health` (e.g. `http://192.168.1.135:8099/nebula/mcp` → `http://192.168.1.135:8099/nebula/api/health`). Uses a plain GET instead of a POST ping.
+
 ## [0.3.87] - 2026-03-25
 
 - Fixed `nebula_setup status` endpoint reachability check: now sends a JSON-RPC POST ping instead of a GET request, so MCP endpoints (`/nebula/mcp`) are correctly reported as reachable.

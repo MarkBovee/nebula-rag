@@ -185,6 +185,18 @@ public sealed class HookInstallServiceTests
         Assert.EndsWith(Path.Combine(".claude", "settings.json"), path);
     }
 
+    [Theory]
+    [InlineData("http://192.168.1.135:8099/nebula/mcp", "http://192.168.1.135:8099/nebula/api/health")]
+    [InlineData("http://192.168.1.135:8099/nebula/mcp/", "http://192.168.1.135:8099/nebula/api/health")]
+    [InlineData("http://192.168.1.135:8099/nebula", "http://192.168.1.135:8099/nebula/api/health")]
+    [InlineData("http://localhost:8099/mcp", "http://localhost:8099/api/health")]
+    [InlineData(null, "http://localhost:5001/api/health")]
+    [InlineData("", "http://localhost:5001/api/health")]
+    public void ResolveHealthUrl_DerivesCorrectHealthEndpoint(string? mcpUrl, string expected)
+    {
+        Assert.Equal(expected, HookInstallService.ResolveHealthUrl(mcpUrl));
+    }
+
     private static int CountOccurrences(string text, string pattern) =>
         (text.Length - text.Replace(pattern, "").Length) / pattern.Length;
 }

@@ -194,7 +194,7 @@ public sealed class HookInstallService
             }
 
             (bool reachable, string? warning) = await CheckEndpointAsync(
-                nebulaEndpoint ?? "http://localhost:5001/health", cancellationToken);
+                ResolveHealthUrl(nebulaEndpoint), cancellationToken);
 
             results.Add(new HookStatusResult(client, exists, hookInstalled, reachable, warning));
         }
@@ -334,20 +334,33 @@ public sealed class HookInstallService
         File.Move(tmp, path, overwrite: true);
     }
 
+    /// <summary>
+    /// Derives the health check URL from the configured MCP endpoint URL.
+    /// Strips a trailing <c>/mcp</c> segment and appends <c>/api/health</c>.
+    /// Falls back to <c>http://localhost:5001/api/health</c> when no URL is configured.
+    /// Example: <c>http://192.168.1.135:8099/nebula/mcp</c> → <c>http://192.168.1.135:8099/nebula/api/health</c>
+    /// </summary>
+    internal static string ResolveHealthUrl(string? mcpEndpointUrl)
+    {
+        if (string.IsNullOrWhiteSpace(mcpEndpointUrl))
+            return "http://localhost:5001/api/health";
+
+        var trimmed = mcpEndpointUrl.TrimEnd('/');
+        var baseUrl = trimmed.EndsWith("/mcp", StringComparison.OrdinalIgnoreCase)
+            ? trimmed[..^4]
+            : trimmed;
+
+        return baseUrl.TrimEnd('/') + "/api/health";
+    }
+
     private static async Task<(bool reachable, string? warning)> CheckEndpointAsync(
         string url, CancellationToken cancellationToken)
     {
         try
         {
             using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(3) };
-            // MCP endpoints only accept POST; send a JSON-RPC ping to verify reachability.
-            var body = new StringContent(
-                "{\"jsonrpc\":\"2.0\",\"id\":\"health\",\"method\":\"ping\"}",
-                System.Text.Encoding.UTF8,
-                "application/json");
-            var resp = await http.PostAsync(url, body, cancellationToken);
-            // Any HTTP response (including 4xx) means the server is reachable.
-            return (true, null);
+            var resp = await http.GetAsync(url, cancellationToken);
+            return (resp.IsSuccessStatusCode, null);
         }
         catch (Exception ex)
         {
