@@ -94,4 +94,66 @@ public class MemoryTierTests
         var methods = typeof(IAutoMemoryStore).GetMethods();
         Assert.Contains(methods, m => m.Name == "ListMemoriesDueForReviewAsync");
     }
+
+    [Fact]
+    public async Task AutoMemorySyncService_PrunePhase_UsesShortTermRetentionDays()
+    {
+        var store = new FakeAutoMemoryStore();
+        var settings = new RagSettings
+        {
+            AutoMemory = new AutoMemorySettings { ShortTermRetentionDays = 7 }
+        };
+        var svc = new AutoMemorySyncService(store, new FakeAutoMemoryIndexer(), settings,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<AutoMemorySyncService>.Instance);
+
+        await svc.SyncAsync();
+
+        Assert.True(store.DeleteByTierWasCalled);
+        Assert.Equal(MemoryTier.ShortTerm, store.LastDeletedTier);
+        Assert.False(store.DeleteByTagWasCalled);
+    }
+}
+
+internal sealed class FakeAutoMemoryStore : IAutoMemoryStore
+{
+    public bool DeleteByTierWasCalled { get; private set; }
+    public bool DeleteByTagWasCalled { get; private set; }
+    public string? LastDeletedTier { get; private set; }
+
+    public Task<int> DeleteMemoriesByTierOlderThanAsync(string tier, DateTimeOffset cutoff, CancellationToken ct = default)
+    {
+        DeleteByTierWasCalled = true;
+        LastDeletedTier = tier;
+        return Task.FromResult(0);
+    }
+
+    public Task<int> DeleteMemoriesByTagOlderThanAsync(string tagPrefix, DateTimeOffset cutoff, CancellationToken ct = default)
+    {
+        DeleteByTagWasCalled = true;
+        return Task.FromResult(0);
+    }
+
+    public Task<SyncStateEntry?> GetSyncStateAsync(string filePath, CancellationToken cancellationToken = default)
+        => Task.FromResult<SyncStateEntry?>(null);
+
+    public Task UpsertSyncStateAsync(string filePath, string hash, CancellationToken cancellationToken = default)
+        => Task.CompletedTask;
+
+    public Task<IReadOnlyList<SyncStateEntry>> ListStaleSyncEntriesAsync(DateTimeOffset cutoff, CancellationToken cancellationToken = default)
+        => Task.FromResult<IReadOnlyList<SyncStateEntry>>(Array.Empty<SyncStateEntry>());
+
+    public Task<IReadOnlyList<MemoryReviewResult>> ListMemoriesDueForReviewAsync(int reviewIntervalDays, int limit = 50, CancellationToken cancellationToken = default)
+        => Task.FromResult<IReadOnlyList<MemoryReviewResult>>(Array.Empty<MemoryReviewResult>());
+
+    public Task<IReadOnlyList<SourceInfo>> ListSourcesAsync(int limit = 100, CancellationToken cancellationToken = default)
+        => Task.FromResult<IReadOnlyList<SourceInfo>>(Array.Empty<SourceInfo>());
+}
+
+internal sealed class FakeAutoMemoryIndexer : IAutoMemoryIndexer
+{
+    public Task IngestFileAsync(string filePath, string projectSlug, CancellationToken cancellationToken = default)
+        => Task.CompletedTask;
+
+    public Task ReindexSourceAsync(string sourcePath, CancellationToken cancellationToken = default)
+        => Task.CompletedTask;
 }

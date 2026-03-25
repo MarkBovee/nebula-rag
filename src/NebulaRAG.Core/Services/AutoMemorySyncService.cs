@@ -91,9 +91,15 @@ public sealed class AutoMemorySyncService
 
     private async Task<int> PruneStaleMemoriesAsync(CancellationToken ct)
     {
-        if (_settings.AutoMemory.ResolvedShortTermRetentionDays == 0) return 0;
-        var cutoff = DateTimeOffset.UtcNow.AddDays(-_settings.AutoMemory.ResolvedShortTermRetentionDays);
-        return await _store.DeleteMemoriesByTagOlderThanAsync("auto-memory", cutoff, ct);
+        var retentionDays = _settings.AutoMemory.ResolvedShortTermRetentionDays;
+        if (retentionDays == 0) return 0;
+        if (retentionDays < 0)
+        {
+            _logger.LogWarning("AutoMemory.ShortTermRetentionDays is negative ({Days}); pruning disabled.", retentionDays);
+            return 0;
+        }
+        var cutoff = DateTimeOffset.UtcNow.AddDays(-retentionDays);
+        return await _store.DeleteMemoriesByTierOlderThanAsync(MemoryTier.ShortTerm, cutoff, ct);
     }
 
     private async Task<int> ReindexDirtySourcesAsync(List<string> errors, CancellationToken ct)

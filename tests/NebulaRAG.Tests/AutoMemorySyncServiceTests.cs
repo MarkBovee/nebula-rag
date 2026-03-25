@@ -92,7 +92,7 @@ public sealed class AutoMemorySyncServiceTests
         var result = await svc.SyncAsync(CancellationToken.None);
 
         Assert.Equal(0, result.MemoriesPruned);
-        await store.DidNotReceive().DeleteMemoriesByTagOlderThanAsync(Arg.Any<string>(), Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>());
+        await store.DidNotReceive().DeleteMemoriesByTierOlderThanAsync(Arg.Any<string>(), Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>());
         dir.Delete(true);
     }
 
@@ -101,7 +101,7 @@ public sealed class AutoMemorySyncServiceTests
     {
         var dir = Directory.CreateTempSubdirectory("nebula-test-");
         var store = Substitute.For<IAutoMemoryStore>();
-        store.DeleteMemoriesByTagOlderThanAsync("auto-memory", Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>())
+        store.DeleteMemoriesByTierOlderThanAsync(MemoryTier.ShortTerm, Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>())
              .Returns(3);
 
         var indexer = Substitute.For<IAutoMemoryIndexer>();
