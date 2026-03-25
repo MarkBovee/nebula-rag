@@ -254,10 +254,23 @@
                         <div class="text-xs text-base-content/50 mt-1">
                             Created @item.CreatedAtUtc.ToString("yyyy-MM-dd") ·
                             Last reviewed: @(item.LastReviewedAtUtc?.ToString("yyyy-MM-dd") ?? "never") ·
-                            Due: @item.ReviewDueAtUtc.ToString("yyyy-MM-dd")
+                            Due: @item.ReviewDueAtUtc.ToString("yyyy-MM-dd") ·
+                            Days overdue: @((int)(DateTimeOffset.UtcNow - item.ReviewDueAtUtc).TotalDays)
                         </div>
+                        @if (_editingReviewId == item.Id)
+                        {
+                            <div class="mt-2 flex gap-2">
+                                <input class="input input-bordered input-sm flex-1" @bind="_editingContent" placeholder="Updated content..." />
+                                <button class="btn btn-xs btn-primary" @onclick="() => SaveEditReviewAsync(item.Id)">Save &amp; Confirm</button>
+                                <button class="btn btn-xs btn-ghost" @onclick="CancelEditReview">Cancel</button>
+                            </div>
+                        }
                         <div class="flex gap-2 mt-2">
                             <button class="btn btn-xs btn-ghost" @onclick="() => ConfirmReviewAsync(item.Id)">Confirm</button>
+                            @if (_editingReviewId != item.Id)
+                            {
+                                <button class="btn btn-xs btn-ghost" @onclick="() => BeginEditReview(item.Id)">Edit</button>
+                            }
                             <button class="btn btn-xs btn-ghost text-error" @onclick="() => DeleteMemoryAsync(item.Id)">Delete</button>
                             <button class="btn btn-xs btn-outline" @onclick="() => DemoteToShortTermAsync(item.Id)">Demote to ST</button>
                         </div>
@@ -342,6 +355,8 @@
     private List<MemoryReviewResult> _reviewQueue = [];
     private int _reviewQueueCount = 0;
     private bool _showReviewQueue = false;
+    private long? _editingReviewId = null;
+    private string _editingContent = "";
     private long _lastRefreshNonce = -1;
     private string? _lastSelectedProjectId;
     private bool _statusIsError;
@@ -592,6 +607,29 @@
     }
 
     private void ToggleReviewQueue() => _showReviewQueue = !_showReviewQueue;
+
+    private void BeginEditReview(long id)
+    {
+        _editingReviewId = id;
+        var item = _reviewQueue.FirstOrDefault(x => x.Id == id);
+        _editingContent = item?.Content ?? "";
+    }
+
+    private void CancelEditReview()
+    {
+        _editingReviewId = null;
+        _editingContent = "";
+    }
+
+    private async Task SaveEditReviewAsync(long id)
+    {
+        if (string.IsNullOrWhiteSpace(_editingContent)) return;
+        await RagStore.UpdateMemoryAsync(id, null, _editingContent.Trim(), null, null, stampReviewed: true);
+        _editingReviewId = null;
+        _editingContent = "";
+        await LoadReviewQueueAsync();
+        StateHasChanged();
+    }
 
     private async Task ConfirmReviewAsync(long id)
     {
