@@ -247,15 +247,17 @@ public sealed partial class McpTransportHandler
             MemoryToolName => BuildObjectSchema(
                 new JsonObject
                 {
-                    ["action"] = BuildEnumStringSchema("Memory action.", "store", "recall", "list", "update", "delete", "sync"),
-                    ["memoryId"] = BuildIntegerSchema("Memory identifier for update/delete actions.", minimum: 1),
+                    ["action"] = BuildEnumStringSchema("Memory action.", "store", "recall", "list", "update", "delete", "sync", "review"),
+                    ["subAction"] = BuildEnumStringSchema("Sub-action for review. Use: list, confirm, update, delete.", "list", "confirm", "update", "delete"),
+                    ["memoryId"] = BuildIntegerSchema("Memory identifier for update/delete/review actions.", minimum: 1),
                     ["sessionId"] = BuildStringSchema("Optional session-id for grouping and filtering."),
                     ["projectId"] = BuildStringSchema("Optional project-id for scoping."),
                     ["type"] = BuildEnumStringSchema("Memory type for store/recall/list/update filters.", "episodic", "semantic", "procedural"),
                     ["content"] = BuildStringSchema("Memory content for store/update actions."),
                     ["text"] = BuildStringSchema("Probe text for recall action."),
                     ["tag"] = BuildStringSchema("Optional memory tag filter for recall/list actions."),
-                    ["limit"] = BuildIntegerSchema("Optional max items for recall/list actions.", minimum: 1, maximum: 100),
+                    ["limit"] = BuildIntegerSchema("Optional max items for recall/list/review actions.", minimum: 1, maximum: 100),
+                    ["tier"] = BuildEnumStringSchema("Memory tier for store/update/recall. Defaults to short_term.", "short_term", "long_term"),
                     ["tags"] = new JsonObject
                     {
                         ["type"] = "array",

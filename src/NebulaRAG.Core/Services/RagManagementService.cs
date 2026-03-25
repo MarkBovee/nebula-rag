@@ -453,8 +453,9 @@ public sealed class RagManagementService
         {
             if (lexicalResults.Count == 0)
             {
-                _logger.LogError(semanticException, "Hybrid memory recall failed because semantic search failed and lexical fallback returned no matches");
-                throw new RagDatabaseException("Failed to search memories with hybrid ranking", semanticException);
+                // Semantic failed and lexical returned no matches — this is a valid empty result, not an error.
+                _logger.LogWarning(semanticException, "Hybrid memory recall: semantic search failed and lexical fallback returned no matches; returning empty results.");
+                return new MemorySearchOutcome([], LexicalFallbackUsed: true, SemanticSearchFailed: true, Warning: "Semantic search failed and no lexical matches found.");
             }
 
             warning = "Semantic memory search failed; returning lexical fallback results.";

@@ -4,6 +4,11 @@ All notable changes to the Nebula RAG Home Assistant add-on are documented in th
 
 The format is inspired by Keep a Changelog and follows semantic versioning.
 
+## [0.3.83] - 2026-03-25
+
+- Fixed `recall` crash ("Failed to search memories with hybrid ranking") — now returns empty results gracefully when both semantic and lexical searches find no matches.
+- Added `tier` and `subAction`/`review` to the memory MCP tool schema so agents can use the full tier + review API.
+
 ## [0.3.82] - 2026-03-25
 
 - Fixed missing `HookInstallService` DI registration causing startup crash on MCP requests.
