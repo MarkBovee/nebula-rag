@@ -960,7 +960,7 @@ public sealed partial class McpTransportHandler
 
     private async Task<JsonObject> ExecuteMemoryReviewListAsync(JsonObject? arguments, CancellationToken ct)
     {
-        var limit = arguments?["limit"]?.GetValue<int?>() ?? 20;
+        var limit = Math.Clamp(arguments?["limit"]?.GetValue<int?>() ?? 20, 1, 100);
         var results = await _store.ListMemoriesDueForReviewAsync(_settings.AutoMemory.LongTermReviewIntervalDays, limit, ct);
         var items = new JsonArray();
         foreach (var m in results)
@@ -984,6 +984,7 @@ public sealed partial class McpTransportHandler
     {
         var memoryId = arguments?["memoryId"]?.GetValue<long?>();
         if (memoryId is null) return BuildToolResult("memoryId is required.", isError: true);
+        if (memoryId <= 0) return BuildToolResult("memoryId must be a positive integer.", isError: true);
         var updated = await _store.UpdateMemoryAsync(memoryId.Value, type: null, content: null,
             tags: null, embedding: null, stampReviewed: true, cancellationToken: ct);
         return BuildToolResult(updated ? "Memory review confirmed." : "Memory not found.",
@@ -994,7 +995,10 @@ public sealed partial class McpTransportHandler
     {
         var memoryId = arguments?["memoryId"]?.GetValue<long?>();
         if (memoryId is null) return BuildToolResult("memoryId is required.", isError: true);
+        if (memoryId <= 0) return BuildToolResult("memoryId must be a positive integer.", isError: true);
         var content = arguments?["content"]?.GetValue<string?>();
+        if (string.IsNullOrWhiteSpace(content))
+            return BuildToolResult("content is required for review update.", isError: true);
         IReadOnlyList<float>? embedding = content is not null ? _embeddingGenerator.GenerateEmbedding(content, _settings.Ingestion.VectorDimensions) : null;
         var updated = await _store.UpdateMemoryAsync(memoryId.Value, type: null, content: content,
             tags: null, embedding: embedding, stampReviewed: true, cancellationToken: ct);
@@ -1006,6 +1010,7 @@ public sealed partial class McpTransportHandler
     {
         var memoryId = arguments?["memoryId"]?.GetValue<long?>();
         if (memoryId is null) return BuildToolResult("memoryId is required.", isError: true);
+        if (memoryId <= 0) return BuildToolResult("memoryId must be a positive integer.", isError: true);
         var deleted = await _store.DeleteMemoryAsync(memoryId.Value, ct);
         return BuildToolResult(deleted ? "Memory deleted." : "Memory not found.",
             new JsonObject { ["deleted"] = deleted });
