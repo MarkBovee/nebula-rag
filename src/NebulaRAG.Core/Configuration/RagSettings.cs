@@ -176,7 +176,7 @@ public sealed class AutoMemorySettings
 
     /// <summary>
     /// Age cutoff in days for short-term auto-pruning. 0 = disable pruning.
-    /// Negative values are clamped to 0 with a startup warning. Default: 30
+    /// Invalid values (negative) cause a startup validation error. Default: 30
     /// </summary>
     public int ShortTermRetentionDays { get; init; } = 30;
 
@@ -190,7 +190,7 @@ public sealed class AutoMemorySettings
     [Obsolete("Use ShortTermRetentionDays")]
     public int? RetentionDays
     {
-        get => null;
+        get => _shortTermRetentionDaysOverride;
         init => _shortTermRetentionDaysOverride = value;
     }
 

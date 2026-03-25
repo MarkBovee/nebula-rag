@@ -50,6 +50,28 @@ public class MemoryTierTests
     }
 
     [Fact]
+    public void AutoMemorySettings_Validate_NegativeShortTermRetention_AccumulatesError()
+    {
+        var settings = new AutoMemorySettings { ShortTermRetentionDays = -1 };
+        var errors = new List<string>();
+        settings.Validate(errors);
+        Assert.Single(errors);
+    }
+
+    [Fact]
+    public void AutoMemorySettings_Validate_BothFieldsInvalid_AccumulatesTwoErrors()
+    {
+        var settings = new AutoMemorySettings
+        {
+            ShortTermRetentionDays = -1,
+            LongTermReviewIntervalDays = 0
+        };
+        var errors = new List<string>();
+        settings.Validate(errors);
+        Assert.Equal(2, errors.Count);
+    }
+
+    [Fact]
     public void MemoryRecord_HasTierAndReviewFields()
     {
         var record = new MemoryRecord(1, "s1", null, "episodic", "content",
