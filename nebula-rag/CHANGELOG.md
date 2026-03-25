@@ -4,6 +4,10 @@ All notable changes to the Nebula RAG Home Assistant add-on are documented in th
 
 The format is inspired by Keep a Changelog and follows semantic versioning.
 
+## [0.3.86] - 2026-03-25
+
+- Added `project_path` parameter to `nebula_setup install-hooks` and `uninstall-hooks`. Pass the absolute path to the project root so the balanced Claude Code hooks (SessionStart, PreToolUse, PostToolUseFailure, StopFailure) are written to the correct project-level `.claude/settings.json` instead of the server's working directory.
+
 ## [0.3.85] - 2026-03-25
 
 - `nebula_setup install-hooks` now installs the full balanced hook set for Claude Code: SessionStart (Nebula context recall on session start), PreToolUse (shell guardrails), PostToolUseFailure (failure capture), and StopFailure, written to the project-level `.claude/settings.json` in the current working directory — in addition to the user-level Stop hook (`memory sync`). `uninstall-hooks` removes both. Copilot install is unchanged (Stop hook only).

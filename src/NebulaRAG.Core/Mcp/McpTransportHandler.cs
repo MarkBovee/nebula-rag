@@ -178,7 +178,7 @@ public sealed partial class McpTransportHandler
             BuildToolDefinition(RagAdminToolName, "Unified RAG administrative operations."),
             BuildToolDefinition(MemoryToolName, "Unified memory operations."),
             BuildToolDefinition(SystemToolName, "Unified system metadata operations."),
-            BuildToolDefinition(NebulaSetupToolName, "Install, uninstall, or check the status of the Nebula Stop hook in AI client settings files (Claude Code, GitHub Copilot).")
+            BuildToolDefinition(NebulaSetupToolName, "Install, uninstall, or check the status of the Nebula hooks in AI client settings files (Claude Code, GitHub Copilot). For Claude Code, install-hooks writes both the user-level Stop hook and the project-level balanced hooks (SessionStart, PreToolUse, PostToolUseFailure, StopFailure). Pass project_path to target the correct project directory.")
         ];
     }
 
@@ -277,7 +277,8 @@ public sealed partial class McpTransportHandler
                 {
                     ["action"] = BuildEnumStringSchema("Setup action.", "install-hooks", "uninstall-hooks", "status"),
                     ["client"] = BuildEnumStringSchema("Target client.", "claude", "copilot"),
-                    ["dry_run"] = BuildBooleanSchema("If true, returns diff without writing.")
+                    ["dry_run"] = BuildBooleanSchema("If true, returns diff without writing."),
+                    ["project_path"] = BuildStringSchema("Absolute path to the project root. For Claude Code, pass the current project directory so the balanced hooks are written to the correct .claude/settings.json. Omit to use the server working directory.")
                 },
                 "action"),
             QueryProjectRagToolName => BuildObjectSchema(

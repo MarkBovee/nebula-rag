@@ -45,14 +45,16 @@ public sealed class NebulaSetupToolHandler
     private async Task<JsonObject> HandleInstallAsync(JsonObject args, bool dryRun, CancellationToken ct)
     {
         var client = args["client"]?.GetValue<string>() ?? "claude";
-        var result = await _hookInstallService.InstallHooksAsync(client, dryRun);
+        var projectPath = GetProjectPath(args);
+        var result = await _hookInstallService.InstallHooksAsync(client, dryRun, projectSettingsPathOverride: projectPath);
         return BuildResult(result.Success, result.Message, result.Diff);
     }
 
     private async Task<JsonObject> HandleUninstallAsync(JsonObject args, bool dryRun, CancellationToken ct)
     {
         var client = args["client"]?.GetValue<string>() ?? "claude";
-        var result = await _hookInstallService.UninstallHooksAsync(client, dryRun);
+        var projectPath = GetProjectPath(args);
+        var result = await _hookInstallService.UninstallHooksAsync(client, dryRun, projectSettingsPathOverride: projectPath);
         return BuildResult(result.Success, result.Message, result.Diff);
     }
 
@@ -75,6 +77,19 @@ public sealed class NebulaSetupToolHandler
 
     private static bool GetDryRun(JsonObject? args) =>
         args?["dry_run"]?.GetValue<bool>() ?? false;
+
+    /// <summary>
+    /// Resolves the project-level settings path override from args.
+    /// If <c>project_path</c> is provided and non-empty, returns
+    /// <c>{project_path}/.claude/settings.json</c>; otherwise returns null
+    /// so HookInstallService falls back to its own cwd resolution.
+    /// </summary>
+    private static string? GetProjectPath(JsonObject? args)
+    {
+        var raw = args?["project_path"]?.GetValue<string>();
+        if (string.IsNullOrWhiteSpace(raw)) return null;
+        return Path.Combine(raw.Trim(), ".claude", "settings.json");
+    }
 
     private static JsonObject BuildResult(bool success, string message, string? diff) =>
         new()
