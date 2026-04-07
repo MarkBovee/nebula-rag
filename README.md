@@ -370,6 +370,8 @@ Both commands use the shared intake skill at `.github/skills/intake-questioning/
 
 Nebula automatically bridges Claude Code auto-memory files into the RAG index, prunes stale memories, and reindexes dirty sources.
 
+It can also push the current repository knowledge base into Nebula with `sync-repo-knowledge`, which indexes the working tree as a `repo-knowledge` project source. That gives Nebula a shared project corpus for repo docs, instructions, and code-aware context.
+
 ### How It Works
 
 Call `memory(action: "sync")` to run a three-phase maintenance pass:
@@ -377,6 +379,16 @@ Call `memory(action: "sync")` to run a three-phase maintenance pass:
 1. **Auto-Memory Bridge** — Globs `~/.claude/projects/*/memory/*.md`, hashes each file, and ingests new or changed files into the RAG index under `auto-memory:<project-slug>` source tags. Unchanged files are skipped.
 2. **Stale Memory Pruning** — Removes auto-memory entries older than `AutoMemory.RetentionDays` (default: 30 days). Set to `0` to disable.
 3. **Dirty Source Reindex** — Compares SHA-256 hashes for all tracked RAG sources. Reindexes only sources whose content has changed since last index.
+
+### Syncing Repository Knowledge
+
+Use the CLI command below to push the current repository knowledge base into Nebula:
+
+```powershell
+dotnet run --project src\NebulaRAG.Cli -- sync-repo-knowledge --source . --project-id repo-knowledge
+```
+
+The default Stop hook now runs this command so repo documentation and code remain queryable as shared project knowledge.
 
 ### Installing the Stop Hook
 

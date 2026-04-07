@@ -13,7 +13,7 @@ namespace NebulaRAG.Core.Services;
 /// </summary>
 public sealed class HookInstallService
 {
-    private const string StopHookCommand = "nebula-rag memory sync";
+    private const string StopHookCommand = "nebula-rag sync-repo-knowledge --source . --project-id repo-knowledge";
     private const string HookMarker = "nebula-rag";
     private const string BalancedHookScript = "bash .github/nebula/hooks/Invoke-NebulaAgentHook.sh";
 

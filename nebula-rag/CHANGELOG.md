@@ -4,6 +4,11 @@ All notable changes to the Nebula RAG Home Assistant add-on are documented in th
 
 The format is inspired by Keep a Changelog and follows semantic versioning.
 
+## [0.3.89] - 2026-04-07
+
+- Added `sync-repo-knowledge` to the CLI so the current repository can be indexed into Nebula as shared `repo-knowledge` source data.
+- Updated the Nebula Stop hook to call `sync-repo-knowledge --source . --project-id repo-knowledge`, which keeps repo docs and code synchronized automatically at session end.
+
 ## [0.3.88] - 2026-03-25
 
 - Fixed `nebula_setup status` endpoint reachability check: derives the health URL from `mcp_endpoint_url` by stripping `/mcp` and appending `/api/health` (e.g. `http://192.168.1.135:8099/nebula/mcp` → `http://192.168.1.135:8099/nebula/api/health`). Uses a plain GET instead of a POST ping.

@@ -13,7 +13,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-function Ensure-Directory {
+function New-Directory {
     param([string]$Path)
 
     if (-not (Test-Path -LiteralPath $Path)) {
@@ -66,7 +66,7 @@ function Get-HookHome {
     }
 
     $hookHome = Join-Path $homeDirectory ".nebula-rag/hooks"
-    Ensure-Directory -Path $hookHome
+    New-Directory -Path $hookHome
     return $hookHome
 }
 

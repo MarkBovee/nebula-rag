@@ -109,6 +109,25 @@ internal static class ProgramMain
                         return 0;
                     }
 
+                case "sync-repo-knowledge":
+                    {
+                        var source = options.TryGetValue("source", out var sourceDirectory)
+                            ? sourceDirectory
+                            : Directory.GetCurrentDirectory();
+                        var projectId = options.TryGetValue("project-id", out var projectIdValue) && !string.IsNullOrWhiteSpace(projectIdValue)
+                            ? projectIdValue.Trim()
+                            : "repo-knowledge";
+                        var indexerLogger = loggerFactory.CreateLogger<RagIndexer>();
+                        var indexer = new RagIndexer(store, chunker, embeddingGenerator, settings, indexerLogger);
+                        var summary = await indexer.IndexDirectoryAsync(source, projectId);
+                        await TrySyncRagSourcesManifestAsync(sourcesManifestService, source, logger);
+
+                        Console.WriteLine(
+                            $"✓ Repo knowledge sync complete: {summary.DocumentsIndexed} documents indexed, " +
+                            $"{summary.ChunksIndexed} chunks, {summary.DocumentsSkipped} skipped.");
+                        return 0;
+                    }
+
                 case "preload":
                     {
                         var indexerLogger = loggerFactory.CreateLogger<RagIndexer>();
@@ -810,6 +829,7 @@ internal static class ProgramMain
         Console.WriteLine("  cleanup-build-artifacts [--source <directory>] [--dry-run]  Remove root WSL/MSBuild temp junk");
         Console.WriteLine("  init                                  Initialize database schema");
         Console.WriteLine("  index [--source <directory>]          Index documents from directory");
+        Console.WriteLine("  sync-repo-knowledge [--source <directory>] [--project-id <id>]  Sync repo docs/code into Nebula");
         Console.WriteLine("  preload [--source <directory>] [--dry-run]  Auto-detect and preload project data");
         Console.WriteLine("  query --text <query> [--limit <n>]    Execute semantic search");
         Console.WriteLine();
@@ -827,6 +847,7 @@ internal static class ProgramMain
         Console.WriteLine();
         Console.WriteLine("Example:");
         Console.WriteLine("  dotnet run -- index --source ./docs");
+        Console.WriteLine("  dotnet run -- sync-repo-knowledge --source .");
         Console.WriteLine("  dotnet run -- query --text 'How does indexing work?'");
         Console.WriteLine("  dotnet run -- stats");
     }

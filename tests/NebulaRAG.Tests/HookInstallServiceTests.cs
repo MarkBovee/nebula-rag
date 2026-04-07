@@ -7,7 +7,7 @@ namespace NebulaRAG.Tests;
 /// </summary>
 public sealed class HookInstallServiceTests
 {
-    private static readonly string NebulaHookCommand = "nebula-rag memory sync";
+    private static readonly string NebulaHookCommand = "nebula-rag sync-repo-knowledge --source . --project-id repo-knowledge";
     private static readonly string NebulaHookScript = "Invoke-NebulaAgentHook.sh";
 
     private static string WriteSettings(string json)
