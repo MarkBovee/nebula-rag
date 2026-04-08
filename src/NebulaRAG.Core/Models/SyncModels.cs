@@ -5,12 +5,14 @@ namespace NebulaRAG.Core.Models;
 /// </summary>
 /// <param name="FilesIngested">Number of auto-memory files ingested or re-ingested in this sync run.</param>
 /// <param name="MemoriesPruned">Number of stale auto-memory entries removed during pruning.</param>
+/// <param name="SourcesPruned">Number of stale RAG sources deleted because the source file no longer exists.</param>
 /// <param name="SourcesReindexed">Number of RAG sources reindexed due to content hash change.</param>
 /// <param name="Errors">Non-fatal error messages accumulated during sync phases.</param>
 /// <param name="DurationMs">Total elapsed time of the sync operation in milliseconds.</param>
 public sealed record SyncSummary(
     int FilesIngested,
     int MemoriesPruned,
+    int SourcesPruned,
     int SourcesReindexed,
     IReadOnlyList<string> Errors,
     long DurationMs);

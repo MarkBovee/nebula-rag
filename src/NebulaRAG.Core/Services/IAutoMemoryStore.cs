@@ -38,4 +38,10 @@ public interface IAutoMemoryStore
     /// <param name="limit">Maximum number of sources to return.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     Task<IReadOnlyList<SourceInfo>> ListSourcesAsync(int limit = 100, CancellationToken cancellationToken = default);
+
+    /// <summary>Deletes a stored RAG source row by its exact source path.</summary>
+    /// <param name="sourcePath">Exact source path to delete.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Number of deleted source rows.</returns>
+    Task<int> DeleteSourceAsync(string sourcePath, CancellationToken cancellationToken = default);
 }

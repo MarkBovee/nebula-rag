@@ -34,7 +34,7 @@ public sealed class AutoMemorySyncService
     {
         var sw = Stopwatch.StartNew();
         var errors = new List<string>();
-        int filesIngested = 0, memoriesPruned = 0, sourcesReindexed = 0;
+        int filesIngested = 0, memoriesPruned = 0, sourcesPruned = 0, sourcesReindexed = 0;
 
         // Phase 1: Auto-Memory Bridge
         try { filesIngested = await BridgeAutoMemoryAsync(errors, cancellationToken); }
@@ -45,11 +45,16 @@ public sealed class AutoMemorySyncService
         catch (Exception ex) { errors.Add($"Phase2 fatal: {ex.Message}"); }
 
         // Phase 3: Dirty RAG Source Reindex
-        try { sourcesReindexed = await ReindexDirtySourcesAsync(errors, cancellationToken); }
+        try
+        {
+            var reindexResult = await ReindexDirtySourcesAsync(cancellationToken);
+            sourcesPruned = reindexResult.SourcesPruned;
+            sourcesReindexed = reindexResult.SourcesReindexed;
+        }
         catch (Exception ex) { errors.Add($"Phase3 fatal: {ex.Message}"); }
 
         sw.Stop();
-        return new SyncSummary(filesIngested, memoriesPruned, sourcesReindexed, errors, sw.ElapsedMilliseconds);
+        return new SyncSummary(filesIngested, memoriesPruned, sourcesPruned, sourcesReindexed, errors, sw.ElapsedMilliseconds);
     }
 
     private async Task<int> BridgeAutoMemoryAsync(List<string> errors, CancellationToken ct)
@@ -102,10 +107,11 @@ public sealed class AutoMemorySyncService
         return await _store.DeleteMemoriesByTierOlderThanAsync(MemoryTier.ShortTerm, cutoff, ct);
     }
 
-    private async Task<int> ReindexDirtySourcesAsync(List<string> errors, CancellationToken ct)
+    private async Task<SourceReindexResult> ReindexDirtySourcesAsync(CancellationToken ct)
     {
         var sources = await _store.ListSourcesAsync(1000, ct);
         int reindexed = 0;
+        int pruned = 0;
         foreach (var source in sources)
         {
             if (source.SourcePath.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
@@ -114,8 +120,12 @@ public sealed class AutoMemorySyncService
 
             if (!File.Exists(source.SourcePath))
             {
-                errors.Add($"Source file missing (not deleted): {source.SourcePath}");
-                _logger.LogWarning("RAG source file missing on disk: {Path}", source.SourcePath);
+                var deleted = await _store.DeleteSourceAsync(source.SourcePath, ct);
+                if (deleted > 0)
+                {
+                    pruned += deleted;
+                }
+                _logger.LogWarning("Pruned missing RAG source from store: {Path} (deleted {DeletedCount} row(s))", source.SourcePath, deleted);
                 continue;
             }
 
@@ -126,7 +136,7 @@ public sealed class AutoMemorySyncService
             await _indexer.ReindexSourceAsync(source.SourcePath, ct);
             reindexed++;
         }
-        return reindexed;
+        return new SourceReindexResult(pruned, reindexed);
     }
 
     /// <summary>Computes a SHA-256 hex hash of the given string content.</summary>
@@ -145,4 +155,11 @@ public sealed class AutoMemorySyncService
         }
         return path;
     }
+
+    /// <summary>
+    /// Summary of the stale-source pruning and source reindex phase.
+    /// </summary>
+    /// <param name="SourcesPruned">Number of missing source rows removed from storage.</param>
+    /// <param name="SourcesReindexed">Number of changed sources reindexed.</param>
+    private sealed record SourceReindexResult(int SourcesPruned, int SourcesReindexed);
 }

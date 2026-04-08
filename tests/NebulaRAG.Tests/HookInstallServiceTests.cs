@@ -1,3 +1,4 @@
+using NebulaRAG.Core.Configuration;
 using NebulaRAG.Core.Services;
 
 namespace NebulaRAG.Tests;
@@ -185,16 +186,26 @@ public sealed class HookInstallServiceTests
         Assert.EndsWith(Path.Combine(".claude", "settings.json"), path);
     }
 
-    [Theory]
-    [InlineData("http://192.168.1.135:8099/nebula/mcp", "http://192.168.1.135:8099/nebula/api/health")]
-    [InlineData("http://192.168.1.135:8099/nebula/mcp/", "http://192.168.1.135:8099/nebula/api/health")]
-    [InlineData("http://192.168.1.135:8099/nebula", "http://192.168.1.135:8099/nebula/api/health")]
-    [InlineData("http://localhost:8099/mcp", "http://localhost:8099/api/health")]
-    [InlineData(null, "http://localhost:5001/api/health")]
-    [InlineData("", "http://localhost:5001/api/health")]
-    public void ResolveHealthUrl_DerivesCorrectHealthEndpoint(string? mcpUrl, string expected)
+    [Fact]
+    public void BuildLocalHealthUrl_UsesConfiguredPortAndPathBase()
     {
-        Assert.Equal(expected, HookInstallService.ResolveHealthUrl(mcpUrl));
+        var originalUrls = Environment.GetEnvironmentVariable("ASPNETCORE_URLS");
+        var originalPathBase = Environment.GetEnvironmentVariable("NEBULARAG_PathBase");
+
+        try
+        {
+            Environment.SetEnvironmentVariable("ASPNETCORE_URLS", "http://0.0.0.0:8099");
+            Environment.SetEnvironmentVariable("NEBULARAG_PathBase", "/nebula");
+
+            var settings = new RagSettings { PathBase = "/nebula" };
+
+            Assert.Equal("http://localhost:8099/nebula/api/health", settings.BuildLocalHealthUrl());
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("ASPNETCORE_URLS", originalUrls);
+            Environment.SetEnvironmentVariable("NEBULARAG_PathBase", originalPathBase);
+        }
     }
 
     private static int CountOccurrences(string text, string pattern) =>

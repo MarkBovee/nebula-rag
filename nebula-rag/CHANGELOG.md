@@ -4,6 +4,11 @@ All notable changes to the Nebula RAG Home Assistant add-on are documented in th
 
 The format is inspired by Keep a Changelog and follows semantic versioning.
 
+## [0.3.90] - 2026-04-08
+
+- `rag_ingest path` now rejects unsupported Windows absolute paths with a clear validation error and surfaces directory ingests that index nothing instead of appearing successful.
+- `memory sync` now prunes missing RAG source rows instead of logging them as non-fatal missing-file warnings.
+
 ## [0.3.89] - 2026-04-07
 
 - Added `sync-repo-knowledge` to the CLI so the current repository can be indexed into Nebula as shared `repo-knowledge` source data.

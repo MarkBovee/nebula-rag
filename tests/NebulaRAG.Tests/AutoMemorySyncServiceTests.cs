@@ -9,7 +9,7 @@ namespace NebulaRAG.Tests;
 public sealed class AutoMemorySyncServiceTests
 {
     private static RagSettings MakeSettings(string baseDir, int retentionDays = 30) =>
-        new() { AutoMemory = new AutoMemorySettings { BaseDirectory = baseDir, RetentionDays = retentionDays } };
+        new() { AutoMemory = new AutoMemorySettings { BaseDirectory = baseDir, ShortTermRetentionDays = retentionDays } };
 
     [Fact]
     public async Task Sync_NewFile_IsIngested()
@@ -142,15 +142,18 @@ public sealed class AutoMemorySyncServiceTests
         var store = Substitute.For<IAutoMemoryStore>();
         store.ListSourcesAsync(Arg.Any<int>(), Arg.Any<CancellationToken>())
              .Returns(new List<SourceInfo> { new SourceInfo("/nonexistent/path.md", null, 1, DateTime.UtcNow, "abc123") });
+        store.DeleteSourceAsync("/nonexistent/path.md", Arg.Any<CancellationToken>())
+             .Returns(1);
 
         var indexer = Substitute.For<IAutoMemoryIndexer>();
         var svc = new AutoMemorySyncService(store, indexer, MakeSettings(dir.FullName), NullLogger<AutoMemorySyncService>.Instance);
 
         var result = await svc.SyncAsync(CancellationToken.None);
 
+        Assert.Equal(1, result.SourcesPruned);
         Assert.Equal(0, result.SourcesReindexed);
-        Assert.Single(result.Errors);
-        Assert.Contains("missing", result.Errors[0], StringComparison.OrdinalIgnoreCase);
+        Assert.Empty(result.Errors);
+        await store.Received(1).DeleteSourceAsync("/nonexistent/path.md", Arg.Any<CancellationToken>());
         await indexer.DidNotReceive().ReindexSourceAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
         dir.Delete(true);
     }

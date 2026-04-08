@@ -62,6 +62,26 @@ public static class SourcePathNormalizer
     }
 
     /// <summary>
+    /// Returns true when a path uses Windows drive-letter or UNC absolute path syntax.
+    /// </summary>
+    /// <param name="sourcePath">Path candidate to inspect.</param>
+    /// <returns>True when the path is a Windows absolute path; otherwise false.</returns>
+    public static bool IsWindowsAbsolutePath(string sourcePath)
+    {
+        if (string.IsNullOrWhiteSpace(sourcePath))
+        {
+            return false;
+        }
+
+        var trimmed = sourcePath.Trim();
+        return (trimmed.Length >= 3
+                    && char.IsLetter(trimmed[0])
+                    && trimmed[1] == ':'
+                    && (trimmed[2] == '\\' || trimmed[2] == '/'))
+               || trimmed.StartsWith(@"\\", StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// Applies an explicit project-name prefix to a normalized storage key.
     /// </summary>
     /// <param name="normalizedSourcePath">Already-normalized source path key.</param>

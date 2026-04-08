@@ -8,14 +8,15 @@ public sealed class SyncModelsTests
     [Fact]
     public void SyncSummary_RoundTrips_ThroughJson()
     {
-        var summary = new SyncSummary(3, 1, 2, ["err1", "err2"], 420L);
+        var summary = new SyncSummary(3, 1, 2, 4, ["err1", "err2"], 420L);
         var json = JsonSerializer.Serialize(summary);
         var deserialized = JsonSerializer.Deserialize<SyncSummary>(json);
 
         Assert.NotNull(deserialized);
         Assert.Equal(3, deserialized.FilesIngested);
         Assert.Equal(1, deserialized.MemoriesPruned);
-        Assert.Equal(2, deserialized.SourcesReindexed);
+        Assert.Equal(2, deserialized.SourcesPruned);
+        Assert.Equal(4, deserialized.SourcesReindexed);
         Assert.Equal(420L, deserialized.DurationMs);
         Assert.Equal(new[] { "err1", "err2" }, deserialized.Errors);
     }
@@ -23,13 +24,14 @@ public sealed class SyncModelsTests
     [Fact]
     public void SyncSummary_EmptyErrors_RoundTrips()
     {
-        var summary = new SyncSummary(0, 0, 0, [], 0L);
+        var summary = new SyncSummary(0, 0, 0, 0, [], 0L);
         var json = JsonSerializer.Serialize(summary);
         var deserialized = JsonSerializer.Deserialize<SyncSummary>(json);
 
         Assert.NotNull(deserialized);
         Assert.Equal(0, deserialized.FilesIngested);
         Assert.Equal(0, deserialized.MemoriesPruned);
+        Assert.Equal(0, deserialized.SourcesPruned);
         Assert.Equal(0, deserialized.SourcesReindexed);
         Assert.Equal(0L, deserialized.DurationMs);
         Assert.Empty(deserialized.Errors);
@@ -38,7 +40,7 @@ public sealed class SyncModelsTests
     [Fact]
     public void SyncSummary_LargeDurationMs_RoundTrips()
     {
-        var summary = new SyncSummary(0, 0, 0, [], long.MaxValue);
+        var summary = new SyncSummary(0, 0, 0, 0, [], long.MaxValue);
         var json = JsonSerializer.Serialize(summary);
         var deserialized = JsonSerializer.Deserialize<SyncSummary>(json);
 

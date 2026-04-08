@@ -44,7 +44,7 @@ public sealed class McpTransportHandlerContractTests
         Assert.Equal("2.0", response["jsonrpc"]?.GetValue<string>());
         Assert.Equal("2025-11-25", response["result"]?["protocolVersion"]?.GetValue<string>());
         Assert.Equal("Nebula RAG", response["result"]?["serverInfo"]?["name"]?.GetValue<string>());
-        Assert.Equal("0.3.83", response["result"]?["serverInfo"]?["version"]?.GetValue<string>());
+        Assert.Equal("0.3.90", response["result"]?["serverInfo"]?["version"]?.GetValue<string>());
         Assert.False(response["result"]?["capabilities"]?["tools"]?["listChanged"]?.GetValue<bool>());
     }
 

@@ -48,7 +48,9 @@ public class MemoryTierTests
     [Fact]
     public void AutoMemorySettings_RetentionDaysAlias_MapsToShortTerm()
     {
+#pragma warning disable CS0618
         var settings = new AutoMemorySettings { RetentionDays = 14 };
+#pragma warning restore CS0618
         Assert.Equal(14, settings.ResolvedShortTermRetentionDays);
     }
 
@@ -183,6 +185,9 @@ internal sealed class FakeAutoMemoryStore : IAutoMemoryStore
 
     public Task<IReadOnlyList<SourceInfo>> ListSourcesAsync(int limit = 100, CancellationToken cancellationToken = default)
         => Task.FromResult<IReadOnlyList<SourceInfo>>(Array.Empty<SourceInfo>());
+
+    public Task<int> DeleteSourceAsync(string sourcePath, CancellationToken cancellationToken = default)
+        => Task.FromResult(0);
 }
 
 internal sealed class FakeAutoMemoryIndexer : IAutoMemoryIndexer

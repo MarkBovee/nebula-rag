@@ -411,7 +411,15 @@ public sealed partial class McpTransportHandler
             return BuildToolResult("Missing required argument: sourcePath", isError: true);
         }
 
-        var resolvedPath = Path.GetFullPath(sourcePath);
+        if (!TryResolveIngestPath(sourcePath, out var resolvedPath, out var resolutionError))
+        {
+            return BuildToolResult(resolutionError ?? "Unable to resolve sourcePath.", new JsonObject
+            {
+                ["sourcePath"] = sourcePath,
+                ["resolvedPath"] = resolvedPath
+            }, isError: true);
+        }
+
         var isFilePath = File.Exists(resolvedPath);
         var isDirectoryPath = Directory.Exists(resolvedPath);
         if (!isFilePath && !isDirectoryPath)
@@ -433,6 +441,21 @@ public sealed partial class McpTransportHandler
         var summary = isFilePath
             ? await _indexer.IndexFileAsync(resolvedPath, projectId, cancellationToken)
             : await _indexer.IndexDirectoryAsync(resolvedPath, projectId, cancellationToken);
+
+        if (ShouldRejectNoOpDirectoryIngest(isDirectoryPath, summary))
+        {
+            return BuildToolResult("No indexable files were found under the supplied directory.", new JsonObject
+            {
+                ["sourcePath"] = sourcePath,
+                ["resolvedPath"] = resolvedPath,
+                ["pathType"] = "directory",
+                ["documentsIndexed"] = summary.DocumentsIndexed,
+                ["documentsSkipped"] = summary.DocumentsSkipped,
+                ["chunksIndexed"] = summary.ChunksIndexed,
+                ["projectId"] = string.IsNullOrWhiteSpace(projectId) ? null : projectId
+            }, isError: true);
+        }
+
         var manifestSyncResult = await TrySyncRagSourcesManifestAsync(resolvedPath, cancellationToken);
         return BuildToolResult("Index complete.", new JsonObject
         {
@@ -532,13 +555,22 @@ public sealed partial class McpTransportHandler
             return BuildToolResult("sourcePath is required.", isError: true);
         }
 
-        if (!File.Exists(sourcePath))
+        if (!TryResolveIngestPath(sourcePath, out var resolvedPath, out var resolutionError))
+        {
+            return BuildToolResult(resolutionError ?? "Unable to resolve sourcePath.", new JsonObject
+            {
+                ["sourcePath"] = sourcePath,
+                ["resolvedPath"] = resolvedPath
+            }, isError: true);
+        }
+
+        if (!File.Exists(resolvedPath))
         {
             return BuildToolResult("sourcePath must point to a readable file for reindex.", isError: true);
         }
 
-        var content = await File.ReadAllTextAsync(sourcePath, cancellationToken);
-        var reindexArgs = new JsonObject { ["sourcePath"] = sourcePath, ["content"] = content, ["projectId"] = projectId };
+        var content = await File.ReadAllTextAsync(resolvedPath, cancellationToken);
+        var reindexArgs = new JsonObject { ["sourcePath"] = resolvedPath, ["content"] = content, ["projectId"] = projectId };
         return await ExecuteIndexTextToolAsync(reindexArgs, cancellationToken);
     }
 
@@ -612,6 +644,56 @@ public sealed partial class McpTransportHandler
         }
 
         return long.TryParse(stringValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out value);
+    }
+
+    /// <summary>
+    /// Resolves an ingest source path to a local filesystem path and rejects unsupported Windows paths on non-Windows hosts.
+    /// </summary>
+    /// <param name="sourcePath">Path provided by the caller.</param>
+    /// <param name="resolvedPath">Resolved local filesystem path when successful, otherwise the trimmed source path.</param>
+    /// <param name="errorMessage">Validation error message when resolution fails.</param>
+    /// <returns>True when the path can be used locally; otherwise false.</returns>
+    internal static bool TryResolveIngestPath(string sourcePath, out string resolvedPath, out string? errorMessage)
+    {
+        resolvedPath = string.Empty;
+        errorMessage = null;
+
+        if (string.IsNullOrWhiteSpace(sourcePath))
+        {
+            errorMessage = "sourcePath is required.";
+            return false;
+        }
+
+        var trimmed = sourcePath.Trim();
+        if (!OperatingSystem.IsWindows() && SourcePathNormalizer.IsWindowsAbsolutePath(trimmed))
+        {
+            resolvedPath = trimmed;
+            errorMessage = "Windows absolute paths are not supported in this environment. Provide a mounted local path or a repository-relative path.";
+            return false;
+        }
+
+        try
+        {
+            resolvedPath = Path.GetFullPath(trimmed);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            resolvedPath = trimmed;
+            errorMessage = $"Unable to resolve sourcePath: {ex.Message}";
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Returns true when a directory ingest produced no indexable documents.
+    /// </summary>
+    /// <param name="isDirectoryPath">True when the input resolved to a directory.</param>
+    /// <param name="summary">Indexing summary returned from the directory ingest.</param>
+    /// <returns>True when the ingest should be surfaced as a validation error.</returns>
+    internal static bool ShouldRejectNoOpDirectoryIngest(bool isDirectoryPath, IndexSummary summary)
+    {
+        return isDirectoryPath && summary.DocumentsIndexed == 0;
     }
 
     /// <summary>
@@ -1131,6 +1213,7 @@ public sealed partial class McpTransportHandler
         {
             ["filesIngested"] = summary.FilesIngested,
             ["memoriesPruned"] = summary.MemoriesPruned,
+            ["sourcesPruned"] = summary.SourcesPruned,
             ["sourcesReindexed"] = summary.SourcesReindexed,
             ["errors"] = new JsonArray(summary.Errors.Select(e => JsonValue.Create(e)).ToArray()),
             ["durationMs"] = summary.DurationMs
@@ -1140,8 +1223,7 @@ public sealed partial class McpTransportHandler
     /// <summary>Delegates to NebulaSetupToolHandler.</summary>
     private async Task<JsonObject> ExecuteNebulaSetupToolAsync(JsonObject? arguments, CancellationToken cancellationToken)
     {
-        var endpointUrl = string.IsNullOrWhiteSpace(_settings.McpEndpointUrl) ? null : _settings.McpEndpointUrl;
-        var handler = new NebulaSetupToolHandler(_hookInstallService, endpointUrl);
+        var handler = new NebulaSetupToolHandler(_hookInstallService, _settings.BuildLocalHealthUrl());
         return await handler.HandleAsync(arguments, cancellationToken);
     }
 

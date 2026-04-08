@@ -309,7 +309,7 @@ NebulaRAG/
 | `rag_admin` | Unified admin operations (`init_schema`, `health`, `stats`, `purge`) |
 | `system` | Runtime server metadata (`server_info`) |
 
-`rag_ingest` with `mode: "path"` accepts both directory and single-file source paths.
+`rag_ingest` with `mode: "path"` accepts both directory and single-file source paths. Unsupported Windows absolute paths are rejected with a clear error, and directory ingests that find no indexable files now fail instead of reporting success.
 
 ### Memory
 
@@ -378,7 +378,7 @@ Call `memory(action: "sync")` to run a three-phase maintenance pass:
 
 1. **Auto-Memory Bridge** — Globs `~/.claude/projects/*/memory/*.md`, hashes each file, and ingests new or changed files into the RAG index under `auto-memory:<project-slug>` source tags. Unchanged files are skipped.
 2. **Stale Memory Pruning** — Removes auto-memory entries older than `AutoMemory.RetentionDays` (default: 30 days). Set to `0` to disable.
-3. **Dirty Source Reindex** — Compares SHA-256 hashes for all tracked RAG sources. Reindexes only sources whose content has changed since last index.
+3. **Dirty Source Reindex** — Compares SHA-256 hashes for all tracked RAG sources. Reindexes only sources whose content has changed since last index and prunes stale source rows whose files no longer exist.
 
 ### Syncing Repository Knowledge
 
