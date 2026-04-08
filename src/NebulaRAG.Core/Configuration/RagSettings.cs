@@ -15,11 +15,33 @@ public sealed class RagSettings
     public AutoMemorySettings AutoMemory { get; init; } = new();
 
     /// <summary>
-    /// Public MCP endpoint URL used by nebula_setup status/install to verify reachability.
-    /// Example: "http://192.168.1.135:8099/nebula/mcp"
-    /// Leave empty to skip the reachability check.
+    /// Application path base (e.g. "/nebula"). Used internally to build the self-health-check URL.
+    /// Bound from the NEBULARAG_PathBase environment variable.
     /// </summary>
-    public string McpEndpointUrl { get; init; } = string.Empty;
+    public string PathBase { get; init; } = string.Empty;
+
+    /// <summary>
+    /// Builds the local health check URL the server uses to verify its own reachability.
+    /// Reads ASPNETCORE_URLS to determine the port; falls back to 8099.
+    /// Example: http://localhost:8099/nebula/api/health
+    /// </summary>
+    public string BuildLocalHealthUrl()
+    {
+        var port = ResolveLocalPort();
+        var pathBase = string.IsNullOrWhiteSpace(PathBase) ? string.Empty : "/" + PathBase.Trim('/');
+        return $"http://localhost:{port}{pathBase}/api/health";
+    }
+
+    private static int ResolveLocalPort()
+    {
+        var urls = Environment.GetEnvironmentVariable("ASPNETCORE_URLS") ?? string.Empty;
+        foreach (var part in urls.Split(';', StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (Uri.TryCreate(part.Trim(), UriKind.Absolute, out var uri))
+                return uri.Port;
+        }
+        return 8099;
+    }
 
     /// <summary>
     /// Validates all configuration settings.
